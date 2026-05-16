@@ -45,7 +45,7 @@ notifications (per user)
 
 ## Multi-tenancy model
 
-All business tables have an `org_id`. RLS policies use `auth.user_org_id()` (a SECURITY DEFINER function that reads the current user's profile) to enforce that users can only see/modify rows from their own organization.
+All business tables have an `org_id`. RLS policies use `public.user_org_id()` (a SECURITY DEFINER function that reads the current user's profile) to enforce that users can only see/modify rows from their own organization. All custom helpers live in `public` — Supabase reserves `auth` for its own use, and `CREATE FUNCTION auth.*` raises `42501: permission denied for schema auth` in the SQL Editor.
 
 Roles:
 - `owner` — Full control, can update org settings

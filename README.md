@@ -37,7 +37,7 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=<anon-public-key>
 
 Schema is defined in `supabase/migrations/`. See `supabase/README.md` for details.
 
-Multi-tenant: each accounting office (organization) is isolated via Row Level Security on `org_id`. The `auth.user_org_id()` SQL function is the security boundary.
+Multi-tenant: each accounting office (organization) is isolated via Row Level Security on `org_id`. The `public.user_org_id()` SQL function is the security boundary. All custom helper functions live in `public` — Supabase reserves the `auth` schema for itself.
 
 ## Status
 

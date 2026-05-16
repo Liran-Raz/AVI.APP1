@@ -3,6 +3,10 @@
 --
 -- HOW TO USE: copy ALL of this file, paste into Supabase SQL Editor, Run.
 -- Idempotent — safe to re-run if a previous attempt failed partway.
+--
+-- IMPORTANT: All custom helper functions live in the `public` schema.
+-- Supabase reserves the `auth` schema; SQL Editor cannot CREATE into it.
+-- Built-ins like `auth.uid()` and reading from `auth.users` are fine.
 -- ============================================================
 
 -- ------------------------------------------------------------
@@ -143,7 +147,7 @@ create index notifications_user_unread_idx on notifications(user_id, created_at 
 create index notifications_user_all_idx    on notifications(user_id, created_at desc);
 
 -- ============================================================
--- 0002  Triggers & helper functions (in public — no auth schema writes)
+-- 0002  Triggers & helper functions (all in public)
 -- ============================================================
 
 create or replace function public.set_updated_at()
@@ -173,14 +177,14 @@ create trigger tasks_set_completed_at before update on tasks
   for each row execute function public.set_task_completed_at();
 
 create or replace function public.notify_on_task_assignment()
-returns trigger language plpgsql as $$
+returns trigger language plpgsql security definer set search_path = public as $$
 declare v_creator_name text;
 begin
   if new.assigned_to is null then return new; end if;
   if tg_op = 'UPDATE' and old.assigned_to is not distinct from new.assigned_to then return new; end if;
   if new.assigned_to = new.creator_id then return new; end if;
-  select full_name into v_creator_name from profiles where id = new.creator_id;
-  insert into notifications (user_id, task_id, type, title, body)
+  select full_name into v_creator_name from public.profiles where id = new.creator_id;
+  insert into public.notifications (user_id, task_id, type, title, body)
   values (new.assigned_to, new.id, 'task_assigned',
     'משימה חדשה הוצמדה לך',
     coalesce(v_creator_name, 'משתמש') || ' הקצה לך: ' || new.title);
@@ -195,7 +199,7 @@ create or replace function public.enforce_single_primary_contact()
 returns trigger language plpgsql as $$
 begin
   if new.is_primary = true then
-    update client_contacts set is_primary = false
+    update public.client_contacts set is_primary = false
       where client_id = new.client_id and id <> new.id and is_primary = true;
   end if;
   return new;
@@ -208,27 +212,42 @@ create trigger client_contacts_single_primary
   execute function public.enforce_single_primary_contact();
 
 -- ============================================================
--- 0003  RLS helper functions (in public — auth schema is restricted)
+-- 0003  RLS helper functions (in public — auth schema is Supabase-owned)
 -- ============================================================
 
 create or replace function public.user_org_id() returns uuid
 language sql stable security definer set search_path = public
-as $$ select org_id from profiles where id = auth.uid(); $$;
+as $$
+  select p.org_id from public.profiles p where p.id = auth.uid()
+$$;
 
 create or replace function public.user_role_val() returns user_role
 language sql stable security definer set search_path = public
-as $$ select role from profiles where id = auth.uid(); $$;
+as $$
+  select p.role from public.profiles p where p.id = auth.uid()
+$$;
 
 create or replace function public.is_admin_or_owner() returns boolean
 language sql stable security definer set search_path = public
-as $$ select role in ('owner', 'admin') from profiles where id = auth.uid(); $$;
+as $$
+  select exists (
+    select 1
+    from public.profiles p
+    where p.id = auth.uid()
+      and p.role in ('owner', 'admin')
+  )
+$$;
+
+revoke all on function public.user_org_id()       from public, anon;
+revoke all on function public.user_role_val()     from public, anon;
+revoke all on function public.is_admin_or_owner() from public, anon;
 
 grant execute on function public.user_org_id()       to authenticated;
 grant execute on function public.user_role_val()     to authenticated;
 grant execute on function public.is_admin_or_owner() to authenticated;
 
 -- ============================================================
--- 0003  RLS policies
+-- 0003  RLS policies (all reference public.* helpers)
 -- ============================================================
 
 alter table organizations    enable row level security;
@@ -258,8 +277,8 @@ create policy "members access clients in own org" on clients for all to authenti
   with check (org_id = public.user_org_id());
 
 create policy "members access client_contacts in own org" on client_contacts for all to authenticated
-  using (exists (select 1 from clients where clients.id = client_contacts.client_id and clients.org_id = public.user_org_id()))
-  with check (exists (select 1 from clients where clients.id = client_contacts.client_id and clients.org_id = public.user_org_id()));
+  using (exists (select 1 from public.clients c where c.id = client_contacts.client_id and c.org_id = public.user_org_id()))
+  with check (exists (select 1 from public.clients c where c.id = client_contacts.client_id and c.org_id = public.user_org_id()));
 
 create policy "members access tasks in own org" on tasks for all to authenticated
   using (org_id = public.user_org_id())
@@ -283,7 +302,7 @@ alter table notifications replica identity full;
 alter table clients       replica identity full;
 
 -- ============================================================
--- 0006  bootstrap_org RPC
+-- 0006  bootstrap_org RPC (reads auth.users, writes only to public.*)
 -- ============================================================
 
 create or replace function public.bootstrap_org(
@@ -301,7 +320,7 @@ declare
 begin
   if v_user_id is null then raise exception 'unauthenticated'; end if;
 
-  select org_id into v_existing from profiles where id = v_user_id;
+  select p.org_id into v_existing from public.profiles p where p.id = v_user_id;
   if v_existing is not null then
     return json_build_object('org_id', v_existing, 'created', false);
   end if;
@@ -316,19 +335,21 @@ begin
     raise exception 'full_name required';
   end if;
 
+  -- Read from auth.users is allowed; we never CREATE inside auth.
   select email into v_user_email from auth.users where id = v_user_id;
 
-  insert into organizations (org_code, name)
+  insert into public.organizations (org_code, name)
   values (upper(p_org_code), trim(p_org_name))
   returning id into v_org_id;
 
-  insert into profiles (id, org_id, role, full_name, email)
+  insert into public.profiles (id, org_id, role, full_name, email)
   values (v_user_id, v_org_id, 'owner', trim(p_full_name), v_user_email);
 
   return json_build_object('org_id', v_org_id, 'created', true);
 end;
 $$;
 
+revoke all on function public.bootstrap_org(text, text, text) from public, anon;
 grant execute on function public.bootstrap_org(text, text, text) to authenticated;
 
 -- ============================================================
