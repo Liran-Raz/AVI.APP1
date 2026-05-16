@@ -2,8 +2,9 @@ import "server-only";
 
 import { authAdapter } from "@/server/auth/supabase-auth.adapter";
 import type { AuthUser } from "@/server/auth/auth.adapter";
-import { createSupabaseServerClient } from "@/server/db/supabase";
 import { UnauthorizedError } from "@/server/errors/app-error";
+import * as profileRepo from "@/server/repositories/profile.repository";
+import * as organizationRepo from "@/server/repositories/organization.repository";
 import type {
   Organization,
   Profile,
@@ -38,30 +39,12 @@ export async function getCurrentSession(): Promise<Session | null> {
   const user = await getCurrentUser();
   if (!user) return null;
 
-  const supabase = await createSupabaseServerClient();
-
-  // Repository layer will replace these direct queries in Round 3.
-  // The `as` casts work around supabase-js inference falling back to `never`
-  // for our hand-written Database type; can be removed once we switch to
-  // generated types or move to the repository layer.
-  const profileResult = await supabase
-    .from("profiles")
-    .select("*")
-    .eq("id", user.id)
-    .maybeSingle();
-  const profile = profileResult.data as Profile | null;
-
+  const profile = await profileRepo.findByUserId(user.id);
   if (!profile) {
     return { user, profile: null, organization: null };
   }
 
-  const orgResult = await supabase
-    .from("organizations")
-    .select("*")
-    .eq("id", profile.org_id)
-    .maybeSingle();
-  const organization = orgResult.data as Organization | null;
-
+  const organization = await organizationRepo.findById(profile.org_id);
   return { user, profile, organization };
 }
 
@@ -80,10 +63,9 @@ export async function requireSession(): Promise<FullSession> {
   const session = await getCurrentSession();
   if (!session) throw new UnauthorizedError();
   if (!session.profile || !session.organization) {
-    // Authenticated but onboarding incomplete. Callers in API contexts
-    // can treat this as a 401 and let the client send the user to
-    // /onboarding. Server Components should prefer getCurrentSession()
-    // and redirect("/onboarding") explicitly.
+    // Authenticated but onboarding incomplete. API callers can treat
+    // this as a 401 and send the user to /onboarding. Server Components
+    // should prefer getCurrentSession() and redirect explicitly.
     throw new UnauthorizedError("Onboarding required");
   }
   return session as FullSession;

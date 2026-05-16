@@ -19,7 +19,6 @@ export async function GET() {
       EXPECTED_TABLES.map(async (table) => {
         const { error, count } = await supabase
           .from(table)
-          // @ts-expect-error - querying by table name string
           .select("*", { count: "exact", head: true });
         return { table, exists: !error, count: count ?? 0, error: error?.message };
       }),

@@ -4,6 +4,11 @@
 // This file is the canonical source of DB row shapes. UI code should NOT import
 // from here directly — it should consume DTOs returned by the server's services.
 // Server-side repositories and services are the legitimate consumers.
+//
+// IMPORTANT: every Table entry must include `Relationships: []` (even an empty
+// tuple) and the top-level schema must include `Views`, `Functions`,
+// `CompositeTypes`. Otherwise supabase-js falls back to `any` and rpc/select
+// inference silently degrades to `never`.
 
 export type BusinessType =
   | "patur"
@@ -21,6 +26,12 @@ export type NotificationType =
   | "task_status_changed"
   | "task_due_soon"
   | "task_overdue";
+
+// Return shape of the public.bootstrap_org RPC.
+export type BootstrapOrgResult = {
+  org_id: string;
+  created: boolean;
+};
 
 export interface Database {
   public: {
@@ -47,6 +58,7 @@ export interface Database {
           updated_at?: string;
         };
         Update: Partial<Database["public"]["Tables"]["organizations"]["Insert"]>;
+        Relationships: [];
       };
       profiles: {
         Row: {
@@ -74,6 +86,14 @@ export interface Database {
           updated_at?: string;
         };
         Update: Partial<Database["public"]["Tables"]["profiles"]["Insert"]>;
+        Relationships: [
+          {
+            foreignKeyName: "profiles_org_id_fkey";
+            columns: ["org_id"];
+            referencedRelation: "organizations";
+            referencedColumns: ["id"];
+          },
+        ];
       };
       clients: {
         Row: {
@@ -107,6 +127,20 @@ export interface Database {
           updated_at?: string;
         };
         Update: Partial<Database["public"]["Tables"]["clients"]["Insert"]>;
+        Relationships: [
+          {
+            foreignKeyName: "clients_org_id_fkey";
+            columns: ["org_id"];
+            referencedRelation: "organizations";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "clients_created_by_fkey";
+            columns: ["created_by"];
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+        ];
       };
       client_contacts: {
         Row: {
@@ -132,6 +166,14 @@ export interface Database {
           updated_at?: string;
         };
         Update: Partial<Database["public"]["Tables"]["client_contacts"]["Insert"]>;
+        Relationships: [
+          {
+            foreignKeyName: "client_contacts_client_id_fkey";
+            columns: ["client_id"];
+            referencedRelation: "clients";
+            referencedColumns: ["id"];
+          },
+        ];
       };
       tasks: {
         Row: {
@@ -163,6 +205,32 @@ export interface Database {
           updated_at?: string;
         };
         Update: Partial<Database["public"]["Tables"]["tasks"]["Insert"]>;
+        Relationships: [
+          {
+            foreignKeyName: "tasks_org_id_fkey";
+            columns: ["org_id"];
+            referencedRelation: "organizations";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "tasks_creator_id_fkey";
+            columns: ["creator_id"];
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "tasks_assigned_to_fkey";
+            columns: ["assigned_to"];
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "tasks_client_id_fkey";
+            columns: ["client_id"];
+            referencedRelation: "clients";
+            referencedColumns: ["id"];
+          },
+        ];
       };
       notifications: {
         Row: {
@@ -186,14 +254,40 @@ export interface Database {
           created_at?: string;
         };
         Update: Partial<Database["public"]["Tables"]["notifications"]["Insert"]>;
+        Relationships: [
+          {
+            foreignKeyName: "notifications_user_id_fkey";
+            columns: ["user_id"];
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "notifications_task_id_fkey";
+            columns: ["task_id"];
+            referencedRelation: "tasks";
+            referencedColumns: ["id"];
+          },
+        ];
       };
     };
+    Views: { [_ in never]: never };
     Enums: {
       business_type: BusinessType;
       task_status: TaskStatus;
       user_role: UserRole;
       notification_type: NotificationType;
     };
+    Functions: {
+      bootstrap_org: {
+        Args: {
+          p_org_name: string;
+          p_org_code: string;
+          p_full_name: string;
+        };
+        Returns: BootstrapOrgResult;
+      };
+    };
+    CompositeTypes: { [_ in never]: never };
   };
 }
 
