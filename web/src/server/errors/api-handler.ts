@@ -47,7 +47,14 @@ export function withErrorHandler<TArgs extends unknown[]>(
       return await handler(...args);
     } catch (err) {
       if (err instanceof ZodError) {
-        return fail("VALIDATION_ERROR", "Invalid input", 400, err.issues);
+        // Strip zod-internal codes / regex patterns; expose only the
+        // per-field user-facing message so clients can highlight inputs
+        // without leaking implementation details.
+        const issues = err.issues.map((i) => ({
+          path: i.path,
+          message: i.message,
+        }));
+        return fail("VALIDATION_ERROR", "Invalid input", 400, issues);
       }
       if (err instanceof AppError) {
         return fail(err.code, err.message, err.status, err.details);

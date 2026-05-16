@@ -14,6 +14,24 @@ export interface AuthUser {
   metadata: Record<string, unknown>;
 }
 
+export type SignInInput = {
+  email: string;
+  password: string;
+};
+
+export type SignUpInput = {
+  email: string;
+  password: string;
+  fullName: string;
+  // Where the email-confirmation link should send the user back to.
+  emailRedirectTo?: string;
+};
+
+export type SignUpResult = {
+  user: AuthUser;
+  needsEmailConfirmation: boolean;
+};
+
 export interface AuthAdapter {
   /**
    * Returns the authenticated user for the current request, or null if
@@ -23,4 +41,22 @@ export interface AuthAdapter {
    * verification) — do not trust client-provided JWTs.
    */
   getCurrentUser(): Promise<AuthUser | null>;
+
+  /**
+   * Sign in with email/password. Returns the AuthUser on success.
+   * Implementations MUST throw `UnauthorizedError` on bad credentials —
+   * never leak whether the email exists vs the password was wrong.
+   */
+  signIn(input: SignInInput): Promise<AuthUser>;
+
+  /**
+   * Create a new auth user. If the provider requires email confirmation,
+   * `needsEmailConfirmation` will be true and no active session exists yet.
+   */
+  signUp(input: SignUpInput): Promise<SignUpResult>;
+
+  /**
+   * Invalidate the current session cookie. No-op when already signed out.
+   */
+  signOut(): Promise<void>;
 }

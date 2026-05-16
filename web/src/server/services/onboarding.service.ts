@@ -2,13 +2,11 @@ import "server-only";
 
 import { createSupabaseServerClient } from "@/server/db/supabase";
 import { AppError, ConflictError, ValidationError } from "@/server/errors/app-error";
+import { ORG_CODE_RE } from "@/server/validators/onboarding.schema";
 
 // Onboarding business logic. Currently a thin wrapper around the
 // SECURITY DEFINER `public.bootstrap_org` RPC, which is the atomic
 // "create org + owner profile for the authenticated user" transaction.
-//
-// Round 4 will wire this up behind POST /api/onboarding/bootstrap so the
-// client no longer calls supabase.rpc directly.
 
 export type BootstrapOrgInput = {
   orgName: string;
@@ -21,13 +19,13 @@ export type BootstrapOrgOutput = {
   created: boolean;
 };
 
-const ORG_CODE_RE = /^[A-Z0-9-]{3,20}$/;
-
 export async function bootstrapOrg(
   input: BootstrapOrgInput,
 ): Promise<BootstrapOrgOutput> {
-  // Light input checks here. Authoritative shape validation will happen
-  // at the API boundary with zod (Round 4); the RPC also re-validates.
+  // Belt-and-suspenders normalization. The API route already validates
+  // with the zod schema (which trims and uppercases); doing the same
+  // here means the service is safe to call from non-API contexts too
+  // (server actions, scripts) without re-implementing rules.
   const orgName = input.orgName?.trim();
   const orgCode = input.orgCode?.toUpperCase();
   const fullName = input.fullName?.trim();
@@ -57,7 +55,10 @@ export async function bootstrapOrg(
       throw new AppError("UNAUTHORIZED", "Not authenticated", 401);
     }
     // Anything else is unexpected; surface as 500 without leaking details.
-    console.error("[onboarding.service.bootstrapOrg] RPC failed", error);
+    console.error("[onboarding.service.bootstrapOrg] RPC failed", {
+      code: error.code,
+      message: error.message,
+    });
     throw new AppError("INTERNAL_ERROR", "Failed to create organization");
   }
 
