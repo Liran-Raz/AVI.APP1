@@ -1,3 +1,16 @@
+// Per-request session refresh middleware.
+//
+// TODO: replace with provider-neutral session middleware during Firebase
+// migration. This file is the LAST piece of code that imports
+// @supabase/ssr's createServerClient outside server/db/supabase.ts and
+// the auth adapter. The reason it lives here (and not in the adapter)
+// is that the middleware needs custom cookie handlers tied to the
+// NextRequest/NextResponse pair so refreshed access/refresh tokens land
+// on the outgoing response. The adapter's createSupabaseServerClient
+// uses the request-scoped `cookies()` helper instead, which middleware
+// can't use. When we move to Firebase Auth (or change SSR providers),
+// the session-refresh strategy below must be revisited.
+
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 

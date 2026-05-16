@@ -32,6 +32,38 @@ export type SignUpResult = {
   needsEmailConfirmation: boolean;
 };
 
+// OAuth — provider list intentionally narrow until we actually add more.
+export type OAuthProvider = "google";
+
+export type StartOAuthInput = {
+  provider: OAuthProvider;
+  // Absolute URL the provider should redirect back to after the user
+  // authenticates. The route at this URL is responsible for finishing
+  // the code-for-session exchange via exchangeOAuthCode().
+  redirectTo: string;
+};
+
+export type StartOAuthResult = {
+  // The URL the browser must navigate to in order to start the flow.
+  url: string;
+};
+
+// Email OTP types we accept on the verification route. Mirrors the
+// Supabase vocabulary today; when we migrate, this enum stays and the
+// adapter maps to whatever the new provider expects.
+export type EmailOtpType =
+  | "signup"
+  | "invite"
+  | "magiclink"
+  | "recovery"
+  | "email_change"
+  | "email";
+
+export type VerifyEmailOtpInput = {
+  tokenHash: string;
+  type: EmailOtpType;
+};
+
 export interface AuthAdapter {
   /**
    * Returns the authenticated user for the current request, or null if
@@ -59,4 +91,25 @@ export interface AuthAdapter {
    * Invalidate the current session cookie. No-op when already signed out.
    */
   signOut(): Promise<void>;
+
+  /**
+   * Begin an OAuth flow. The implementation generates any state / PKCE
+   * material and stores it via the request's cookie store, then returns
+   * the URL the browser should navigate to. The caller is responsible
+   * for performing the actual navigation (Next.js redirect or window.location).
+   */
+  startOAuth(input: StartOAuthInput): Promise<StartOAuthResult>;
+
+  /**
+   * Finish an OAuth flow: take the `code` returned by the provider,
+   * exchange it for a session, and persist the session via cookies.
+   * Throws AppError on failure.
+   */
+  exchangeOAuthCode(code: string): Promise<void>;
+
+  /**
+   * Verify an email-link OTP. On success, the resulting session is
+   * persisted via cookies. Throws AppError on failure.
+   */
+  verifyEmailOtp(input: VerifyEmailOtpInput): Promise<void>;
 }

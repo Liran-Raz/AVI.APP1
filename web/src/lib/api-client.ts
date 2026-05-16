@@ -113,6 +113,8 @@ function getJson<T>(path: string): Promise<T> {
 // Public surface
 // ============================================================
 
+export type StartOAuthResult = { url: string };
+
 export const apiClient = {
   auth: {
     signIn: (input: SigninPayload) =>
@@ -120,6 +122,12 @@ export const apiClient = {
     signUp: (input: SignupPayload) =>
       postJson<AuthOperationResult>("/api/auth/signup", input),
     signOut: () => postJson<null>("/api/auth/signout"),
+    // Begin a Google OAuth flow. Returns the URL the browser should
+    // navigate to (window.location.assign). Cookies for PKCE/state are
+    // already set by the server response, so the subsequent /auth/callback
+    // can complete the exchange.
+    startOAuthGoogle: (input?: { redirect?: string }) =>
+      postJson<StartOAuthResult>("/api/auth/oauth/google", input ?? {}),
   },
   onboarding: {
     bootstrap: (input: BootstrapOrgPayload) =>

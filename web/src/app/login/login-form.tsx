@@ -9,11 +9,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { ApiError, apiClient } from "@/lib/api-client";
-// NOTE: this is the ONLY Supabase import that remains in a client component.
-// It is used exclusively to initiate the Google OAuth browser-redirect flow
-// (PKCE verifier handling + provider hop). Moving this server-side requires
-// a /api/auth/oauth route — out of scope for Round 5. See Round 4B.
-import { createClient } from "@/lib/supabase/client";
+
+// NOTE: this client component no longer imports anything from
+// @supabase/* or @/lib/supabase/*. All auth flows — including Google
+// OAuth start — go through /api/* and the AuthAdapter on the server.
 
 export function LoginForm() {
   const router = useRouter();
@@ -46,21 +45,17 @@ export function LoginForm() {
   async function handleGoogleLogin() {
     setLoading(true);
     try {
-      // OAuth requires a browser redirect chain (PKCE, state cookies, then
-      // the provider hop). Supabase JS handles all of that locally, so we
-      // keep this one Supabase call until Round 4B builds a server-side
-      // /api/auth/oauth route to replace it.
-      const supabase = createClient();
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider: "google",
-        options: {
-          redirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(redirect)}`,
-        },
-      });
-      if (error) {
+      const { url } = await apiClient.auth.startOAuthGoogle({ redirect });
+      window.location.assign(url);
+      // Intentionally do not reset loading — the browser is about to
+      // navigate away, and re-enabling the button would only let the
+      // user click twice.
+    } catch (err) {
+      if (err instanceof ApiError) {
+        toast.error(err.message);
+      } else {
         toast.error("התחברות עם Google נכשלה");
       }
-    } finally {
       setLoading(false);
     }
   }

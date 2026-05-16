@@ -13,6 +13,9 @@ import type {
   SignInInput,
   SignUpInput,
   SignUpResult,
+  StartOAuthInput,
+  StartOAuthResult,
+  VerifyEmailOtpInput,
 } from "./auth.adapter";
 
 // Supabase implementation of AuthAdapter.
@@ -123,6 +126,62 @@ class SupabaseAuthAdapter implements AuthAdapter {
         status: error.status,
         message: error.message,
       });
+    }
+  }
+
+  async startOAuth(input: StartOAuthInput): Promise<StartOAuthResult> {
+    const supabase = await createSupabaseServerClient();
+    // skipBrowserRedirect lets us return the URL to the caller (an API
+    // route) instead of issuing the redirect from inside this method.
+    // PKCE / state cookies are still written via our cookie wrapper.
+    const { data, error } = await supabase.auth.signInWithOAuth({
+      provider: input.provider,
+      options: {
+        redirectTo: input.redirectTo,
+        skipBrowserRedirect: true,
+      },
+    });
+
+    if (error || !data?.url) {
+      console.error("[supabase-auth.startOAuth] error", {
+        provider: input.provider,
+        status: error?.status,
+        message: error?.message,
+      });
+      throw new AppError(
+        "INTERNAL_ERROR",
+        "Could not start OAuth flow",
+      );
+    }
+    return { url: data.url };
+  }
+
+  async exchangeOAuthCode(code: string): Promise<void> {
+    const supabase = await createSupabaseServerClient();
+    const { error } = await supabase.auth.exchangeCodeForSession(code);
+    if (error) {
+      console.error("[supabase-auth.exchangeOAuthCode] error", {
+        status: error.status,
+        message: error.message,
+      });
+      throw new UnauthorizedError("Could not complete sign-in");
+    }
+  }
+
+  async verifyEmailOtp(input: VerifyEmailOtpInput): Promise<void> {
+    const supabase = await createSupabaseServerClient();
+    // Map our neutral type → Supabase's literal type.
+    const { error } = await supabase.auth.verifyOtp({
+      type: input.type,
+      token_hash: input.tokenHash,
+    });
+    if (error) {
+      console.error("[supabase-auth.verifyEmailOtp] error", {
+        status: error.status,
+        message: error.message,
+        type: input.type,
+      });
+      throw new UnauthorizedError("Could not verify the link");
     }
   }
 }
