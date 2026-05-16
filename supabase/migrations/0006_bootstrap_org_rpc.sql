@@ -69,3 +69,7 @@ $$;
 
 -- Authenticated users can call this RPC.
 grant execute on function public.bootstrap_org(text, text, text) to authenticated;
+
+-- Force PostgREST to reload its schema cache so the new function is callable
+-- immediately, without waiting for the cache to expire on its own.
+notify pgrst, 'reload schema';
