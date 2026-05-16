@@ -3,7 +3,13 @@ import { NextResponse, type NextRequest } from "next/server";
 
 import type { Database } from "@/lib/types/database";
 
-const PUBLIC_PATHS = ["/", "/login", "/signup", "/auth"];
+const PROTECTED_PREFIXES = [
+  "/tasks",
+  "/calendar",
+  "/clients",
+  "/team",
+  "/settings",
+];
 
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request });
@@ -39,11 +45,11 @@ export async function updateSession(request: NextRequest) {
   } = await supabase.auth.getUser();
 
   const pathname = request.nextUrl.pathname;
-  const isPublic = PUBLIC_PATHS.some(
+  const isProtected = PROTECTED_PREFIXES.some(
     (p) => pathname === p || pathname.startsWith(`${p}/`),
   );
 
-  if (!user && !isPublic) {
+  if (!user && isProtected) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     url.searchParams.set("redirect", pathname);
