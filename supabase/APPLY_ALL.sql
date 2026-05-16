@@ -1,9 +1,35 @@
 -- ============================================================
 -- AVI.APP — Apply all migrations in one go.
 --
--- HOW TO USE: copy ALL of this file, paste into Supabase SQL Editor,
--- and click Run. Safe to run once on an empty database.
+-- HOW TO USE: copy ALL of this file, paste into Supabase SQL Editor, Run.
+-- Idempotent — safe to re-run if a previous attempt failed partway.
 -- ============================================================
+
+-- ------------------------------------------------------------
+-- Clean slate (only objects we own — leaves other Supabase
+-- schemas / built-in functions like rls_auto_enable intact)
+-- ------------------------------------------------------------
+
+drop table if exists notifications     cascade;
+drop table if exists tasks             cascade;
+drop table if exists client_contacts   cascade;
+drop table if exists clients           cascade;
+drop table if exists profiles          cascade;
+drop table if exists organizations     cascade;
+
+drop type  if exists business_type     cascade;
+drop type  if exists task_status       cascade;
+drop type  if exists user_role         cascade;
+drop type  if exists notification_type cascade;
+
+drop function if exists public.bootstrap_org(text, text, text)              cascade;
+drop function if exists public.user_org_id()                                cascade;
+drop function if exists public.user_role_val()                              cascade;
+drop function if exists public.is_admin_or_owner()                          cascade;
+drop function if exists public.set_updated_at()                             cascade;
+drop function if exists public.set_task_completed_at()                      cascade;
+drop function if exists public.notify_on_task_assignment()                  cascade;
+drop function if exists public.enforce_single_primary_contact()             cascade;
 
 -- ============================================================
 -- 0001  Initial schema
@@ -16,15 +42,12 @@ create extension if not exists pg_trgm;
 create type business_type as enum (
   'patur', 'murshe', 'ltd', 'amuta', 'agudat_shitufit'
 );
-
 create type task_status as enum (
   'new', 'received', 'in_progress', 'done'
 );
-
 create type user_role as enum (
   'owner', 'admin', 'employee'
 );
-
 create type notification_type as enum (
   'task_assigned', 'task_status_changed', 'task_due_soon', 'task_overdue'
 );
@@ -52,9 +75,8 @@ create table profiles (
   created_at  timestamptz not null default now(),
   updated_at  timestamptz not null default now()
 );
-
 create index profiles_org_id_idx on profiles(org_id);
-create index profiles_email_idx on profiles(email);
+create index profiles_email_idx  on profiles(email);
 
 create table clients (
   id             uuid primary key default gen_random_uuid(),
@@ -71,10 +93,9 @@ create table clients (
   created_at     timestamptz not null default now(),
   updated_at     timestamptz not null default now()
 );
-
-create index clients_org_id_idx on clients(org_id);
+create index clients_org_id_idx     on clients(org_id);
 create index clients_org_active_idx on clients(org_id, is_active) where is_active = true;
-create index clients_name_trgm_idx on clients using gin (name gin_trgm_ops);
+create index clients_name_trgm_idx  on clients using gin (name gin_trgm_ops);
 
 create table client_contacts (
   id          uuid primary key default gen_random_uuid(),
@@ -87,7 +108,6 @@ create table client_contacts (
   created_at  timestamptz not null default now(),
   updated_at  timestamptz not null default now()
 );
-
 create index client_contacts_client_id_idx on client_contacts(client_id);
 
 create table tasks (
@@ -104,11 +124,10 @@ create table tasks (
   created_at    timestamptz not null default now(),
   updated_at    timestamptz not null default now()
 );
-
-create index tasks_org_due_idx on tasks(org_id, due_at);
+create index tasks_org_due_idx          on tasks(org_id, due_at);
 create index tasks_org_assigned_due_idx on tasks(org_id, assigned_to, due_at);
-create index tasks_org_status_idx on tasks(org_id, status);
-create index tasks_org_client_idx on tasks(org_id, client_id);
+create index tasks_org_status_idx       on tasks(org_id, status);
+create index tasks_org_client_idx       on tasks(org_id, client_id);
 
 create table notifications (
   id          uuid primary key default gen_random_uuid(),
@@ -120,31 +139,25 @@ create table notifications (
   read_at     timestamptz,
   created_at  timestamptz not null default now()
 );
-
 create index notifications_user_unread_idx on notifications(user_id, created_at desc) where read_at is null;
-create index notifications_user_all_idx on notifications(user_id, created_at desc);
+create index notifications_user_all_idx    on notifications(user_id, created_at desc);
 
 -- ============================================================
--- 0002  Triggers & helper functions
+-- 0002  Triggers & helper functions (in public — no auth schema writes)
 -- ============================================================
 
-create or replace function set_updated_at()
+create or replace function public.set_updated_at()
 returns trigger language plpgsql as $$
 begin new.updated_at = now(); return new; end;
 $$;
 
-create trigger organizations_set_updated_at before update on organizations
-  for each row execute function set_updated_at();
-create trigger profiles_set_updated_at before update on profiles
-  for each row execute function set_updated_at();
-create trigger clients_set_updated_at before update on clients
-  for each row execute function set_updated_at();
-create trigger client_contacts_set_updated_at before update on client_contacts
-  for each row execute function set_updated_at();
-create trigger tasks_set_updated_at before update on tasks
-  for each row execute function set_updated_at();
+create trigger organizations_set_updated_at   before update on organizations   for each row execute function public.set_updated_at();
+create trigger profiles_set_updated_at        before update on profiles        for each row execute function public.set_updated_at();
+create trigger clients_set_updated_at         before update on clients         for each row execute function public.set_updated_at();
+create trigger client_contacts_set_updated_at before update on client_contacts for each row execute function public.set_updated_at();
+create trigger tasks_set_updated_at           before update on tasks           for each row execute function public.set_updated_at();
 
-create or replace function set_task_completed_at()
+create or replace function public.set_task_completed_at()
 returns trigger language plpgsql as $$
 begin
   if new.status = 'done' and (old.status is null or old.status <> 'done') then
@@ -157,9 +170,9 @@ end;
 $$;
 
 create trigger tasks_set_completed_at before update on tasks
-  for each row execute function set_task_completed_at();
+  for each row execute function public.set_task_completed_at();
 
-create or replace function notify_on_task_assignment()
+create or replace function public.notify_on_task_assignment()
 returns trigger language plpgsql as $$
 declare v_creator_name text;
 begin
@@ -176,9 +189,9 @@ end;
 $$;
 
 create trigger tasks_notify_assignment after insert or update of assigned_to on tasks
-  for each row execute function notify_on_task_assignment();
+  for each row execute function public.notify_on_task_assignment();
 
-create or replace function enforce_single_primary_contact()
+create or replace function public.enforce_single_primary_contact()
 returns trigger language plpgsql as $$
 begin
   if new.is_primary = true then
@@ -192,23 +205,31 @@ $$;
 create trigger client_contacts_single_primary
   after insert or update of is_primary on client_contacts
   for each row when (new.is_primary = true)
-  execute function enforce_single_primary_contact();
+  execute function public.enforce_single_primary_contact();
+
+-- ============================================================
+-- 0003  RLS helper functions (in public — auth schema is restricted)
+-- ============================================================
+
+create or replace function public.user_org_id() returns uuid
+language sql stable security definer set search_path = public
+as $$ select org_id from profiles where id = auth.uid(); $$;
+
+create or replace function public.user_role_val() returns user_role
+language sql stable security definer set search_path = public
+as $$ select role from profiles where id = auth.uid(); $$;
+
+create or replace function public.is_admin_or_owner() returns boolean
+language sql stable security definer set search_path = public
+as $$ select role in ('owner', 'admin') from profiles where id = auth.uid(); $$;
+
+grant execute on function public.user_org_id()       to authenticated;
+grant execute on function public.user_role_val()     to authenticated;
+grant execute on function public.is_admin_or_owner() to authenticated;
 
 -- ============================================================
 -- 0003  RLS policies
 -- ============================================================
-
-create or replace function auth.user_org_id() returns uuid
-language sql stable security definer set search_path = public
-as $$ select org_id from profiles where id = auth.uid(); $$;
-
-create or replace function auth.user_role_val() returns user_role
-language sql stable security definer set search_path = public
-as $$ select role from profiles where id = auth.uid(); $$;
-
-create or replace function auth.is_admin_or_owner() returns boolean
-language sql stable security definer set search_path = public
-as $$ select role in ('owner', 'admin') from profiles where id = auth.uid(); $$;
 
 alter table organizations    enable row level security;
 alter table profiles         enable row level security;
@@ -218,41 +239,38 @@ alter table tasks            enable row level security;
 alter table notifications    enable row level security;
 
 create policy "members can read own org" on organizations for select to authenticated
-  using (id = auth.user_org_id());
+  using (id = public.user_org_id());
 create policy "owner can update own org" on organizations for update to authenticated
-  using (id = auth.user_org_id() and auth.user_role_val() = 'owner')
-  with check (id = auth.user_org_id());
+  using (id = public.user_org_id() and public.user_role_val() = 'owner')
+  with check (id = public.user_org_id());
 
 create policy "members read profiles in own org" on profiles for select to authenticated
-  using (org_id = auth.user_org_id());
+  using (org_id = public.user_org_id());
 create policy "users update own profile" on profiles for update to authenticated
   using (id = auth.uid())
-  with check (id = auth.uid() and org_id = auth.user_org_id());
+  with check (id = auth.uid() and org_id = public.user_org_id());
 create policy "admins manage profiles in own org" on profiles for all to authenticated
-  using (org_id = auth.user_org_id() and auth.is_admin_or_owner())
-  with check (org_id = auth.user_org_id());
+  using (org_id = public.user_org_id() and public.is_admin_or_owner())
+  with check (org_id = public.user_org_id());
 
 create policy "members access clients in own org" on clients for all to authenticated
-  using (org_id = auth.user_org_id())
-  with check (org_id = auth.user_org_id());
+  using (org_id = public.user_org_id())
+  with check (org_id = public.user_org_id());
 
 create policy "members access client_contacts in own org" on client_contacts for all to authenticated
-  using (exists (select 1 from clients where clients.id = client_contacts.client_id and clients.org_id = auth.user_org_id()))
-  with check (exists (select 1 from clients where clients.id = client_contacts.client_id and clients.org_id = auth.user_org_id()));
+  using (exists (select 1 from clients where clients.id = client_contacts.client_id and clients.org_id = public.user_org_id()))
+  with check (exists (select 1 from clients where clients.id = client_contacts.client_id and clients.org_id = public.user_org_id()));
 
 create policy "members access tasks in own org" on tasks for all to authenticated
-  using (org_id = auth.user_org_id())
-  with check (org_id = auth.user_org_id());
+  using (org_id = public.user_org_id())
+  with check (org_id = public.user_org_id());
 
-create policy "users read own notifications" on notifications for select to authenticated
-  using (user_id = auth.uid());
-create policy "users update own notifications" on notifications for update to authenticated
-  using (user_id = auth.uid()) with check (user_id = auth.uid());
-create policy "users delete own notifications" on notifications for delete to authenticated
-  using (user_id = auth.uid());
+create policy "users read own notifications"   on notifications for select to authenticated using (user_id = auth.uid());
+create policy "users update own notifications" on notifications for update to authenticated using (user_id = auth.uid()) with check (user_id = auth.uid());
+create policy "users delete own notifications" on notifications for delete to authenticated using (user_id = auth.uid());
 
 -- ============================================================
--- 0004  Realtime
+-- 0004  Realtime publication
 -- ============================================================
 
 alter publication supabase_realtime add table tasks;
@@ -314,13 +332,13 @@ $$;
 grant execute on function public.bootstrap_org(text, text, text) to authenticated;
 
 -- ============================================================
--- Final: reload PostgREST schema cache
+-- Reload PostgREST schema cache
 -- ============================================================
 
 notify pgrst, 'reload schema';
 
 -- ============================================================
--- Done — verify everything is in place
+-- Verification — last result row shows what was created
 -- ============================================================
 
 select json_build_object(
