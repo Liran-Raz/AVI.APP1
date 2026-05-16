@@ -56,6 +56,36 @@ grant execute on function public.user_role_val()     to authenticated;
 grant execute on function public.is_admin_or_owner() to authenticated;
 
 -- ============================================================
+-- Table privileges
+-- Required when "Automatically expose new tables" is OFF in the project.
+-- Without these, RLS can't even evaluate — Postgres rejects the query
+-- at the privilege layer first.
+-- ============================================================
+
+grant usage on schema public to authenticated, anon;
+
+grant select, insert, update, delete on
+  public.organizations,
+  public.profiles,
+  public.clients,
+  public.client_contacts,
+  public.tasks,
+  public.notifications
+to authenticated;
+
+revoke all on
+  public.organizations,
+  public.profiles,
+  public.clients,
+  public.client_contacts,
+  public.tasks,
+  public.notifications
+from anon;
+
+alter default privileges in schema public
+  grant select, insert, update, delete on tables to authenticated;
+
+-- ============================================================
 -- Enable RLS on all tables
 -- ============================================================
 

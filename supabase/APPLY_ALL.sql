@@ -353,6 +353,41 @@ revoke all on function public.bootstrap_org(text, text, text) from public, anon;
 grant execute on function public.bootstrap_org(text, text, text) to authenticated;
 
 -- ============================================================
+-- Table privileges
+-- Required when the Supabase project was created with
+-- "Automatically expose new tables" DISABLED. Without these grants,
+-- PostgREST + RLS can't reach rows at all (RLS only filters AFTER
+-- table-level privilege passes).
+-- ============================================================
+
+grant usage on schema public to authenticated, anon;
+
+grant select, insert, update, delete on
+  public.organizations,
+  public.profiles,
+  public.clients,
+  public.client_contacts,
+  public.tasks,
+  public.notifications
+to authenticated;
+
+-- Anon never touches our tables directly — it can only call
+-- public.bootstrap_org (SECURITY DEFINER) and a few other RPCs we expose.
+revoke all on
+  public.organizations,
+  public.profiles,
+  public.clients,
+  public.client_contacts,
+  public.tasks,
+  public.notifications
+from anon;
+
+-- Make sure tables created in public after this point inherit
+-- the same default grants.
+alter default privileges in schema public
+  grant select, insert, update, delete on tables to authenticated;
+
+-- ============================================================
 -- Reload PostgREST schema cache
 -- ============================================================
 
