@@ -8,7 +8,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
-import { createClient } from "@/lib/supabase/client";
+import { ApiError, apiClient } from "@/lib/api-client";
+
+// NOTE: this client component no longer imports anything from
+// @supabase/* or @/lib/supabase/*. All auth flows — including Google
+// OAuth start — go through /api/* and the AuthAdapter on the server.
 
 export function LoginForm() {
   const router = useRouter();
@@ -23,17 +27,16 @@ export function LoginForm() {
     e.preventDefault();
     setLoading(true);
     try {
-      const supabase = createClient();
-      const { error } = await supabase.auth.signInWithPassword({ email, password });
-      if (error) {
-        toast.error(error.message || "התחברות נכשלה");
-        return;
-      }
+      await apiClient.auth.signIn({ email, password });
       router.push(redirect);
       router.refresh();
     } catch (err) {
-      toast.error("שגיאה לא צפויה");
-      console.error(err);
+      if (err instanceof ApiError) {
+        toast.error(err.message);
+      } else {
+        toast.error("שגיאה לא צפויה");
+        console.error(err);
+      }
     } finally {
       setLoading(false);
     }
@@ -42,17 +45,17 @@ export function LoginForm() {
   async function handleGoogleLogin() {
     setLoading(true);
     try {
-      const supabase = createClient();
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider: "google",
-        options: {
-          redirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(redirect)}`,
-        },
-      });
-      if (error) {
-        toast.error(error.message || "התחברות עם Google נכשלה");
+      const { url } = await apiClient.auth.startOAuthGoogle({ redirect });
+      window.location.assign(url);
+      // Intentionally do not reset loading — the browser is about to
+      // navigate away, and re-enabling the button would only let the
+      // user click twice.
+    } catch (err) {
+      if (err instanceof ApiError) {
+        toast.error(err.message);
+      } else {
+        toast.error("התחברות עם Google נכשלה");
       }
-    } finally {
       setLoading(false);
     }
   }

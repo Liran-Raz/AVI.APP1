@@ -23,7 +23,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
-import { createClient } from "@/lib/supabase/client";
+import { apiClient } from "@/lib/api-client";
 import type { Organization, Profile } from "@/lib/types/database";
 
 const NAV_ITEMS = [
@@ -47,8 +47,12 @@ export function AppShell({
   const router = useRouter();
 
   async function handleLogout() {
-    const supabase = createClient();
-    await supabase.auth.signOut();
+    try {
+      await apiClient.auth.signOut();
+    } catch {
+      // signOut is idempotent / best-effort — even if the request fails,
+      // we still want to leave the protected area.
+    }
     router.push("/login");
     router.refresh();
   }

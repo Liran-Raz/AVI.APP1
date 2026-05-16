@@ -1,21 +1,41 @@
-import { type EmailOtpType } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
 
-import { createClient } from "@/lib/supabase/server";
+import type { EmailOtpType } from "@/server/auth/auth.adapter";
+import { sanitizeNextPath } from "@/server/auth/redirect";
+import * as authService from "@/server/services/auth.service";
+
+// GET /auth/confirm?token_hash=...&type=signup&next=/onboarding
+//
+// Backward-compatible URL: existing email links sent by Supabase point
+// here. Implementation now goes through auth.service so the route
+// handler stays provider-agnostic.
+
+const VALID_OTP_TYPES: ReadonlySet<EmailOtpType> = new Set<EmailOtpType>([
+  "signup",
+  "invite",
+  "magiclink",
+  "recovery",
+  "email_change",
+  "email",
+]);
+
+function isValidOtpType(value: string | null): value is EmailOtpType {
+  return value !== null && VALID_OTP_TYPES.has(value as EmailOtpType);
+}
 
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url);
-  const token_hash = searchParams.get("token_hash");
-  const type = searchParams.get("type") as EmailOtpType | null;
-  const next = searchParams.get("next") ?? "/onboarding";
+  const tokenHash = searchParams.get("token_hash");
+  const rawType = searchParams.get("type");
+  const next = sanitizeNextPath(searchParams.get("next"), "/onboarding");
 
-  if (token_hash && type) {
-    const supabase = await createClient();
-    const { error } = await supabase.auth.verifyOtp({ type, token_hash });
-    if (!error) {
+  if (tokenHash && isValidOtpType(rawType)) {
+    try {
+      await authService.verifyEmailOtp({ tokenHash, type: rawType });
       return NextResponse.redirect(`${origin}${next}`);
+    } catch (err) {
+      console.error("[auth/confirm] verify failed:", err);
     }
-    console.error("[auth/confirm] verifyOtp error:", error);
   }
 
   return NextResponse.redirect(`${origin}/login?error=confirm_failed`);

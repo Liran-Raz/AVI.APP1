@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import Link from "next/link";
 
 import { LoginForm } from "./login-form";
@@ -22,7 +23,12 @@ export default function LoginPage() {
             <CardDescription>הזן את פרטי ההתחברות שלך</CardDescription>
           </CardHeader>
           <CardContent>
-            <LoginForm />
+            {/* LoginForm uses useSearchParams() — Suspense lets Next.js
+                statically render the surrounding chrome and stream the
+                form once search params are available. */}
+            <Suspense fallback={null}>
+              <LoginForm />
+            </Suspense>
           </CardContent>
         </Card>
 
