@@ -30,11 +30,11 @@ export function SignupForm() {
     try {
       const supabase = createClient();
 
-      // 1) Create auth user
-      const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+      const { data, error } = await supabase.auth.signUp({
         email: form.email,
         password: form.password,
         options: {
+          emailRedirectTo: `${window.location.origin}/auth/confirm?next=/tasks`,
           data: {
             full_name: form.fullName,
             org_name: form.orgName,
@@ -43,16 +43,22 @@ export function SignupForm() {
         },
       });
 
-      if (signUpError) {
-        toast.error(signUpError.message || "הרשמה נכשלה");
+      if (error) {
+        toast.error(error.message || "הרשמה נכשלה");
         return;
       }
 
-      // The org + profile rows are created by a server-side handler after signup
-      // (or by a database trigger — to be wired up after migrations run).
-      toast.success("המשרד נפתח! שולח אותך לתור המשימות.");
-      router.push("/tasks");
-      router.refresh();
+      // The signup trigger created the org + owner profile already.
+      // Now check: do we have an immediate session (email confirmation off),
+      // or do we need the user to verify their email first?
+      if (data.session) {
+        toast.success("המשרד נפתח! שולח אותך לתור המשימות.");
+        router.push("/tasks");
+        router.refresh();
+      } else {
+        toast.success("שלחנו לך אימייל לאישור. לחץ על הלינק כדי להתחיל.");
+        router.push(`/login?pending=${encodeURIComponent(form.email)}`);
+      }
     } catch (err) {
       console.error(err);
       toast.error("שגיאה לא צפויה. נסה שוב.");

@@ -57,8 +57,18 @@ export function LoginForm() {
     }
   }
 
+  const pendingEmail = searchParams.get("pending");
+
   return (
     <div className="space-y-4">
+      {pendingEmail && (
+        <div className="rounded-md border border-primary/30 bg-primary/5 p-3 text-sm">
+          📧 שלחנו אימייל אישור ל-<span dir="ltr" className="font-mono">{pendingEmail}</span>.
+          <br />
+          לחץ על הלינק במייל ואז תוכל להתחבר.
+        </div>
+      )}
+
       <Button
         variant="outline"
         className="w-full h-11"
