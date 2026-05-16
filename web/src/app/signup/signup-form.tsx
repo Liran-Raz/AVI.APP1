@@ -52,8 +52,8 @@ export function SignupForm() {
       // Now check: do we have an immediate session (email confirmation off),
       // or do we need the user to verify their email first?
       if (data.session) {
-        toast.success("המשרד נפתח! שולח אותך לתור המשימות.");
-        router.push("/tasks");
+        toast.success("חשבון נפתח! מקים את המשרד...");
+        router.push("/onboarding");
         router.refresh();
       } else {
         toast.success("שלחנו לך אימייל לאישור. לחץ על הלינק כדי להתחיל.");

@@ -4,6 +4,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import type { Database } from "@/lib/types/database";
 
 const PROTECTED_PREFIXES = [
+  "/onboarding",
   "/tasks",
   "/calendar",
   "/clients",

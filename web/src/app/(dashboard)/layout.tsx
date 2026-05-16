@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 
 import { AppShell } from "@/components/dashboard/app-shell";
+import { createClient } from "@/lib/supabase/server";
 import { getCurrentUser } from "@/lib/supabase/queries";
 
 export default async function DashboardLayout({
@@ -8,9 +9,16 @@ export default async function DashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
   const session = await getCurrentUser();
   if (!session) {
-    redirect("/login");
+    // Authed but no profile yet — finish org setup first.
+    redirect("/onboarding");
   }
 
   return (
