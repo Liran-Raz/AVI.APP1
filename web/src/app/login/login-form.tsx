@@ -8,6 +8,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
+import { ApiError, apiClient } from "@/lib/api-client";
+// NOTE: this is the ONLY Supabase import that remains in a client component.
+// It is used exclusively to initiate the Google OAuth browser-redirect flow
+// (PKCE verifier handling + provider hop). Moving this server-side requires
+// a /api/auth/oauth route — out of scope for Round 5. See Round 4B.
 import { createClient } from "@/lib/supabase/client";
 
 export function LoginForm() {
@@ -23,17 +28,16 @@ export function LoginForm() {
     e.preventDefault();
     setLoading(true);
     try {
-      const supabase = createClient();
-      const { error } = await supabase.auth.signInWithPassword({ email, password });
-      if (error) {
-        toast.error(error.message || "התחברות נכשלה");
-        return;
-      }
+      await apiClient.auth.signIn({ email, password });
       router.push(redirect);
       router.refresh();
     } catch (err) {
-      toast.error("שגיאה לא צפויה");
-      console.error(err);
+      if (err instanceof ApiError) {
+        toast.error(err.message);
+      } else {
+        toast.error("שגיאה לא צפויה");
+        console.error(err);
+      }
     } finally {
       setLoading(false);
     }
@@ -42,6 +46,10 @@ export function LoginForm() {
   async function handleGoogleLogin() {
     setLoading(true);
     try {
+      // OAuth requires a browser redirect chain (PKCE, state cookies, then
+      // the provider hop). Supabase JS handles all of that locally, so we
+      // keep this one Supabase call until Round 4B builds a server-side
+      // /api/auth/oauth route to replace it.
       const supabase = createClient();
       const { error } = await supabase.auth.signInWithOAuth({
         provider: "google",
@@ -50,7 +58,7 @@ export function LoginForm() {
         },
       });
       if (error) {
-        toast.error(error.message || "התחברות עם Google נכשלה");
+        toast.error("התחברות עם Google נכשלה");
       }
     } finally {
       setLoading(false);

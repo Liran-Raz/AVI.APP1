@@ -7,7 +7,14 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { createClient } from "@/lib/supabase/client";
+import { ApiError, apiClient } from "@/lib/api-client";
+
+// Key for stashing the org-info portion of signup so /onboarding can
+// pre-fill it. The new /api/auth/signup endpoint only accepts identity
+// fields (email, password, fullName); org details belong to onboarding.
+// Storing them in sessionStorage preserves the existing UX without
+// stuffing org data into auth.users metadata.
+const PENDING_ONBOARDING_KEY = "avi.pendingOnboarding";
 
 export function SignupForm() {
   const router = useRouter();
@@ -28,40 +35,42 @@ export function SignupForm() {
     e.preventDefault();
     setLoading(true);
     try {
-      const supabase = createClient();
-
-      const { data, error } = await supabase.auth.signUp({
+      const result = await apiClient.auth.signUp({
         email: form.email,
         password: form.password,
-        options: {
-          emailRedirectTo: `${window.location.origin}/auth/confirm?next=/tasks`,
-          data: {
-            full_name: form.fullName,
-            org_name: form.orgName,
-            org_code: form.orgCode,
-          },
-        },
+        fullName: form.fullName,
       });
 
-      if (error) {
-        toast.error(error.message || "הרשמה נכשלה");
-        return;
+      // Stash org details locally so /onboarding can pre-fill them.
+      // Cleared by onboarding once the org is created.
+      try {
+        sessionStorage.setItem(
+          PENDING_ONBOARDING_KEY,
+          JSON.stringify({
+            orgName: form.orgName,
+            orgCode: form.orgCode,
+          }),
+        );
+      } catch {
+        // sessionStorage can throw in some private-mode browsers — fine,
+        // user will retype on /onboarding.
       }
 
-      // The signup trigger created the org + owner profile already.
-      // Now check: do we have an immediate session (email confirmation off),
-      // or do we need the user to verify their email first?
-      if (data.session) {
+      if (result.needsEmailConfirmation) {
+        toast.success("שלחנו לך אימייל לאישור. לחץ על הלינק כדי להתחיל.");
+        router.push(`/login?pending=${encodeURIComponent(form.email)}`);
+      } else {
         toast.success("חשבון נפתח! מקים את המשרד...");
         router.push("/onboarding");
         router.refresh();
-      } else {
-        toast.success("שלחנו לך אימייל לאישור. לחץ על הלינק כדי להתחיל.");
-        router.push(`/login?pending=${encodeURIComponent(form.email)}`);
       }
     } catch (err) {
-      console.error(err);
-      toast.error("שגיאה לא צפויה. נסה שוב.");
+      if (err instanceof ApiError) {
+        toast.error(err.message);
+      } else {
+        toast.error("שגיאה לא צפויה. נסה שוב.");
+        console.error(err);
+      }
     } finally {
       setLoading(false);
     }

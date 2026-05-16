@@ -3,15 +3,20 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { AlertTriangle, Loader2, LogOut } from "lucide-react";
+import { Loader2, LogOut } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { createClient } from "@/lib/supabase/client";
+import { ApiError, apiClient } from "@/lib/api-client";
+import { ORG_CODE_RE } from "@/server/validators/onboarding.schema";
 
-type RpcError = { code?: string; message?: string; details?: string };
+// Must match the constant in signup-form.tsx — kept inline (not exported)
+// because this is the only producer/consumer pair and the key is private.
+const PENDING_ONBOARDING_KEY = "avi.pendingOnboarding";
+
+type FormError = { code?: string; message: string };
 
 export function OnboardingClient({
   email,
@@ -29,11 +34,32 @@ export function OnboardingClient({
   const [orgCode, setOrgCode] = useState(initialOrgCode);
   const [fullName, setFullName] = useState(initialFullName);
   const [submitting, setSubmitting] = useState(false);
-  const [lastError, setLastError] = useState<RpcError | null>(null);
+  const [lastError, setLastError] = useState<FormError | null>(null);
+
+  // On first mount, recover any org details signup-form stashed for us.
+  // We only fill empty fields — props from the server take precedence.
+  // sessionStorage is a browser API not available during SSR, so this MUST
+  // run in an effect; the eslint rule against setState-in-effect doesn't
+  // apply when syncing with non-React external state.
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem(PENDING_ONBOARDING_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as { orgName?: string; orgCode?: string };
+      if (parsed.orgName && !initialOrgName) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        setOrgName(parsed.orgName);
+      }
+      if (parsed.orgCode && !initialOrgCode) setOrgCode(parsed.orgCode);
+    } catch {
+      // ignore — user will retype
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const autoRanRef = useRef(false);
   const canAutoBootstrap =
-    initialOrgName && /^[A-Z0-9-]{3,20}$/.test(initialOrgCode) && initialFullName;
+    initialOrgName && ORG_CODE_RE.test(initialOrgCode) && initialFullName;
 
   useEffect(() => {
     if (!canAutoBootstrap || autoRanRef.current) return;
@@ -51,26 +77,29 @@ export function OnboardingClient({
     setSubmitting(true);
     setLastError(null);
     try {
-      const supabase = createClient();
-      const { data, error } = await supabase.rpc("bootstrap_org", {
-        p_org_name: name,
-        p_org_code: code,
-        p_full_name: fname,
+      await apiClient.onboarding.bootstrap({
+        orgName: name,
+        orgCode: code,
+        fullName: fname,
       });
-      if (error) {
-        setLastError({
-          code: error.code,
-          message: error.message,
-          details: error.details ?? undefined,
-        });
-        if (!silent) toast.error(`שגיאה: ${error.message}`);
-        console.error("bootstrap_org error", error);
-        return;
+      // Success — drop any stashed signup hint and head to /tasks.
+      try {
+        sessionStorage.removeItem(PENDING_ONBOARDING_KEY);
+      } catch {
+        /* noop */
       }
-      console.log("bootstrap_org success", data);
       toast.success("המשרד הוקם — מעביר אותך לתור המשימות");
       router.push("/tasks");
       router.refresh();
+    } catch (err) {
+      if (err instanceof ApiError) {
+        setLastError({ code: err.code, message: err.message });
+        if (!silent) toast.error(`שגיאה: ${err.message}`);
+      } else {
+        setLastError({ message: "שגיאה לא צפויה" });
+        if (!silent) toast.error("שגיאה לא צפויה");
+        console.error(err);
+      }
     } finally {
       setSubmitting(false);
     }
@@ -82,14 +111,14 @@ export function OnboardingClient({
   }
 
   async function handleLogout() {
-    const supabase = createClient();
-    await supabase.auth.signOut();
+    try {
+      await apiClient.auth.signOut();
+    } catch {
+      /* best-effort — still navigate away */
+    }
     router.push("/login");
     router.refresh();
   }
-
-  const dbNotReady =
-    lastError?.code === "PGRST202" || lastError?.code === "PGRST205";
 
   if (canAutoBootstrap && submitting && !lastError) {
     return (
@@ -113,25 +142,6 @@ export function OnboardingClient({
             <span className="font-bold text-xl">AVI.APP</span>
           </div>
         </div>
-
-        {dbNotReady && (
-          <Card className="border-destructive/30 bg-destructive/5">
-            <CardHeader className="pb-3">
-              <div className="flex items-start gap-2">
-                <AlertTriangle className="size-5 text-destructive shrink-0 mt-0.5" />
-                <div>
-                  <CardTitle className="text-base text-destructive">
-                    מסד הנתונים עדיין לא הוקם
-                  </CardTitle>
-                  <CardDescription className="mt-1 text-xs">
-                    PostgREST מחזיר {lastError?.code} — הפונקציה/הטבלאות לא קיימות ב-Supabase.
-                    צריך להריץ את `supabase/APPLY_ALL.sql` ב-SQL Editor פעם אחת.
-                  </CardDescription>
-                </div>
-              </div>
-            </CardHeader>
-          </Card>
-        )}
 
         <Card>
           <CardHeader>
@@ -190,7 +200,7 @@ export function OnboardingClient({
                 {submitting ? "מקים..." : "סיים והכנס למשרד"}
               </Button>
 
-              {lastError && !dbNotReady && (
+              {lastError && (
                 <p className="text-xs text-destructive text-center">
                   {lastError.message}
                 </p>
