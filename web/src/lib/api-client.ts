@@ -10,6 +10,21 @@ import type {
   SignupPayload,
 } from "@/server/validators/auth.schema";
 import type { BootstrapOrgPayload } from "@/server/validators/onboarding.schema";
+import type {
+  CreateClientPayload,
+  ListClientsQuery,
+  UpdateClientPayload,
+} from "@/server/validators/clients.schema";
+import type { ClientDTO } from "@/server/services/clients.service";
+
+// Re-export DTOs so client components have one stable import path.
+export type { ClientDTO } from "@/server/services/clients.service";
+export type {
+  CreateClientPayload,
+  UpdateClientPayload,
+  ListClientsQuery,
+} from "@/server/validators/clients.schema";
+export { BUSINESS_TYPES } from "@/server/validators/clients.schema";
 
 // ============================================================
 // Response payloads — match what each /api route actually returns
@@ -105,8 +120,26 @@ function postJson<T>(path: string, body?: unknown): Promise<T> {
   });
 }
 
+function patchJson<T>(path: string, body: unknown): Promise<T> {
+  return call<T>(path, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body ?? {}),
+  });
+}
+
 function getJson<T>(path: string): Promise<T> {
   return call<T>(path, { method: "GET" });
+}
+
+function toQueryString(params: Record<string, unknown>): string {
+  const sp = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) {
+    if (v === undefined || v === null || v === "") continue;
+    sp.set(k, String(v));
+  }
+  const s = sp.toString();
+  return s ? `?${s}` : "";
 }
 
 // ============================================================
@@ -135,5 +168,20 @@ export const apiClient = {
   },
   me: {
     get: () => getJson<Me>("/api/me"),
+  },
+  clients: {
+    list: (query?: Partial<ListClientsQuery>) =>
+      getJson<{ items: ClientDTO[] }>(
+        `/api/clients${toQueryString(query ?? {})}`,
+      ),
+    get: (id: string) => getJson<ClientDTO>(`/api/clients/${id}`),
+    create: (input: CreateClientPayload) =>
+      postJson<ClientDTO>("/api/clients", input),
+    update: (id: string, patch: UpdateClientPayload) =>
+      patchJson<ClientDTO>(`/api/clients/${id}`, patch),
+    archive: (id: string) =>
+      postJson<ClientDTO>(`/api/clients/${id}/archive`),
+    restore: (id: string) =>
+      postJson<ClientDTO>(`/api/clients/${id}/restore`),
   },
 };
