@@ -3,13 +3,15 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Loader2 } from "lucide-react";
+import { AlertTriangle, Loader2, LogOut } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { createClient } from "@/lib/supabase/client";
+
+type RpcError = { code?: string; message?: string; details?: string };
 
 export function OnboardingClient({
   email,
@@ -27,8 +29,8 @@ export function OnboardingClient({
   const [orgCode, setOrgCode] = useState(initialOrgCode);
   const [fullName, setFullName] = useState(initialFullName);
   const [submitting, setSubmitting] = useState(false);
+  const [lastError, setLastError] = useState<RpcError | null>(null);
 
-  // If signup metadata is complete, try to bootstrap automatically.
   const autoRanRef = useRef(false);
   const canAutoBootstrap =
     initialOrgName && /^[A-Z0-9-]{3,20}$/.test(initialOrgCode) && initialFullName;
@@ -47,6 +49,7 @@ export function OnboardingClient({
     silent = false,
   ) {
     setSubmitting(true);
+    setLastError(null);
     try {
       const supabase = createClient();
       const { data, error } = await supabase.rpc("bootstrap_org", {
@@ -55,6 +58,11 @@ export function OnboardingClient({
         p_full_name: fname,
       });
       if (error) {
+        setLastError({
+          code: error.code,
+          message: error.message,
+          details: error.details ?? undefined,
+        });
         if (!silent) toast.error(`שגיאה: ${error.message}`);
         console.error("bootstrap_org error", error);
         return;
@@ -73,8 +81,17 @@ export function OnboardingClient({
     await bootstrap(orgName, orgCode, fullName);
   }
 
-  // While auto-bootstrap is in flight, show a friendly loading state.
-  if (canAutoBootstrap && submitting) {
+  async function handleLogout() {
+    const supabase = createClient();
+    await supabase.auth.signOut();
+    router.push("/login");
+    router.refresh();
+  }
+
+  const dbNotReady =
+    lastError?.code === "PGRST202" || lastError?.code === "PGRST205";
+
+  if (canAutoBootstrap && submitting && !lastError) {
     return (
       <div className="flex flex-1 items-center justify-center px-4 py-12 bg-muted/30">
         <div className="text-center space-y-3">
@@ -97,6 +114,25 @@ export function OnboardingClient({
           </div>
         </div>
 
+        {dbNotReady && (
+          <Card className="border-destructive/30 bg-destructive/5">
+            <CardHeader className="pb-3">
+              <div className="flex items-start gap-2">
+                <AlertTriangle className="size-5 text-destructive shrink-0 mt-0.5" />
+                <div>
+                  <CardTitle className="text-base text-destructive">
+                    מסד הנתונים עדיין לא הוקם
+                  </CardTitle>
+                  <CardDescription className="mt-1 text-xs">
+                    PostgREST מחזיר {lastError?.code} — הפונקציה/הטבלאות לא קיימות ב-Supabase.
+                    צריך להריץ את `supabase/APPLY_ALL.sql` ב-SQL Editor פעם אחת.
+                  </CardDescription>
+                </div>
+              </div>
+            </CardHeader>
+          </Card>
+        )}
+
         <Card>
           <CardHeader>
             <CardTitle className="text-2xl">בואו נסיים את ההקמה</CardTitle>
@@ -106,8 +142,18 @@ export function OnboardingClient({
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-4">
-              <div className="rounded-md bg-muted px-3 py-2 text-xs text-muted-foreground" dir="ltr">
-                {email}
+              <div className="flex items-center justify-between gap-2 rounded-md bg-muted px-3 py-2 text-xs">
+                <span className="text-muted-foreground" dir="ltr">
+                  {email}
+                </span>
+                <button
+                  type="button"
+                  onClick={handleLogout}
+                  className="inline-flex items-center gap-1 text-primary hover:underline"
+                >
+                  <LogOut className="size-3" />
+                  התחבר כמשתמש אחר
+                </button>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="fullName">שמך המלא</Label>
@@ -143,6 +189,12 @@ export function OnboardingClient({
               <Button type="submit" className="w-full h-11" disabled={submitting}>
                 {submitting ? "מקים..." : "סיים והכנס למשרד"}
               </Button>
+
+              {lastError && !dbNotReady && (
+                <p className="text-xs text-destructive text-center">
+                  {lastError.message}
+                </p>
+              )}
             </form>
           </CardContent>
         </Card>
