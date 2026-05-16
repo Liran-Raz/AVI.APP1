@@ -1,30 +1,10 @@
-import { createServerClient } from "@supabase/ssr";
-import { cookies } from "next/headers";
+// DEPRECATED — use `@/server/db/supabase` directly.
+// Kept temporarily so existing imports don't break mid-refactor.
+//
+// New server-side code should import:
+//   import { createSupabaseServerClient } from "@/server/db/supabase";
 
-import type { Database } from "@/lib/types/database";
+import { createSupabaseServerClient } from "@/server/db/supabase";
 
-export async function createClient() {
-  const cookieStore = await cookies();
-
-  return createServerClient<Database>(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll() {
-          return cookieStore.getAll();
-        },
-        setAll(cookiesToSet) {
-          try {
-            cookiesToSet.forEach(({ name, value, options }) =>
-              cookieStore.set(name, value, options),
-            );
-          } catch {
-            // The `setAll` method was called from a Server Component.
-            // Safe to ignore if middleware refreshes sessions.
-          }
-        },
-      },
-    },
-  );
-}
+// Old API exposed `createClient`. Preserve the name for now.
+export const createClient = createSupabaseServerClient;
