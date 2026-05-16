@@ -1,10 +1,15 @@
+import { redirect } from "next/navigation";
 import { ListChecks } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { getCurrentUser } from "@/lib/supabase/queries";
+import { getCurrentSession } from "@/server/auth/session";
 
 export default async function TasksPage() {
-  const session = await getCurrentUser();
+  // (dashboard)/layout already enforces this — these guards are defense in
+  // depth and also narrow types for the JSX below.
+  const session = await getCurrentSession();
+  if (!session) redirect("/login");
+  if (!session.profile || !session.organization) redirect("/onboarding");
 
   return (
     <div className="container mx-auto px-4 md:px-6 py-6 md:py-8 max-w-6xl">
@@ -22,9 +27,9 @@ export default async function TasksPage() {
         <div className="size-12 mx-auto rounded-full bg-primary/10 text-primary flex items-center justify-center mb-4">
           <ListChecks className="size-6" />
         </div>
-        <h2 className="font-semibold text-lg mb-2">ברוך הבא, {session?.profile.full_name}!</h2>
+        <h2 className="font-semibold text-lg mb-2">ברוך הבא, {session.profile.full_name}!</h2>
         <p className="text-muted-foreground text-sm max-w-md mx-auto mb-4">
-          המשרד שלך &quot;{session?.organization.name}&quot; מוכן. כשתיצור את המשימה הראשונה היא תופיע כאן.
+          המשרד שלך &quot;{session.organization.name}&quot; מוכן. כשתיצור את המשימה הראשונה היא תופיע כאן.
         </p>
         <Button>צור משימה ראשונה</Button>
       </div>
