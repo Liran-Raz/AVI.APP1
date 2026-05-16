@@ -43,6 +43,9 @@ desktop.ini
 *.swo
 *~
 
+# Claude Code — local session settings, never commit
+.claude/
+
 # Supabase local development
 supabase/.branches
 supabase/.temp
