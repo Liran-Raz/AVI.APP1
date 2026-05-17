@@ -71,6 +71,11 @@ export function WeekGrid({
 
   return (
     <div className="border border-border rounded-lg bg-card overflow-hidden">
+      {/* Horizontal scroll on narrow screens: at ~720px the day
+          columns become readable; below that we let the user pan
+          rather than squishing every column to a few pixels. */}
+      <div className="overflow-x-auto">
+        <div className="min-w-[720px]">
       {/* Day header row (the actual grid lives below) */}
       <div
         className="grid bg-muted/40 border-b border-border"
@@ -163,6 +168,8 @@ export function WeekGrid({
             })}
           </div>
         ))}
+      </div>
+        </div>
       </div>
 
       {/* Tasks outside the hour window (e.g., at 06:00) are not
