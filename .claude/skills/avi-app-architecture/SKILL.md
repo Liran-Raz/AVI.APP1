@@ -49,8 +49,14 @@ Firebase + Cloud SQL later by rewriting only the adapter and repositories.
   intentionally absent. If you think you need it, **stop** and ask Liran
   first — list the specific operation and why RLS + SECURITY DEFINER RPCs
   can't cover it.
-- ❌ Do not change `supabase/migrations/` without explicit approval. The
-  Supabase project is connected to GitHub and auto-applies new migrations.
+- ❌ Do not change `supabase/migrations/` without explicit approval.
+  Migrations in this project are applied **manually** through the Supabase
+  Dashboard → SQL Editor — there is no GitHub Action or Supabase CLI
+  automation in this repo that applies them after merge. After merging
+  code that depends on a new migration, **apply the migration and verify
+  the DB schema (e.g., via `information_schema.columns` / `pg_enum` /
+  `pg_indexes`) before resuming authenticated browser QA**, otherwise
+  runtime queries will fail on the missing schema.
 - ❌ Do not delete `supabase/migrations/0005_signup_trigger.sql`. It is
   deprecated but kept on purpose (history / rollback safety).
 - ❌ Do not touch `src/proxy.ts` or `src/lib/supabase/middleware.ts`

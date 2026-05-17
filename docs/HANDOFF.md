@@ -1,4 +1,4 @@
-# AVI.APP — Session Handoff (2026-05-17 — MVP build complete, awaiting QA)
+# AVI.APP — Session Handoff (2026-05-17 — MVP core QA passed, doc cleanup)
 
 **You are continuing a session that was started by another Claude.** Read this
 top-to-bottom before doing anything. It is the fastest way to get the same
@@ -11,16 +11,24 @@ context the previous session had, without spending tokens re-discovering it.
 - **Product**: SaaS task-management for Israeli accounting offices. Hebrew RTL.
 - **Stack**: Next.js 16 + TypeScript + Tailwind v4 + shadcn/ui · Supabase
   (Postgres + Auth + Realtime + RLS) · Vercel.
-- **Current branch**: `feat/design-tokens` on origin — holds the entire
-  remaining MVP build (Phase 0 design tokens + migration 0007 + features
-  8B, 9, 10, 11, 12, 13). `main` is unchanged at `5c8e858` (post-Round A).
-- **What just finished**: **Autonomous build of all remaining MVP features**.
-  Liran approved working without per-feature approvals; build finished
-  end-to-end with tsc / lint / build green on every commit. No manual QA
-  in the browser yet — Liran will run it after merge.
-- **What's next**: **Liran's end-to-end QA → merge `feat/design-tokens` to
-  `main` → production deploy** (Vercel + Supabase prod URL config +
-  Resend keys for email, all documented below).
+- **Current branch**: `main` (clean, up to date with origin). PR #3
+  (`feat/design-tokens` → `main`) was merged 2026-05-17 as merge commit
+  `e49ab0d`. `main` now holds Phase 0 design tokens, migration 0007, and
+  features 8B / 9 / 10 / 11 / 12 / 13.
+- **What just finished**: **MVP core QA passed** end-to-end in the browser
+  by Liran — login, `/tasks` Kanban, status transitions, priority, archive /
+  unarchive, delete-to-trash / restore, `/calendar`, `/clients/[id]`,
+  contacts CRUD, primary-contact DB trigger. Migration 0007 was applied
+  **manually** through the Supabase Dashboard SQL Editor and verified —
+  there is **no auto-apply automation in this repo** (we discovered this
+  during the 0007 rollout; see "Operational state" and the migration
+  workflow note).
+- **What's next**: optional cleanups (branch + worktree removal) and the
+  production deploy path (Vercel + Supabase prod URL config + email
+  confirmation re-enabled + optional Resend / Google OAuth + Israeli
+  Privacy Law compliance). Deferred items: notification-bell runtime QA
+  (needs a second user via team management), physical mobile / PWA
+  install QA, full RTL mobile pass, dashboard screen.
 - **Working directory**: `D:\AVI.APP` (Windows 11, PowerShell). A leftover
   Claude worktree from PR #2 still exists at
   `D:\AVI.APP\.claude\worktrees\cool-volhard-fd4cd5`. Cleanup commands in
@@ -182,32 +190,81 @@ Plus: **architecture refactor (PR #1, `6d6e261`) + Round A merge (PR #2, `6c762a
 
 | Item | Status |
 |---|---|
-| Liran's end-to-end browser QA of `feat/design-tokens` | **pending** |
-| Merge `feat/design-tokens` → `main` (one large PR, ~12 commits) | pending QA |
-| Auto-apply migration 0007 (triggers on the merge above) | pending |
+| Liran's end-to-end browser QA of the MVP core | ✅ **passed** 2026-05-17 (10 of 12 steps; 2 deferred) |
+| Merge `feat/design-tokens` → `main` (PR #3, 11 commits) | ✅ **merged 2026-05-17** (`e49ab0d`) |
+| Apply migration 0007 (manually, via Supabase Dashboard SQL Editor) | ✅ **applied + verified** — three new columns + `task_priority` enum + three partial indexes confirmed via `information_schema` / `pg_enum` / `pg_indexes` queries |
+| Notification-bell runtime QA | ⏸️ deferred — needs a second user in the org to exercise the `notify_on_task_assignment` trigger naturally (waits for team-management feature) |
+| Physical mobile / PWA install QA on a real device | ⏸️ deferred — F12 responsive view confirmed visually |
+| Full RTL mobile spot-checks | ⏸️ deferred |
 | Vercel project setup — env vars + production domain | pending |
 | Supabase: production Site URL + Redirect URLs | pending |
 | Re-enable email confirmation in Supabase before prod | pending |
 | Resend API key + verified domain → set `RESEND_API_KEY` + `MAIL_FROM` | optional but recommended |
 | Google OAuth provider config (Supabase + Google Cloud) | optional |
 | Israeli Privacy Law compliance — register DB, security officer, contracts | **legal prerequisite**, customer's responsibility |
-| Drag-and-drop on calendar / dashboard screen / multi-user team management | post-MVP |
+| Auto-apply pipeline for migrations (Supabase CLI in GitHub Action, OR Supabase's "Database Migrations from GitHub" dashboard feature) | optional — **not configured today**; see "Operational state" |
+| Dashboard screen ("בוקר טוב, לירן" + KPI cards + kanban preview) | post-MVP |
+| Drag-and-drop on calendar / multi-user team management | post-MVP |
 | Unique constraint on `(org_id, lower(tax_id))` for `clients` | post-MVP |
 
 ---
 
 ## 🎬 Last action (where the previous session stopped)
 
-**Autonomous build of the remaining MVP features (8B, 9, 10, 11, 12, 13)
-plus Phase 0 design tokens and migration 0007**, on branch
-`feat/design-tokens`. tsc / lint / build green on every commit.
+**MVP core QA passed end-to-end by Liran in the browser**, after the
+autonomous build was merged via PR #3 (`e49ab0d`).
 
-**Liran handed me the autonomy at the start of feature #9** ("אני רוצה
-שתעבוד בעצמך ללא אישורים ממני ואני יגיע אחרי שלב 13 לעשות לך QA"), so the
-plan/approval gate that's documented in `.claude/skills/avi-app-architecture`
-was deliberately bypassed for this stretch. Commit messages document the
-product decisions I made along the way; see the "Round-level decisions"
-section below for the ones most likely to need a second look.
+The migration story is important to read in full before adding another
+one: the autonomous build assumed Supabase auto-applies migrations from
+GitHub on merge (that line was inherited from an earlier HANDOFF). When
+the verification query came back empty after the merge, we audited the
+repo and confirmed **there is no auto-apply automation in this project**
+— no `.github/workflows/`, no `supabase/config.toml`, no Supabase CLI
+link. The only path that's actually wired is **manual application via
+the Supabase Dashboard SQL Editor**. Liran applied migration 0007 that
+way and the verification query then returned all three new columns, the
+`task_priority` enum with `urgent / normal / optional`, and the three
+partial indexes. Only after that did authenticated browser QA begin.
+
+The misleading "GitHub integration auto-detects migrations" line has
+been removed from this file and from `.claude/skills/avi-app-architecture/SKILL.md`
+in this doc-cleanup pass. The actual current rule lives in the
+"Operational state" table below and in the skill's critical do-nots.
+
+### QA Summary (2026-05-17)
+
+| Verified end-to-end ✅ | Deferred ⏸️ |
+|---|---|
+| Login | Notification bell runtime (needs a second user) |
+| `/tasks` page render (Kanban + toolbar + lifecycle filter) | Physical mobile / PWA install on a real device |
+| Create task (Dialog, validators, default due_at = today 18:00) | Full RTL mobile spot-checks |
+| Status transitions (`new → received → in_progress → done` + Kanban regroup) | |
+| Priority change + chip colors + priority filter | |
+| Archive / Unarchive (lifecycle filter "בארכיון") | |
+| Delete-to-trash / Restore (lifecycle filter "מחוקות") | |
+| `/calendar` (week grid, hour rows, click-to-edit via shared Dialog, prev/next/today nav) | |
+| `/clients/[id]` (header card, info grid, contacts section) | |
+| Client contacts CRUD (create / edit / delete) | |
+| `is_primary` single-row DB trigger (setting one primary unsets the previous) | |
+
+### Round-A decisions verified in QA
+
+The decisions baked in during the autonomous build all held up under
+real use — Kanban groups `new + received` into "לביצוע"; no assignment
+dropdown in single-user org; soft delete recoverable from "מחוקות";
+archive and delete are independent operations; calendar hour window
+08:00–20:00 with an overflow footer for tasks outside it; tasks default
+to today 18:00; priority chip colors map to red / muted / indigo for
+urgent / normal / optional. No surprises in the browser.
+
+### What's NOT production-ready yet
+
+The code is feature-complete for the MVP, but the project is **not yet
+deployed**. Open items: Vercel deployment, Supabase production
+Site URL / Redirect URLs, email confirmation re-enabled, optional
+Resend keys, optional Google OAuth provider, and the Israeli Privacy
+Law compliance (legal, customer's responsibility — see
+`docs/ARCHITECTURE.md §13`).
 
 **Round-level decisions worth a second look during QA:**
 
@@ -300,11 +357,11 @@ From [[user-avi]] memory:
 | Supabase plan | Free (~95 ₪/month at Pro for production) |
 | Database password | Set during project creation, NOT in code |
 | GitHub repo | https://github.com/Liran-Raz/AVI.APP1 |
-| GitHub integration | Connected to Supabase (auto-detects migrations from `supabase/migrations/`) |
+| Supabase migration workflow | **Manual** — paste each `supabase/migrations/00XX_*.sql` into Supabase Dashboard → SQL Editor and Run, then verify the schema (`information_schema.columns`, `pg_enum`, `pg_indexes`). There is **no GitHub Action and no Supabase CLI automation** in this repo today (no `.github/workflows/`, no `supabase/config.toml`). An earlier handoff line claimed "GitHub integration auto-detects migrations" — that was inherited and inaccurate; we confirmed it during the 0007 rollout. Adding automation is on the optional/post-MVP list; until then, every new migration is a deliberate, human step. |
 | Site URL (dev) | `http://localhost:3000` |
 | Google OAuth | Code is ready (server-side via `/api/auth/oauth/google`); **provider not yet enabled in Supabase**. Error message `"Unsupported provider: provider is not enabled"` = configuration, not code. See ARCHITECTURE §11. |
 | Email confirmation | Disabled in dev (we asked the user to turn it off in Supabase → Authentication → Providers → Email → "Confirm email"). Turn back on before production. |
-| First user | `liran995@gmail.com`, profile `לירן רז`, org `לירן בדיקה 1` (code `LIRAN`), role `owner` |
+| First user | existing test user, profile `לירן רז`, org `לירן בדיקה 1` (code `LIRAN`), role `owner` |
 | Service role key | **Not used**, **not stored anywhere**. Intentional. |
 
 ### Israeli compliance (regulatory, not code)
@@ -355,8 +412,8 @@ fd12950 Add session handoff document
 
 | Thing | State | What to do |
 |---|---|---|
-| Branch `feat/design-tokens` on origin | 9 commits ahead of main, has the entire MVP build | Open PR / use the URL from `git push` output; Liran QA → merge with merge-commit |
-| Migration 0007 | Committed to `feat/design-tokens`, NOT YET APPLIED to live Supabase | Auto-applies when feat/design-tokens merges to main (GitHub-Supabase integration). Until then, runtime queries that touch `tasks.priority` / `archived_at` / `deleted_at` will fail. |
+| Branch `feat/design-tokens` | merged into `main` via PR #3 (`e49ab0d`) on 2026-05-17 | Local + remote can be deleted at Liran's convenience: `git branch -d feat/design-tokens && git push origin --delete feat/design-tokens` |
+| Migration 0007 | ✅ **applied to live Supabase manually** via SQL Editor on 2026-05-17 | Verified via `information_schema.columns` (3 new columns), `pg_enum` (`urgent / normal / optional`), and `pg_indexes` (3 partial indexes). **Do NOT re-run** — the file is not idempotent (`CREATE TYPE` would fail). For future migrations, follow the same manual workflow; see "Supabase migration workflow" in the table above. |
 | Worktree `D:\AVI.APP\.claude\worktrees\cool-volhard-fd4cd5` | leftover from PR #2 | Remove with: `git worktree remove .claude/worktrees/cool-volhard-fd4cd5 && git branch -d claude/cool-volhard-fd4cd5` |
 | Remote branch `origin/claude/cool-volhard-fd4cd5` | still on GitHub | Remove with `git push origin --delete claude/cool-volhard-fd4cd5` once Liran approves |
 | `web/.env.local` in worktree | copied from main repo for Round A build | Gitignored. Will disappear with worktree removal. |
