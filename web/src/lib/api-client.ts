@@ -16,6 +16,13 @@ import type {
   UpdateClientPayload,
 } from "@/server/validators/clients.schema";
 import type { ClientDTO } from "@/server/services/clients.service";
+import type {
+  CreateTaskPayload,
+  ListTasksQuery,
+  StatusTransitionPayload,
+  UpdateTaskPayload,
+} from "@/server/validators/tasks.schema";
+import type { TaskDTO } from "@/server/services/tasks.service";
 
 // Re-export DTOs so client components have one stable import path.
 export type { ClientDTO } from "@/server/services/clients.service";
@@ -25,6 +32,22 @@ export type {
   ListClientsQuery,
 } from "@/server/validators/clients.schema";
 export { BUSINESS_TYPES } from "@/server/validators/clients.schema";
+
+export type { TaskDTO } from "@/server/services/tasks.service";
+export type {
+  CreateTaskPayload,
+  UpdateTaskPayload,
+  ListTasksQuery,
+  StatusTransitionPayload,
+  TaskStatusValue,
+  TaskPriorityValue,
+  LifecycleFilter,
+} from "@/server/validators/tasks.schema";
+export {
+  TASK_STATUSES,
+  TASK_PRIORITIES,
+  LIFECYCLE_FILTERS,
+} from "@/server/validators/tasks.schema";
 
 // ============================================================
 // Response payloads — match what each /api route actually returns
@@ -183,5 +206,32 @@ export const apiClient = {
       postJson<ClientDTO>(`/api/clients/${id}/archive`),
     restore: (id: string) =>
       postJson<ClientDTO>(`/api/clients/${id}/restore`),
+  },
+  tasks: {
+    list: (query?: Partial<ListTasksQuery>) => {
+      // `status` is an array on the backend — encode as CSV in the URL.
+      const params: Record<string, unknown> = { ...(query ?? {}) };
+      if (Array.isArray(params.status)) {
+        params.status = params.status.join(",");
+      }
+      return getJson<{ items: TaskDTO[] }>(
+        `/api/tasks${toQueryString(params)}`,
+      );
+    },
+    get: (id: string) => getJson<TaskDTO>(`/api/tasks/${id}`),
+    create: (input: CreateTaskPayload) =>
+      postJson<TaskDTO>("/api/tasks", input),
+    update: (id: string, patch: UpdateTaskPayload) =>
+      patchJson<TaskDTO>(`/api/tasks/${id}`, patch),
+    setStatus: (id: string, payload: StatusTransitionPayload) =>
+      postJson<TaskDTO>(`/api/tasks/${id}/status`, payload),
+    archive: (id: string) =>
+      postJson<TaskDTO>(`/api/tasks/${id}/archive`),
+    unarchive: (id: string) =>
+      postJson<TaskDTO>(`/api/tasks/${id}/unarchive`),
+    delete: (id: string) =>
+      postJson<TaskDTO>(`/api/tasks/${id}/delete`),
+    restore: (id: string) =>
+      postJson<TaskDTO>(`/api/tasks/${id}/restore`),
   },
 };
