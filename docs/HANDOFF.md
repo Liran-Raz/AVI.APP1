@@ -1,4 +1,4 @@
-# AVI.APP — Session Handoff (2026-05-17)
+# AVI.APP — Session Handoff (2026-05-18)
 
 **You are continuing a session that was started by another Claude.** Read this
 top-to-bottom before doing anything. It is the fastest way to get the same
@@ -12,15 +12,19 @@ context the previous session had, without spending tokens re-discovering it.
 - **Stack**: Next.js 16 + TypeScript + Tailwind v4 + shadcn/ui · Supabase
   (Postgres + Auth + Realtime + RLS) · Vercel.
 - **Current branch**: `main` (clean, up to date with `origin/main`).
-- **What just finished**: A 7-round architecture refactor that took the
-  codebase from "frontend talks directly to Supabase" to a proper layered
-  architecture (client → apiClient → API routes → services → repositories →
-  Supabase). The refactor was merged via PR #1; commit `6d6e261`. The
-  refactor branch was deleted.
-- **What's next**: Implementation of feature #8 — **Clients CRUD**. A
-  detailed technical plan was prepared (see "Last action" below) and is
-  **awaiting user approval** before any code is written.
-- **Working directory**: `D:\AVI.APP` (Windows 11, PowerShell).
+- **What just finished**: **Round A of feature #8 — Clients CRUD** — merged
+  via PR #2 on 2026-05-17, fast-forward to commit `6c762ac`. Includes
+  validators, repository, service, 6 endpoints (list/get/create/update/
+  archive/restore), `/clients` dashboard UI, and one hygiene commit that
+  added `.claude/` to `.gitignore`. Manual QA passed by Liran in the browser.
+- **What's next**: Decide on **Round B (client_contacts)** vs **feature #9
+  (Tasks queue)** as the next round. Either way, **awaiting user approval
+  ("תתחיל ...")** before any code is written. See "Last action" below.
+- **Working directory**: `D:\AVI.APP` (Windows 11, PowerShell). A leftover
+  Claude worktree from PR #2 still exists at
+  `D:\AVI.APP\.claude\worktrees\cool-volhard-fd4cd5` (branch
+  `claude/cool-volhard-fd4cd5`, fully merged). The user has been told it can
+  be removed at his convenience — see "Operational state" below.
 - **The user is Liran (`liran995@gmail.com`)**, Hebrew-speaking. He is a
   product owner / founder, not a deep coder. He drives decisions; you drive
   implementation. Talk Hebrew unless asked otherwise.
@@ -68,11 +72,11 @@ Read these in order. They are the canonical references:
    shape; comments explain `NEXT_PUBLIC_*` rules.
 4. **This file (`docs/HANDOFF.md`)** — session continuity.
 
-Memory files (auto-loaded by Claude Code from
-`C:\Users\User\.claude\projects\C--Users-User\memory\`):
-- `MEMORY.md` — index
-- `user_avi.md` — user profile (Liran)
-- `project_avi_app.md` — project context
+Memory files (auto-loaded by Claude Code; check both legacy and current
+project-id paths — Claude Code derives the path from the working dir):
+- `C:\Users\User\.claude\projects\C--Users-User\memory\` — legacy path
+- `C:\Users\User\.claude\projects\D--AVI-APP\memory\` — current path
+- Files in each: `MEMORY.md` (index), `user_avi.md` (Liran), `project_avi_app.md`
 
 ---
 
@@ -156,7 +160,7 @@ D:\AVI.APP\
 
 ---
 
-## ✅ Done — features 1–7 of 13
+## ✅ Done — features 1–7 + feature 8 Round A
 
 | # | Feature | Notes |
 |---|---------|-------|
@@ -167,51 +171,75 @@ D:\AVI.APP\
 | 5 | Supabase project provisioned + migrations applied | project ref `xsuvwihfcxinorzutbve`, region `eu-central-1` |
 | 6 | Auth (email/password) + Google OAuth code path | OAuth needs provider config — see below |
 | 7 | Org signup + onboarding (creates org + owner profile) | First user successfully onboarded: org "לירן בדיקה 1" |
+| **8A** | **Clients CRUD Round A — list, get, create, edit, archive, restore + search + filters** | PR #2, merged 2026-05-17 (`6c762ac`). 4 API routes, `/clients` page, role gating on archive/restore. Manual QA passed. |
 
 Plus: **architecture refactor (7 rounds, PR #1, merged 2026-05-16)**.
 
 ---
 
-## 🔜 Open — features 8–13
+## 🔜 Open — features 8B, 9–13
 
 | # | Feature | Depends on |
 |---|---------|-----------|
-| **8** | **Clients CRUD** (create, list, view, edit, archive; contacts as Round B) | — |
-| 9 | Tasks queue (CRUD, status transitions, sorted by `due_at`) | 8 (FK to client) |
+| 8B | Clients CRUD Round B — `client_contacts` nested under client | 8A ✓ |
+| 9 | Tasks queue (CRUD, status transitions, sorted by `due_at`) | 8A ✓ (FK to client) |
 | 10 | Weekly calendar (7-col Sun→Sat, drag-and-drop, week nav) | 9 |
 | 11 | Realtime + in-app bell notifications | 9 |
 | 12 | Email notifications on task assignment | 9 |
-| 13 | PWA + mobile polish | 8–12 |
+| 13 | PWA + mobile polish | 8B, 9–12 |
 
 Implied / not in the 13-list, may be added later:
 - Owner inviting employees to the office (currently only one user per org)
+- Unique constraint on `(org_id, lower(tax_id))` for `clients` (deferred from Round A)
 
 ---
 
 ## 🎬 Last action (where the previous session stopped)
 
-Prepared a detailed implementation plan for **feature #8 — Clients CRUD**.
-The plan covers:
+**Round A of feature #8 (Clients CRUD) was implemented, manually QA'd by
+Liran, and merged to main via PR #2.** Then a post-merge verification on
+`main` passed clean (tsc / lint / build green, runtime sanity routes
+correct).
 
-- No new migration needed (`clients` + `client_contacts` tables exist).
-- 6 API routes: `GET/POST /api/clients`, `GET/PATCH /api/clients/[id]`,
-  `POST /api/clients/[id]/archive`, `POST /api/clients/[id]/restore`.
-- Repository: `clients.repository.ts` with `findManyByOrgId`,
-  `findByIdAndOrgId`, `create`, `updateByIdAndOrgId`, `setActiveStatus`.
-- Service: `clients.service.ts` with `listClients`, `getClient`,
-  `createClient`, `updateClient`, `archiveClient`, `restoreClient`.
-- Validators: `clients.schema.ts` with zod (Create / Update / ListQuery / IdParam).
-- apiClient: `apiClient.clients = { list, get, create, update, archive, restore }`.
-- UI: `/clients` list (search + filter by business_type + archived toggle),
-  create/edit via Dialog/Sheet, optional detail page at `/clients/[id]`.
-- Pattern: triple defense-in-depth on multi-tenancy (RLS + repository
-  explicit `orgId` filter + service uses `session.organization.id`).
-- Split into **Round A** (core CRUD without contacts) and **Round B**
-  (client contacts CRUD nested under client).
+**Round A scope (delivered):**
+- No migration needed (`clients` table already existed from migration `0001`).
+- 4 API route files (6 endpoints): `GET/POST /api/clients`,
+  `GET/PATCH /api/clients/[id]`, `POST /api/clients/[id]/archive`,
+  `POST /api/clients/[id]/restore`.
+- `clients.repository.ts`, `clients.service.ts`, `clients.schema.ts`.
+- `apiClient.clients = { list, get, create, update, archive, restore }`.
+- `/clients` dashboard page with table, search (name / tax_id / email /
+  phone), business_type filter, active/archived/all toggle, create/edit
+  Dialog, archive/restore via dropdown menu.
+- Triple defense-in-depth on multi-tenancy (RLS + repo explicit `org_id`
+  filter + service uses `session.organization.id`).
+- Role gating: archive/restore restricted to `owner`/`admin` in the
+  service layer (`assertCanArchive`).
+- DTO strips `org_id` and `created_by` from API responses.
 
-**Status**: plan presented to user. Awaiting `תתחיל Round A` approval.
-**Next session**: confirm the user still wants Round A as scoped, then
-begin implementation. **Do not write code until the user explicitly approves.**
+**Product decisions baked in during Round A (preserve unless user revisits):**
+
+| # | Decision |
+|---|---|
+| A | No `unique` constraint on `tax_id` for Round A. Known limitation; future migration optional. |
+| B | `archive` / `restore` are owner/admin only. List / view / create / update are open to all org members. |
+| C | No hard `DELETE` endpoint. Soft archive via `is_active` only. |
+| D | `created_by` is set to `session.profile.id` on insert but not displayed in UI. Audit-only. |
+| E | Search runs `ilike` over `name`, `tax_id`, `email`, `phone` using PostgREST `.or()`. Validator strips `,()"'\%_*` from the term before it reaches the repo. |
+| F | Backend supports `limit/offset` (default 100, max 200). UI shows up to 100 in a single page; no "Load more" yet. |
+| G | Server-side validator messages stay English; UI labels and toasts are Hebrew. Same pattern as auth/onboarding. |
+
+**Next session — Decision point for Liran:**
+
+1. **Round B** — `client_contacts` nested under client. Repo + service +
+   API + UI for contact records (multi-contact per client; one
+   `is_primary` enforced by DB trigger). DB tables already exist.
+2. **Feature #9 — Tasks queue** — main product loop. The `tasks` table
+   has a nullable FK to `clients`, which Round A now satisfies for the
+   "client" picker in the task form.
+3. Something else (Liran's call).
+
+**Do not write code until the user explicitly approves a round/feature.**
 
 ---
 
@@ -222,7 +250,7 @@ From `D:\AVI.APP\web`:
 ```bash
 npx tsc --noEmit       # expect: 0 errors
 npm run lint           # expect: 0 errors, 0 warnings
-npm run build          # expect: PASS, 15 routes
+npm run build          # expect: PASS, 20 routes (post-Round A)
 npm run dev            # → http://localhost:3000
 ```
 
@@ -305,6 +333,10 @@ contract with the customer.
 ## 📜 Recent git history (top of `main`)
 
 ```
+6c762ac Merge pull request #2 from Liran-Raz/claude/cool-volhard-fd4cd5  ← Round A
+93eddb0 Ignore local Claude settings
+63d6e7e Add clients CRUD round A
+fd12950 Add session handoff document
 6d6e261 Merge pull request #1 from Liran-Raz/refactor/migration-ready-architecture
 758dca4 Round 7: architecture documentation
 2cbbec2 Round 6: cleanup and migration documentation
@@ -312,13 +344,23 @@ contract with the customer.
 c432bf9 Round 5: Client API refactor
 82d5b99 Round 4A: API routes and validation
 37d86e9 Round 3: Repositories + Services
-685da77 Round 2: AuthAdapter + session helpers
-b623f10 Round 1: server foundation (env, errors, db client)
-f056a93 Fix: grant table privileges to authenticated role
-34769d1 Fix: move all custom helpers from auth.* to public.* (Supabase compliance)
 ```
 
-Older commits handled DB bring-up and the auth-schema cleanup.
+Older commits handled DB bring-up, the auth-schema cleanup, and the
+Round 1–2 server foundation.
+
+---
+
+## 🧰 Operational state (housekeeping)
+
+| Thing | State | What to do |
+|---|---|---|
+| Worktree `D:\AVI.APP\.claude\worktrees\cool-volhard-fd4cd5` | exists, branch `claude/cool-volhard-fd4cd5` (fully merged into main) | Can be removed: `git worktree remove .claude/worktrees/cool-volhard-fd4cd5 && git branch -d claude/cool-volhard-fd4cd5`. Leave it if not blocking anything. |
+| Remote branch `origin/claude/cool-volhard-fd4cd5` | still on GitHub | Kept on purpose — Liran has not approved remote deletion. Remove with `git push origin --delete claude/cool-volhard-fd4cd5` when he OKs. |
+| `web/.env.local` in worktree | copied from main repo for Round A build | Gitignored, never committed. Will disappear if worktree is removed. |
+| `gh` CLI auth | NOT authenticated on Liran's machine | If you need `gh pr create` next time, ask Liran to run `gh auth login` first. Until then, fall back to the GitHub URL in the `git push` output. |
+| Port 3000 dev server | may or may not be running — check with `Get-NetTCPConnection -LocalPort 3000` | If a stale node process is squatting on 3000, identify and confirm before killing it. |
+| Node.js | v24.15.0 at `C:\Program Files\nodejs\` | Bash on Windows doesn't have it on PATH; PowerShell needs `$env:Path += ";C:\Program Files\nodejs"`. |
 
 ---
 
