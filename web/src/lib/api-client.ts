@@ -28,6 +28,7 @@ import type {
   UpdateContactPayload,
 } from "@/server/validators/client-contacts.schema";
 import type { ContactDTO } from "@/server/services/client-contacts.service";
+import type { NotificationDTO } from "@/server/services/notifications.service";
 
 // Re-export DTOs so client components have one stable import path.
 export type { ClientDTO } from "@/server/services/clients.service";
@@ -59,6 +60,8 @@ export type {
   CreateContactPayload,
   UpdateContactPayload,
 } from "@/server/validators/client-contacts.schema";
+
+export type { NotificationDTO } from "@/server/services/notifications.service";
 
 // ============================================================
 // Response payloads — match what each /api route actually returns
@@ -273,5 +276,19 @@ export const apiClient = {
       deleteJson<{ deleted: true }>(
         `/api/clients/${clientId}/contacts/${contactId}`,
       ),
+  },
+  notifications: {
+    list: (params?: { unreadOnly?: boolean; limit?: number }) =>
+      getJson<{ items: NotificationDTO[]; unreadCount: number }>(
+        `/api/notifications${toQueryString(params ?? {})}`,
+      ),
+    unreadCount: () =>
+      getJson<{ count: number }>("/api/notifications/unread-count"),
+    markRead: (id: string) =>
+      postJson<{ id: string; alreadyRead: boolean }>(
+        `/api/notifications/${id}/read`,
+      ),
+    markAllRead: () =>
+      postJson<{ updatedCount: number }>("/api/notifications/read-all"),
   },
 };
