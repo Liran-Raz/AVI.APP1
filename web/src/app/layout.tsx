@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Heebo } from "next/font/google";
 import "./globals.css";
 
@@ -12,6 +12,28 @@ export const metadata: Metadata = {
   title: "AVI.APP — ניהול משימות למשרדי רואי חשבון",
   description:
     "מערכת ניהול משימות פנים-ארגונית למשרדי רואי חשבון: תור משימות יומי, לוח שבועי, ניהול לקוחות.",
+  icons: {
+    icon: [{ url: "/icon.svg", type: "image/svg+xml" }],
+    apple: [{ url: "/icon.svg", type: "image/svg+xml" }],
+  },
+  // appleWebApp settings make iOS treat the installed PWA like a
+  // first-class app (no Safari chrome) and use the title we pick.
+  appleWebApp: {
+    title: "AVI.APP",
+    statusBarStyle: "black-translucent",
+    capable: true,
+  },
+};
+
+export const viewport: Viewport = {
+  // Status bar / address bar color on mobile. Navy matches the
+  // installed-app sidebar background for a cohesive feel.
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#0d1c32" },
+    { media: "(prefers-color-scheme: dark)", color: "#0a121d" },
+  ],
+  width: "device-width",
+  initialScale: 1,
 };
 
 export default function RootLayout({

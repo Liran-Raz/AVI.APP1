@@ -16,6 +16,19 @@ import type {
   UpdateClientPayload,
 } from "@/server/validators/clients.schema";
 import type { ClientDTO } from "@/server/services/clients.service";
+import type {
+  CreateTaskPayload,
+  ListTasksQuery,
+  StatusTransitionPayload,
+  UpdateTaskPayload,
+} from "@/server/validators/tasks.schema";
+import type { TaskDTO } from "@/server/services/tasks.service";
+import type {
+  CreateContactPayload,
+  UpdateContactPayload,
+} from "@/server/validators/client-contacts.schema";
+import type { ContactDTO } from "@/server/services/client-contacts.service";
+import type { NotificationDTO } from "@/server/services/notifications.service";
 
 // Re-export DTOs so client components have one stable import path.
 export type { ClientDTO } from "@/server/services/clients.service";
@@ -25,6 +38,30 @@ export type {
   ListClientsQuery,
 } from "@/server/validators/clients.schema";
 export { BUSINESS_TYPES } from "@/server/validators/clients.schema";
+
+export type { TaskDTO } from "@/server/services/tasks.service";
+export type {
+  CreateTaskPayload,
+  UpdateTaskPayload,
+  ListTasksQuery,
+  StatusTransitionPayload,
+  TaskStatusValue,
+  TaskPriorityValue,
+  LifecycleFilter,
+} from "@/server/validators/tasks.schema";
+export {
+  TASK_STATUSES,
+  TASK_PRIORITIES,
+  LIFECYCLE_FILTERS,
+} from "@/server/validators/tasks.schema";
+
+export type { ContactDTO } from "@/server/services/client-contacts.service";
+export type {
+  CreateContactPayload,
+  UpdateContactPayload,
+} from "@/server/validators/client-contacts.schema";
+
+export type { NotificationDTO } from "@/server/services/notifications.service";
 
 // ============================================================
 // Response payloads — match what each /api route actually returns
@@ -128,6 +165,10 @@ function patchJson<T>(path: string, body: unknown): Promise<T> {
   });
 }
 
+function deleteJson<T>(path: string): Promise<T> {
+  return call<T>(path, { method: "DELETE" });
+}
+
 function getJson<T>(path: string): Promise<T> {
   return call<T>(path, { method: "GET" });
 }
@@ -183,5 +224,71 @@ export const apiClient = {
       postJson<ClientDTO>(`/api/clients/${id}/archive`),
     restore: (id: string) =>
       postJson<ClientDTO>(`/api/clients/${id}/restore`),
+  },
+  tasks: {
+    list: (query?: Partial<ListTasksQuery>) => {
+      // `status` is an array on the backend — encode as CSV in the URL.
+      const params: Record<string, unknown> = { ...(query ?? {}) };
+      if (Array.isArray(params.status)) {
+        params.status = params.status.join(",");
+      }
+      return getJson<{ items: TaskDTO[] }>(
+        `/api/tasks${toQueryString(params)}`,
+      );
+    },
+    get: (id: string) => getJson<TaskDTO>(`/api/tasks/${id}`),
+    create: (input: CreateTaskPayload) =>
+      postJson<TaskDTO>("/api/tasks", input),
+    update: (id: string, patch: UpdateTaskPayload) =>
+      patchJson<TaskDTO>(`/api/tasks/${id}`, patch),
+    setStatus: (id: string, payload: StatusTransitionPayload) =>
+      postJson<TaskDTO>(`/api/tasks/${id}/status`, payload),
+    archive: (id: string) =>
+      postJson<TaskDTO>(`/api/tasks/${id}/archive`),
+    unarchive: (id: string) =>
+      postJson<TaskDTO>(`/api/tasks/${id}/unarchive`),
+    delete: (id: string) =>
+      postJson<TaskDTO>(`/api/tasks/${id}/delete`),
+    restore: (id: string) =>
+      postJson<TaskDTO>(`/api/tasks/${id}/restore`),
+  },
+  clientContacts: {
+    list: (clientId: string) =>
+      getJson<{ items: ContactDTO[] }>(
+        `/api/clients/${clientId}/contacts`,
+      ),
+    get: (clientId: string, contactId: string) =>
+      getJson<ContactDTO>(
+        `/api/clients/${clientId}/contacts/${contactId}`,
+      ),
+    create: (clientId: string, input: CreateContactPayload) =>
+      postJson<ContactDTO>(`/api/clients/${clientId}/contacts`, input),
+    update: (
+      clientId: string,
+      contactId: string,
+      patch: UpdateContactPayload,
+    ) =>
+      patchJson<ContactDTO>(
+        `/api/clients/${clientId}/contacts/${contactId}`,
+        patch,
+      ),
+    delete: (clientId: string, contactId: string) =>
+      deleteJson<{ deleted: true }>(
+        `/api/clients/${clientId}/contacts/${contactId}`,
+      ),
+  },
+  notifications: {
+    list: (params?: { unreadOnly?: boolean; limit?: number }) =>
+      getJson<{ items: NotificationDTO[]; unreadCount: number }>(
+        `/api/notifications${toQueryString(params ?? {})}`,
+      ),
+    unreadCount: () =>
+      getJson<{ count: number }>("/api/notifications/unread-count"),
+    markRead: (id: string) =>
+      postJson<{ id: string; alreadyRead: boolean }>(
+        `/api/notifications/${id}/read`,
+      ),
+    markAllRead: () =>
+      postJson<{ updatedCount: number }>("/api/notifications/read-all"),
   },
 };

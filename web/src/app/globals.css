@@ -3,90 +3,123 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* ============================================================
+   Aether design system — Premium SaaS, glassmorphism-modern.
+   Tokens mirror docs in design/.../DESIGN.md (Material 3 style,
+   Deep Navy + Electric Blue, Heebo Hebrew RTL).
+   Light is the canonical theme; dark mode is kept coherent for
+   future use but is not currently exposed in the UI.
+   ============================================================ */
+
 :root {
-  --radius: 0.625rem;
+  --radius: 1rem; /* 16px — cards. Inputs/buttons resolve via @theme. */
 
-  /* Light mode — warm, professional, comfortable for long work sessions */
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
+  /* ----- Core surfaces ----- */
+  /* Background: light grey; cards sit on top of it in pure white. */
+  --background: #f7f9fb;
+  --foreground: #191c1e;
+  --card: #ffffff;
+  --card-foreground: #191c1e;
+  --popover: #ffffff;
+  --popover-foreground: #191c1e;
 
-  /* Primary: deep professional blue — trust, finance */
-  --primary: oklch(0.453 0.158 257);
-  --primary-foreground: oklch(0.985 0 0);
+  /* ----- Brand / primary action ----- */
+  /* "Primary" in shadcn semantics = the primary action button.
+     We map it to Aether's electric blue rather than the M3 "primary"
+     (which is reserved for structural navy on the sidebar). */
+  --primary: #0054cc;
+  --primary-foreground: #ffffff;
 
-  --secondary: oklch(0.97 0.005 250);
-  --secondary-foreground: oklch(0.205 0.04 257);
+  /* ----- Subtle / secondary action ----- */
+  --secondary: #f2f4f6;
+  --secondary-foreground: #191c1e;
 
-  --muted: oklch(0.97 0.005 250);
-  --muted-foreground: oklch(0.556 0.02 257);
+  /* ----- Muted text + bg ----- */
+  --muted: #eceef0;
+  --muted-foreground: #44474d;
 
-  --accent: oklch(0.95 0.02 230);
-  --accent-foreground: oklch(0.205 0.04 257);
+  /* ----- Accent (hover bg, soft highlights) ----- */
+  --accent: #e6e8ea;
+  --accent-foreground: #191c1e;
 
-  --destructive: oklch(0.577 0.245 27.325);
-  --destructive-foreground: oklch(0.985 0 0);
+  /* ----- Destructive ----- */
+  --destructive: #ba1a1a;
+  --destructive-foreground: #ffffff;
 
-  --border: oklch(0.922 0.005 250);
-  --input: oklch(0.922 0.005 250);
-  --ring: oklch(0.453 0.158 257);
+  /* ----- Borders / inputs / focus ----- */
+  --border: #c5c6cd;
+  --input: #e0e3e5;
+  --ring: #0054cc;
 
-  /* Status colors for tasks */
-  --status-new: oklch(0.85 0.05 250);
-  --status-received: oklch(0.75 0.12 80);
-  --status-in-progress: oklch(0.7 0.16 200);
-  --status-done: oklch(0.72 0.16 145);
+  /* ----- Status colors for tasks (chip accents) -----
+     Components compose bg+text via Tailwind opacity modifiers,
+     e.g. bg-status-done/15 text-status-done. */
+  --status-new: #3730a3;          /* indigo — entered, not yet started */
+  --status-received: #92400e;     /* amber — acknowledged, waiting */
+  --status-in-progress: #1e40af;  /* blue — active work */
+  --status-done: #03543f;         /* mint — completed */
 
+  /* ----- Priority colors (chips on task cards) ----- */
+  --priority-urgent: #991b1b;     /* red */
+  --priority-normal: #44474d;     /* neutral */
+  --priority-optional: #3730a3;   /* indigo / "can wait" */
+
+  /* ----- Charts (kept; trend tones for dashboards later) ----- */
   --chart-1: oklch(0.646 0.222 41.116);
   --chart-2: oklch(0.6 0.118 184.704);
   --chart-3: oklch(0.398 0.07 227.392);
   --chart-4: oklch(0.828 0.189 84.429);
   --chart-5: oklch(0.769 0.188 70.08);
 
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.453 0.158 257);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0.005 250);
-  --sidebar-accent-foreground: oklch(0.205 0.04 257);
-  --sidebar-border: oklch(0.922 0.005 250);
-  --sidebar-ring: oklch(0.453 0.158 257);
+  /* ----- Sidebar — Deep Navy panel for nav/logo ----- */
+  --sidebar: #0d1c32;
+  --sidebar-foreground: #b9c7e4;          /* muted blue-grey body text */
+  --sidebar-primary: #026aff;             /* active nav item bg */
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #1a2840;              /* hover bg, subtle lift */
+  --sidebar-accent-foreground: #ffffff;
+  --sidebar-border: #1a2840;
+  --sidebar-ring: #026aff;
 }
 
 .dark {
-  --background: oklch(0.145 0.01 257);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0.015 257);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0.015 257);
-  --popover-foreground: oklch(0.985 0 0);
+  /* Dark mode mirrors the navy palette but inverted for surfaces.
+     Not currently exposed via a toggle — kept consistent for the
+     day we add one. */
+  --background: #0a121d;
+  --foreground: #eff1f3;
+  --card: #131e2e;
+  --card-foreground: #eff1f3;
+  --popover: #131e2e;
+  --popover-foreground: #eff1f3;
 
-  --primary: oklch(0.7 0.15 250);
-  --primary-foreground: oklch(0.145 0.01 257);
+  --primary: #026aff;
+  --primary-foreground: #ffffff;
 
-  --secondary: oklch(0.269 0.02 257);
-  --secondary-foreground: oklch(0.985 0 0);
+  --secondary: #1a2840;
+  --secondary-foreground: #eff1f3;
 
-  --muted: oklch(0.269 0.02 257);
-  --muted-foreground: oklch(0.708 0.02 257);
+  --muted: #1a2840;
+  --muted-foreground: #b9c7e4;
 
-  --accent: oklch(0.3 0.04 250);
-  --accent-foreground: oklch(0.985 0 0);
+  --accent: #243250;
+  --accent-foreground: #eff1f3;
 
-  --destructive: oklch(0.704 0.191 22.216);
-  --destructive-foreground: oklch(0.985 0 0);
+  --destructive: #ff5449;
+  --destructive-foreground: #ffffff;
 
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.7 0.15 250);
+  --border: rgba(255, 255, 255, 0.12);
+  --input: rgba(255, 255, 255, 0.08);
+  --ring: #026aff;
 
-  --status-new: oklch(0.5 0.05 250);
-  --status-received: oklch(0.6 0.13 80);
-  --status-in-progress: oklch(0.55 0.16 200);
-  --status-done: oklch(0.55 0.16 145);
+  --status-new: #b9c7e4;
+  --status-received: #fbbf24;
+  --status-in-progress: #60a5fa;
+  --status-done: #6ee7b7;
+
+  --priority-urgent: #f87171;
+  --priority-normal: #b9c7e4;
+  --priority-optional: #b9c7e4;
 
   --chart-1: oklch(0.488 0.243 264.376);
   --chart-2: oklch(0.696 0.17 162.48);
@@ -94,14 +127,14 @@
   --chart-4: oklch(0.627 0.265 303.9);
   --chart-5: oklch(0.645 0.246 16.439);
 
-  --sidebar: oklch(0.205 0.015 257);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.7 0.15 250);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0.02 257);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.7 0.15 250);
+  --sidebar: #0a121d;
+  --sidebar-foreground: #b9c7e4;
+  --sidebar-primary: #026aff;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #1a2840;
+  --sidebar-accent-foreground: #ffffff;
+  --sidebar-border: rgba(255, 255, 255, 0.08);
+  --sidebar-ring: #026aff;
 }
 
 @theme inline {
@@ -130,6 +163,10 @@
   --color-status-in-progress: var(--status-in-progress);
   --color-status-done: var(--status-done);
 
+  --color-priority-urgent: var(--priority-urgent);
+  --color-priority-normal: var(--priority-normal);
+  --color-priority-optional: var(--priority-optional);
+
   --color-chart-1: var(--chart-1);
   --color-chart-2: var(--chart-2);
   --color-chart-3: var(--chart-3);
@@ -147,6 +184,9 @@
 
   --font-sans: var(--font-heebo), system-ui, -apple-system, sans-serif;
 
+  /* Radii — derived from --radius (16px).
+     sm = 12px (inputs), md = 14px (small components),
+     lg = 16px (cards), xl = 20px (large containers). */
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
@@ -159,16 +199,45 @@
     outline-color: var(--ring);
   }
 
+  /* Subtle mesh gradient in viewport corners — Aether "infinite
+     digital space" effect. Fixed so it doesn't scroll with content. */
   body {
     background-color: var(--background);
+    background-image:
+      radial-gradient(at 0% 0%, hsla(213, 100%, 50%, 0.05) 0px, transparent 50%),
+      radial-gradient(at 100% 100%, hsla(240, 100%, 21%, 0.05) 0px, transparent 50%);
+    background-attachment: fixed;
     color: var(--foreground);
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
   }
 
-  /* RTL-aware focus rings */
+  /* RTL-aware focus rings. */
   :focus-visible {
     outline: 2px solid var(--ring);
     outline-offset: 2px;
+  }
+}
+
+@layer utilities {
+  /* Glassmorphism panel — frosted glass over the mesh gradient.
+     Use sparingly on featured cards (e.g., dashboard widgets,
+     calendar event chips). Reads best on light surfaces. */
+  .glass-panel {
+    background: rgba(255, 255, 255, 0.7);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid rgba(255, 255, 255, 0.4);
+  }
+
+  /* Soft level-1 shadow (cards). Subtle navy tint, designed to
+     work with both solid white and glass-panel cards. */
+  .shadow-card {
+    box-shadow: 0 4px 20px rgba(10, 25, 47, 0.05);
+  }
+
+  /* Level-2 shadow (modals, dropdowns). */
+  .shadow-overlay {
+    box-shadow: 0 20px 40px rgba(10, 25, 47, 0.12);
   }
 }

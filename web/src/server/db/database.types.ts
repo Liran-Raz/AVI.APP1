@@ -19,6 +19,8 @@ export type BusinessType =
 
 export type TaskStatus = "new" | "received" | "in_progress" | "done";
 
+export type TaskPriority = "urgent" | "normal" | "optional";
+
 export type UserRole = "owner" | "admin" | "employee";
 
 export type NotificationType =
@@ -183,10 +185,13 @@ export interface Database {
           description: string | null;
           due_at: string;
           status: TaskStatus;
+          priority: TaskPriority;
           creator_id: string;
           assigned_to: string | null;
           client_id: string | null;
           completed_at: string | null;
+          archived_at: string | null;
+          deleted_at: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -197,10 +202,13 @@ export interface Database {
           description?: string | null;
           due_at: string;
           status?: TaskStatus;
+          priority?: TaskPriority;
           creator_id: string;
           assigned_to?: string | null;
           client_id?: string | null;
           completed_at?: string | null;
+          archived_at?: string | null;
+          deleted_at?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -274,6 +282,7 @@ export interface Database {
     Enums: {
       business_type: BusinessType;
       task_status: TaskStatus;
+      task_priority: TaskPriority;
       user_role: UserRole;
       notification_type: NotificationType;
     };

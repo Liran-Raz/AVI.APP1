@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192" width="192" height="192">
+  <!-- Maskable icon needs a 20% safe zone on each side; we extend
+       the navy background to a full bleed and keep the glyph well
+       inside the safe rect. -->
+  <rect width="192" height="192" fill="#0054cc"/>
+  <text x="96" y="130" font-family="Heebo, Arial, sans-serif" font-size="90" font-weight="800" text-anchor="middle" fill="#ffffff">א</text>
+</svg>

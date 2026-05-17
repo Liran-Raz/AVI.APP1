@@ -1,23 +1,26 @@
 import { redirect } from "next/navigation";
 
-import { TasksPage } from "@/components/tasks/tasks-page";
+import { CalendarPage } from "@/components/calendar/calendar-page";
+import { startOfWeek, endOfWeek } from "@/components/calendar/calendar-utils";
 import { getCurrentSession, type FullSession } from "@/server/auth/session";
 import * as clientsService from "@/server/services/clients.service";
 import * as tasksService from "@/server/services/tasks.service";
 
-export default async function TasksRoute() {
-  // (dashboard)/layout already enforces auth + completed onboarding —
-  // these guards repeat the contract for type narrowing.
+export default async function CalendarRoute() {
   const session = await getCurrentSession();
   if (!session) redirect("/login");
   if (!session.profile || !session.organization) redirect("/onboarding");
   const fullSession = session as FullSession;
 
-  // Fetch initial active tasks + the org's clients (for the picker + name
-  // lookup on each card). Both reads happen in parallel.
+  // Initial week is the one containing today (Sunday-start, Israeli).
+  const ws = startOfWeek(new Date());
+  const we = endOfWeek(new Date());
+
   const [tasksResult, clientsResult] = await Promise.all([
     tasksService.listTasks(fullSession, {
       lifecycle: "active",
+      dueAfter: ws.toISOString(),
+      dueBefore: we.toISOString(),
       limit: 200,
       offset: 0,
     }),
@@ -29,9 +32,10 @@ export default async function TasksRoute() {
   ]);
 
   return (
-    <TasksPage
+    <CalendarPage
       initialItems={tasksResult.items}
       initialClients={clientsResult.items}
+      initialWeekStartIso={ws.toISOString()}
     />
   );
 }

@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
-  Bell,
   CalendarDays,
   ListChecks,
   LogOut,
@@ -11,6 +10,8 @@ import {
   Users,
   UserSquare2,
 } from "lucide-react";
+
+import { NotificationBell } from "@/components/notifications/notification-bell";
 
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -115,9 +116,7 @@ export function AppShell({
           </div>
 
           <div className="flex items-center gap-2 mr-auto">
-            <Button variant="ghost" size="icon" aria-label="התראות">
-              <Bell className="size-5" />
-            </Button>
+            <NotificationBell />
 
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
