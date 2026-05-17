@@ -18,6 +18,10 @@ migrations/
   0006_bootstrap_org_rpc.sql       public.bootstrap_org RPC (the actual
                                    atomic "create org + owner profile" path
                                    used by /api/onboarding/bootstrap)
+  0007_tasks_lifecycle_and_priority.sql
+                                   adds archived_at, deleted_at, and
+                                   priority enum to tasks; partial indexes
+                                   for the active/archived/deleted views
 ```
 
 All custom functions live in the `public` schema. The Supabase `auth`
