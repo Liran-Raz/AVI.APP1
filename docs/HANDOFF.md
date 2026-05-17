@@ -1,4 +1,4 @@
-# AVI.APP — Session Handoff (2026-05-18)
+# AVI.APP — Session Handoff (2026-05-17 — MVP build complete, awaiting QA)
 
 **You are continuing a session that was started by another Claude.** Read this
 top-to-bottom before doing anything. It is the fastest way to get the same
@@ -11,23 +11,22 @@ context the previous session had, without spending tokens re-discovering it.
 - **Product**: SaaS task-management for Israeli accounting offices. Hebrew RTL.
 - **Stack**: Next.js 16 + TypeScript + Tailwind v4 + shadcn/ui · Supabase
   (Postgres + Auth + Realtime + RLS) · Vercel.
-- **Current branch**: `main` (clean, up to date with `origin/main`).
-- **What just finished**: **Round A of feature #8 — Clients CRUD** — merged
-  via PR #2 on 2026-05-17, fast-forward to commit `6c762ac`. Includes
-  validators, repository, service, 6 endpoints (list/get/create/update/
-  archive/restore), `/clients` dashboard UI, and one hygiene commit that
-  added `.claude/` to `.gitignore`. Manual QA passed by Liran in the browser.
-- **What's next**: Decide on **Round B (client_contacts)** vs **feature #9
-  (Tasks queue)** as the next round. Either way, **awaiting user approval
-  ("תתחיל ...")** before any code is written. See "Last action" below.
+- **Current branch**: `feat/design-tokens` on origin — holds the entire
+  remaining MVP build (Phase 0 design tokens + migration 0007 + features
+  8B, 9, 10, 11, 12, 13). `main` is unchanged at `5c8e858` (post-Round A).
+- **What just finished**: **Autonomous build of all remaining MVP features**.
+  Liran approved working without per-feature approvals; build finished
+  end-to-end with tsc / lint / build green on every commit. No manual QA
+  in the browser yet — Liran will run it after merge.
+- **What's next**: **Liran's end-to-end QA → merge `feat/design-tokens` to
+  `main` → production deploy** (Vercel + Supabase prod URL config +
+  Resend keys for email, all documented below).
 - **Working directory**: `D:\AVI.APP` (Windows 11, PowerShell). A leftover
   Claude worktree from PR #2 still exists at
-  `D:\AVI.APP\.claude\worktrees\cool-volhard-fd4cd5` (branch
-  `claude/cool-volhard-fd4cd5`, fully merged). The user has been told it can
-  be removed at his convenience — see "Operational state" below.
-- **The user is Liran (`liran995@gmail.com`)**, Hebrew-speaking. He is a
-  product owner / founder, not a deep coder. He drives decisions; you drive
-  implementation. Talk Hebrew unless asked otherwise.
+  `D:\AVI.APP\.claude\worktrees\cool-volhard-fd4cd5`. Cleanup commands in
+  "Operational state" below.
+- **The user is Liran**, Hebrew-speaking founder / product owner. Reply in
+  Hebrew unless he switches to English.
 
 ---
 
@@ -160,86 +159,78 @@ D:\AVI.APP\
 
 ---
 
-## ✅ Done — features 1–7 + feature 8 Round A
+## ✅ Done — all 13 features (build-complete, pre-QA)
 
-| # | Feature | Notes |
-|---|---------|-------|
-| 1 | Install Node.js LTS via winget | v24 |
-| 2 | Next.js 16 + TS + Tailwind v4 + src/ + App Router | in `web/` subfolder |
-| 3 | shadcn/ui + RTL + Heebo font + warm-pro color palette | |
-| 4 | DB schema (organizations, profiles, clients, client_contacts, tasks, notifications) | 6 migrations |
-| 5 | Supabase project provisioned + migrations applied | project ref `xsuvwihfcxinorzutbve`, region `eu-central-1` |
-| 6 | Auth (email/password) + Google OAuth code path | OAuth needs provider config — see below |
-| 7 | Org signup + onboarding (creates org + owner profile) | First user successfully onboarded: org "לירן בדיקה 1" |
-| **8A** | **Clients CRUD Round A — list, get, create, edit, archive, restore + search + filters** | PR #2, merged 2026-05-17 (`6c762ac`). 4 API routes, `/clients` page, role gating on archive/restore. Manual QA passed. |
+| # | Feature | Status |
+|---|---------|--------|
+| 1–7 | Install / scaffolding / UI kit / DB schema / Supabase / Auth / Onboarding | merged on main |
+| **8A** | Clients CRUD — list/create/edit/archive/restore + search + filters | merged on main (`6c762ac`) |
+| **8B** | Client contacts — nested CRUD + /clients/[id] detail page + primary-contact toggle | on `feat/design-tokens` (`38781a9`) |
+| **9** | Tasks queue — CRUD + status flow (new/received/in_progress/done) + priority + soft archive + recycle bin + Kanban UI | on `feat/design-tokens` (`457f654`, `8e0b268`) |
+| **10** | Weekly calendar — 7-col Sun→Sat grid, hour rows, priority-colored task blocks, click-to-edit | on `feat/design-tokens` (`942039f`) |
+| **11** | Notifications + bell — bell badge with unread count, popover list, mark-read APIs (poll-based 60s, no Supabase in client) | on `feat/design-tokens` (`fcbdbdf`) |
+| **12** | Email on task assignment — provider-neutral adapter, Resend HTTP API (no npm dep), console fallback in dev | on `feat/design-tokens` (`6424522`) |
+| **13** | PWA — manifest, SVG icons, theme-color, apple-touch-icon. Mobile: calendar horizontal scroll under 720px | on `feat/design-tokens` (`2ddfdb9`) |
+| **Phase 0** | Aether design tokens — globals.css swap to Deep Navy + Electric Blue, glassmorphism utilities, mesh gradient | on `feat/design-tokens` (`02fe53b`) |
+| **Migration 0007** | tasks.archived_at + tasks.deleted_at + task_priority enum + partial indexes | on `feat/design-tokens` (`e5e8a1f`) |
 
-Plus: **architecture refactor (7 rounds, PR #1, merged 2026-05-16)**.
+Plus: **architecture refactor (PR #1, `6d6e261`) + Round A merge (PR #2, `6c762ac`)**.
 
 ---
 
-## 🔜 Open — features 8B, 9–13
+## 🔜 Open — production deploy + post-QA fixes
 
-| # | Feature | Depends on |
-|---|---------|-----------|
-| 8B | Clients CRUD Round B — `client_contacts` nested under client | 8A ✓ |
-| 9 | Tasks queue (CRUD, status transitions, sorted by `due_at`) | 8A ✓ (FK to client) |
-| 10 | Weekly calendar (7-col Sun→Sat, drag-and-drop, week nav) | 9 |
-| 11 | Realtime + in-app bell notifications | 9 |
-| 12 | Email notifications on task assignment | 9 |
-| 13 | PWA + mobile polish | 8B, 9–12 |
-
-Implied / not in the 13-list, may be added later:
-- Owner inviting employees to the office (currently only one user per org)
-- Unique constraint on `(org_id, lower(tax_id))` for `clients` (deferred from Round A)
+| Item | Status |
+|---|---|
+| Liran's end-to-end browser QA of `feat/design-tokens` | **pending** |
+| Merge `feat/design-tokens` → `main` (one large PR, ~12 commits) | pending QA |
+| Auto-apply migration 0007 (triggers on the merge above) | pending |
+| Vercel project setup — env vars + production domain | pending |
+| Supabase: production Site URL + Redirect URLs | pending |
+| Re-enable email confirmation in Supabase before prod | pending |
+| Resend API key + verified domain → set `RESEND_API_KEY` + `MAIL_FROM` | optional but recommended |
+| Google OAuth provider config (Supabase + Google Cloud) | optional |
+| Israeli Privacy Law compliance — register DB, security officer, contracts | **legal prerequisite**, customer's responsibility |
+| Drag-and-drop on calendar / dashboard screen / multi-user team management | post-MVP |
+| Unique constraint on `(org_id, lower(tax_id))` for `clients` | post-MVP |
 
 ---
 
 ## 🎬 Last action (where the previous session stopped)
 
-**Round A of feature #8 (Clients CRUD) was implemented, manually QA'd by
-Liran, and merged to main via PR #2.** Then a post-merge verification on
-`main` passed clean (tsc / lint / build green, runtime sanity routes
-correct).
+**Autonomous build of the remaining MVP features (8B, 9, 10, 11, 12, 13)
+plus Phase 0 design tokens and migration 0007**, on branch
+`feat/design-tokens`. tsc / lint / build green on every commit.
 
-**Round A scope (delivered):**
-- No migration needed (`clients` table already existed from migration `0001`).
-- 4 API route files (6 endpoints): `GET/POST /api/clients`,
-  `GET/PATCH /api/clients/[id]`, `POST /api/clients/[id]/archive`,
-  `POST /api/clients/[id]/restore`.
-- `clients.repository.ts`, `clients.service.ts`, `clients.schema.ts`.
-- `apiClient.clients = { list, get, create, update, archive, restore }`.
-- `/clients` dashboard page with table, search (name / tax_id / email /
-  phone), business_type filter, active/archived/all toggle, create/edit
-  Dialog, archive/restore via dropdown menu.
-- Triple defense-in-depth on multi-tenancy (RLS + repo explicit `org_id`
-  filter + service uses `session.organization.id`).
-- Role gating: archive/restore restricted to `owner`/`admin` in the
-  service layer (`assertCanArchive`).
-- DTO strips `org_id` and `created_by` from API responses.
+**Liran handed me the autonomy at the start of feature #9** ("אני רוצה
+שתעבוד בעצמך ללא אישורים ממני ואני יגיע אחרי שלב 13 לעשות לך QA"), so the
+plan/approval gate that's documented in `.claude/skills/avi-app-architecture`
+was deliberately bypassed for this stretch. Commit messages document the
+product decisions I made along the way; see the "Round-level decisions"
+section below for the ones most likely to need a second look.
 
-**Product decisions baked in during Round A (preserve unless user revisits):**
+**Round-level decisions worth a second look during QA:**
 
-| # | Decision |
-|---|---|
-| A | No `unique` constraint on `tax_id` for Round A. Known limitation; future migration optional. |
-| B | `archive` / `restore` are owner/admin only. List / view / create / update are open to all org members. |
-| C | No hard `DELETE` endpoint. Soft archive via `is_active` only. |
-| D | `created_by` is set to `session.profile.id` on insert but not displayed in UI. Audit-only. |
-| E | Search runs `ilike` over `name`, `tax_id`, `email`, `phone` using PostgREST `.or()`. Validator strips `,()"'\%_*` from the term before it reaches the repo. |
-| F | Backend supports `limit/offset` (default 100, max 200). UI shows up to 100 in a single page; no "Load more" yet. |
-| G | Server-side validator messages stay English; UI labels and toasts are Hebrew. Same pattern as auth/onboarding. |
+| Decision | Where | Worth checking |
+|---|---|---|
+| Tasks Kanban groups `new + received` into a single "לביצוע" column | components/tasks/task-utils.ts (KANBAN_COLUMNS) | Liran said 3-column kanban; the DB enum has 4 statuses. Reviewable. |
+| No assignment dropdown in task form (Round A) | components/tasks/task-form-dialog.tsx | Single-user org, will land with team management. Confirm OK to defer. |
+| Delete = soft (`deleted_at` set) recoverable from "מחוקות" view | server/repositories/tasks.repository.ts setDeleted | No hard delete anywhere. |
+| Archive and Delete are independent (a task can be deleted without being archived first) | migration 0007 lifecycle composition | Two separate dropdown actions in the card menu. |
+| Calendar hour window 08:00–20:00, tasks outside get a footer counter | components/calendar/calendar-utils.ts CALENDAR_HOUR_START/END | Tightenable to 09–18 if accountant-office hours differ. |
+| Notifications are poll-based (60s unread count) not Supabase Realtime | components/notifications/notification-bell.tsx | Honors the "no @supabase in client" rule. Realtime via SSE adapter is a follow-up. |
+| Email uses Resend HTTP API via fetch (no nodemailer) | server/email/resend-email.adapter.ts | One env-var swap activates real send: `RESEND_API_KEY` + `MAIL_FROM`. |
+| Calendar block height = 30 minutes (fixed, since tasks have no duration column) | components/calendar/week-grid.tsx BLOCK_FIXED_HEIGHT | If you want variable durations, that's a new column on tasks + a migration. |
+| Dashboard screen (the "בוקר טוב, לירן" mockup) — deferred to post-MVP | not built | Liran's call at QA time. |
 
-**Next session — Decision point for Liran:**
+**Next session — Decision point for Liran (after his QA):**
 
-1. **Round B** — `client_contacts` nested under client. Repo + service +
-   API + UI for contact records (multi-contact per client; one
-   `is_primary` enforced by DB trigger). DB tables already exist.
-2. **Feature #9 — Tasks queue** — main product loop. The `tasks` table
-   has a nullable FK to `clients`, which Round A now satisfies for the
-   "client" picker in the task form.
-3. Something else (Liran's call).
-
-**Do not write code until the user explicitly approves a round/feature.**
+1. **Merge the branch** and trigger the production deploy path
+   (Vercel + Supabase prod URL config). See "Open" above.
+2. **Open follow-up issues / PRs** for whatever didn't pass QA — fix in
+   small focused commits.
+3. (Optional, post-merge) **Build the dashboard** mockup screen since
+   the data (clients count, open tasks, etc.) is now all there.
 
 ---
 
@@ -330,24 +321,33 @@ contract with the customer.
 
 ---
 
-## 📜 Recent git history (top of `main`)
+## 📜 Recent git history
+
+### On `feat/design-tokens` (ready for QA + merge)
 
 ```
+2ddfdb9 Add PWA manifest + mobile polish (#13)
+6424522 Add email notifications on task assignment (#12)
+fcbdbdf Add notifications bell + read endpoints (#11)
+38781a9 Add client contacts CRUD (#8B Round B of feature 8)
+942039f Add weekly calendar (#10)
+8e0b268 Add Tasks queue UI — Kanban + lifecycle views (#9 Round A)
+457f654 Add Tasks queue backend (#9 Round A)
+e5e8a1f Add migration 0007: tasks lifecycle + priority
+02fe53b Adopt Aether design tokens (Phase 0)
+```
+
+### On `main` (unchanged since 2026-05-17)
+
+```
+5c8e858 Update session handoff for post-Round A state
+bc948c6 Add AVI architecture Claude skill
 6c762ac Merge pull request #2 from Liran-Raz/claude/cool-volhard-fd4cd5  ← Round A
 93eddb0 Ignore local Claude settings
 63d6e7e Add clients CRUD round A
 fd12950 Add session handoff document
 6d6e261 Merge pull request #1 from Liran-Raz/refactor/migration-ready-architecture
-758dca4 Round 7: architecture documentation
-2cbbec2 Round 6: cleanup and migration documentation
-7a45e37 Round 4B: Auth callback and OAuth hardening
-c432bf9 Round 5: Client API refactor
-82d5b99 Round 4A: API routes and validation
-37d86e9 Round 3: Repositories + Services
 ```
-
-Older commits handled DB bring-up, the auth-schema cleanup, and the
-Round 1–2 server foundation.
 
 ---
 
@@ -355,11 +355,14 @@ Round 1–2 server foundation.
 
 | Thing | State | What to do |
 |---|---|---|
-| Worktree `D:\AVI.APP\.claude\worktrees\cool-volhard-fd4cd5` | exists, branch `claude/cool-volhard-fd4cd5` (fully merged into main) | Can be removed: `git worktree remove .claude/worktrees/cool-volhard-fd4cd5 && git branch -d claude/cool-volhard-fd4cd5`. Leave it if not blocking anything. |
-| Remote branch `origin/claude/cool-volhard-fd4cd5` | still on GitHub | Kept on purpose — Liran has not approved remote deletion. Remove with `git push origin --delete claude/cool-volhard-fd4cd5` when he OKs. |
-| `web/.env.local` in worktree | copied from main repo for Round A build | Gitignored, never committed. Will disappear if worktree is removed. |
-| `gh` CLI auth | NOT authenticated on Liran's machine | If you need `gh pr create` next time, ask Liran to run `gh auth login` first. Until then, fall back to the GitHub URL in the `git push` output. |
-| Port 3000 dev server | may or may not be running — check with `Get-NetTCPConnection -LocalPort 3000` | If a stale node process is squatting on 3000, identify and confirm before killing it. |
+| Branch `feat/design-tokens` on origin | 9 commits ahead of main, has the entire MVP build | Open PR / use the URL from `git push` output; Liran QA → merge with merge-commit |
+| Migration 0007 | Committed to `feat/design-tokens`, NOT YET APPLIED to live Supabase | Auto-applies when feat/design-tokens merges to main (GitHub-Supabase integration). Until then, runtime queries that touch `tasks.priority` / `archived_at` / `deleted_at` will fail. |
+| Worktree `D:\AVI.APP\.claude\worktrees\cool-volhard-fd4cd5` | leftover from PR #2 | Remove with: `git worktree remove .claude/worktrees/cool-volhard-fd4cd5 && git branch -d claude/cool-volhard-fd4cd5` |
+| Remote branch `origin/claude/cool-volhard-fd4cd5` | still on GitHub | Remove with `git push origin --delete claude/cool-volhard-fd4cd5` once Liran approves |
+| `web/.env.local` in worktree | copied from main repo for Round A build | Gitignored. Will disappear with worktree removal. |
+| Resend API key | NOT SET | Optional. Email service falls back to console logging without it. When ready: `RESEND_API_KEY=re_...` and `MAIL_FROM="AVI.APP <noreply@domain>"` in `.env.local`. |
+| `gh` CLI auth | NOT authenticated on Liran's machine | If you need `gh pr create`, ask Liran to run `gh auth login`. Otherwise fall back to the URL from `git push` output. |
+| Port 3000 dev server | may or may not be running | Check with `Get-NetTCPConnection -LocalPort 3000`; ID the process before killing. |
 | Node.js | v24.15.0 at `C:\Program Files\nodejs\` | Bash on Windows doesn't have it on PATH; PowerShell needs `$env:Path += ";C:\Program Files\nodejs"`. |
 
 ---
