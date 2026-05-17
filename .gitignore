@@ -43,8 +43,10 @@ desktop.ini
 *.swo
 *~
 
-# Claude Code — local session settings, never commit
-.claude/
+# Claude Code — local session settings and worktrees stay local;
+# project-scoped skills under .claude/skills/ are tracked on purpose.
+.claude/*
+!.claude/skills/
 
 # Supabase local development
 supabase/.branches
