@@ -1,10 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { toast } from "sonner";
 import {
   Archive,
   ArchiveRestore,
+  Eye,
   Loader2,
   MoreHorizontal,
   Pencil,
@@ -259,7 +261,14 @@ export function ClientsPage({
             <TableBody>
               {items.map((client) => (
                 <TableRow key={client.id}>
-                  <TableCell className="font-medium">{client.name}</TableCell>
+                  <TableCell className="font-medium">
+                    <Link
+                      href={`/clients/${client.id}`}
+                      className="hover:underline focus:underline focus:outline-none"
+                    >
+                      {client.name}
+                    </Link>
+                  </TableCell>
                   <TableCell>{formatBusinessType(client.businessType)}</TableCell>
                   <TableCell dir="ltr" className="text-start">
                     {client.phone ?? "—"}
@@ -286,6 +295,12 @@ export function ClientsPage({
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
+                        <DropdownMenuItem asChild>
+                          <Link href={`/clients/${client.id}`}>
+                            <Eye className="size-4" />
+                            צפייה
+                          </Link>
+                        </DropdownMenuItem>
                         <DropdownMenuItem onClick={() => handleEditClick(client)}>
                           <Pencil className="size-4" />
                           ערוך

@@ -23,6 +23,11 @@ import type {
   UpdateTaskPayload,
 } from "@/server/validators/tasks.schema";
 import type { TaskDTO } from "@/server/services/tasks.service";
+import type {
+  CreateContactPayload,
+  UpdateContactPayload,
+} from "@/server/validators/client-contacts.schema";
+import type { ContactDTO } from "@/server/services/client-contacts.service";
 
 // Re-export DTOs so client components have one stable import path.
 export type { ClientDTO } from "@/server/services/clients.service";
@@ -48,6 +53,12 @@ export {
   TASK_PRIORITIES,
   LIFECYCLE_FILTERS,
 } from "@/server/validators/tasks.schema";
+
+export type { ContactDTO } from "@/server/services/client-contacts.service";
+export type {
+  CreateContactPayload,
+  UpdateContactPayload,
+} from "@/server/validators/client-contacts.schema";
 
 // ============================================================
 // Response payloads — match what each /api route actually returns
@@ -151,6 +162,10 @@ function patchJson<T>(path: string, body: unknown): Promise<T> {
   });
 }
 
+function deleteJson<T>(path: string): Promise<T> {
+  return call<T>(path, { method: "DELETE" });
+}
+
 function getJson<T>(path: string): Promise<T> {
   return call<T>(path, { method: "GET" });
 }
@@ -233,5 +248,30 @@ export const apiClient = {
       postJson<TaskDTO>(`/api/tasks/${id}/delete`),
     restore: (id: string) =>
       postJson<TaskDTO>(`/api/tasks/${id}/restore`),
+  },
+  clientContacts: {
+    list: (clientId: string) =>
+      getJson<{ items: ContactDTO[] }>(
+        `/api/clients/${clientId}/contacts`,
+      ),
+    get: (clientId: string, contactId: string) =>
+      getJson<ContactDTO>(
+        `/api/clients/${clientId}/contacts/${contactId}`,
+      ),
+    create: (clientId: string, input: CreateContactPayload) =>
+      postJson<ContactDTO>(`/api/clients/${clientId}/contacts`, input),
+    update: (
+      clientId: string,
+      contactId: string,
+      patch: UpdateContactPayload,
+    ) =>
+      patchJson<ContactDTO>(
+        `/api/clients/${clientId}/contacts/${contactId}`,
+        patch,
+      ),
+    delete: (clientId: string, contactId: string) =>
+      deleteJson<{ deleted: true }>(
+        `/api/clients/${clientId}/contacts/${contactId}`,
+      ),
   },
 };
