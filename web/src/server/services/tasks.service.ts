@@ -2,6 +2,9 @@ import "server-only";
 
 import type { FullSession } from "@/server/auth/session";
 import * as tasksRepo from "@/server/repositories/tasks.repository";
+import * as profileRepo from "@/server/repositories/profile.repository";
+import { env } from "@/server/env";
+import { sendTaskAssignmentEmail } from "@/server/services/emails.service";
 import type {
   Database,
   Task,
@@ -108,6 +111,11 @@ export async function createTask(
     assigned_to: input.assignedTo ?? null,
     client_id: input.clientId ?? null,
   });
+  // Fire-and-forget email if the new task was assigned to someone
+  // other than its creator. Failures are logged but never fail the
+  // create — the task is already in the DB, the in-app notification
+  // trigger has fired, this is just the email belt.
+  void sendAssignmentEmailIfNeeded(session, row, /*previousAssignedTo*/ null);
   return toDTO(row);
 }
 
@@ -126,13 +134,72 @@ export async function updateTask(
   if (patch.assignedTo !== undefined) dbPatch.assigned_to = patch.assignedTo;
   if (patch.clientId !== undefined) dbPatch.client_id = patch.clientId;
 
+  // If assigned_to is changing, peek at the previous value so the
+  // email helper can decide whether this counts as a real reassignment
+  // (vs. an update that doesn't touch assignment).
+  let previousAssignedTo: string | null = null;
+  if (patch.assignedTo !== undefined) {
+    const before = await tasksRepo.findByIdAndOrgId(
+      id,
+      session.organization.id,
+    );
+    previousAssignedTo = before?.assigned_to ?? null;
+  }
+
   const row = await tasksRepo.updateByIdAndOrgId(
     id,
     session.organization.id,
     dbPatch,
   );
   if (!row) throw new NotFoundError("Task not found");
+
+  if (patch.assignedTo !== undefined) {
+    void sendAssignmentEmailIfNeeded(session, row, previousAssignedTo);
+  }
   return toDTO(row);
+}
+
+// ============================================================
+// Assignment email helper
+// ============================================================
+//
+// Sends a "you have a new task" email to the assignee when:
+//   - assigned_to is non-null AFTER the operation, AND
+//   - it changed (or it's a brand-new task with someone assigned), AND
+//   - the assignee is NOT the creator (self-assignment is silent).
+//
+// Errors are caught + logged so the surrounding task operation never
+// fails because email is misconfigured. Without RESEND_API_KEY this
+// just logs to the server console via the console adapter.
+
+async function sendAssignmentEmailIfNeeded(
+  session: FullSession,
+  task: Task,
+  previousAssignedTo: string | null,
+): Promise<void> {
+  try {
+    const newAssigned = task.assigned_to;
+    if (!newAssigned) return;
+    if (newAssigned === previousAssignedTo) return;
+    if (newAssigned === session.profile.id) return; // self-assignment
+
+    const assignee = await profileRepo.findByUserId(newAssigned);
+    if (!assignee || !assignee.email) return;
+
+    const taskUrl = `${env.NEXT_PUBLIC_SITE_URL}/tasks`;
+
+    await sendTaskAssignmentEmail({
+      toEmail: assignee.email,
+      assigneeName: assignee.full_name,
+      taskTitle: task.title,
+      taskDescription: task.description,
+      dueAt: task.due_at,
+      creatorName: session.profile.full_name,
+      taskUrl,
+    });
+  } catch (err) {
+    console.error("[tasks] failed to send assignment email", err);
+  }
 }
 
 export async function transitionStatus(
