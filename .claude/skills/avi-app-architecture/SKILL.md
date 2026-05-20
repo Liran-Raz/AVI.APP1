@@ -190,7 +190,7 @@ When this skill is not enough, read these in order:
   Project URL and anon key live in `.env.local` (and in Vercel env for
   deploys), never in this skill or in tracked code.
 - **Validation**: zod
-- **Hosting**: Vercel for the frontend (planned), Supabase for backend
+- **Hosting**: Vercel for the frontend (deployed at https://avi-app-1.vercel.app), Supabase for backend
 - **Tests**: none yet — manual QA only, documented limitation
 - **Service role key**: not used, intentionally absent
 

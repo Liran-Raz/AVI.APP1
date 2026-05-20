@@ -1,4 +1,4 @@
-# AVI.APP — Session Handoff (2026-05-17 — MVP core QA passed, doc cleanup)
+# AVI.APP — Session Handoff (2026-05-18 — production deployed, S10 passed)
 
 **You are continuing a session that was started by another Claude.** Read this
 top-to-bottom before doing anything. It is the fastest way to get the same
@@ -11,28 +11,32 @@ context the previous session had, without spending tokens re-discovering it.
 - **Product**: SaaS task-management for Israeli accounting offices. Hebrew RTL.
 - **Stack**: Next.js 16 + TypeScript + Tailwind v4 + shadcn/ui · Supabase
   (Postgres + Auth + Realtime + RLS) · Vercel.
-- **Current branch**: `main` (clean, up to date with origin). PR #3
-  (`feat/design-tokens` → `main`) was merged 2026-05-17 as merge commit
-  `e49ab0d`. `main` now holds Phase 0 design tokens, migration 0007, and
-  features 8B / 9 / 10 / 11 / 12 / 13.
-- **What just finished**: **MVP core QA passed** end-to-end in the browser
-  by Liran — login, `/tasks` Kanban, status transitions, priority, archive /
-  unarchive, delete-to-trash / restore, `/calendar`, `/clients/[id]`,
-  contacts CRUD, primary-contact DB trigger. Migration 0007 was applied
-  **manually** through the Supabase Dashboard SQL Editor and verified —
-  there is **no auto-apply automation in this repo** (we discovered this
-  during the 0007 rollout; see "Operational state" and the migration
-  workflow note).
-- **What's next**: optional cleanups (branch + worktree removal) and the
-  production deploy path (Vercel + Supabase prod URL config + email
-  confirmation re-enabled + optional Resend / Google OAuth + Israeli
-  Privacy Law compliance). Deferred items: notification-bell runtime QA
+- **Production URL**: **https://avi-app-1.vercel.app** — live, end-to-end
+  functional. Deployed from `main` via PR #4 (merge commit `dbf9194`,
+  fix commit `cd3fd24`).
+- **Current branch**: `main` (clean, up to date with origin) at `dbf9194`.
+- **What just finished**: **production deploy path executed end-to-end**
+  in stages S2-S10. Vercel project (`avi-app`, personal account, Root
+  Directory `web`, Framework Next.js, Production-scope env vars only)
+  → Supabase Site URL + Redirect URLs updated → deploy fixed
+  (`outputFileTracingRoot` removed in PR #4, see "Last action" below) →
+  S8 existing-user smoke test passed → S9 email confirmation = ON in
+  Supabase → S10 new-user signup with real email passed including
+  confirmation email arrival, /onboarding pre-fill from sessionStorage,
+  /tasks empty for new org (multi-tenant isolation verified end-to-end
+  on production).
+- **What's next**: small UX follow-up (perceived navigation delay between
+  dashboard pages — Liran observed it during S8, agreed to defer to a
+  separate inspection/plan round). Remaining deferred work: Google OAuth
+  provider enable, Resend with verified domain (for real assignment
+  emails — currently console fallback), notification bell runtime QA
   (needs a second user via team management), physical mobile / PWA
-  install QA, full RTL mobile pass, dashboard screen.
-- **Working directory**: `D:\AVI.APP` (Windows 11, PowerShell). A leftover
-  Claude worktree from PR #2 still exists at
-  `D:\AVI.APP\.claude\worktrees\cool-volhard-fd4cd5`. Cleanup commands in
-  "Operational state" below.
+  install QA, full RTL mobile pass, dashboard screen, observability
+  (Sentry/logs), rate limits, E2E tests, **legal / Israeli Privacy
+  Law review before real client data** (non-code, customer responsibility).
+- **Working directory**: `D:\AVI.APP` (Windows 11, PowerShell). The
+  leftover worktree `cool-volhard-fd4cd5` was cleaned up earlier;
+  current worktree `upbeat-dewdney-8dcb8a` is what this session ran in.
 - **The user is Liran**, Hebrew-speaking founder / product owner. Reply in
   Hebrew unless he switches to English.
 
@@ -186,108 +190,138 @@ Plus: **architecture refactor (PR #1, `6d6e261`) + Round A merge (PR #2, `6c762a
 
 ---
 
-## 🔜 Open — production deploy + post-QA fixes
+## 🔜 Open — post-deploy work
 
 | Item | Status |
 |---|---|
-| Liran's end-to-end browser QA of the MVP core | ✅ **passed** 2026-05-17 (10 of 12 steps; 2 deferred) |
-| Merge `feat/design-tokens` → `main` (PR #3, 11 commits) | ✅ **merged 2026-05-17** (`e49ab0d`) |
-| Apply migration 0007 (manually, via Supabase Dashboard SQL Editor) | ✅ **applied + verified** — three new columns + `task_priority` enum + three partial indexes confirmed via `information_schema` / `pg_enum` / `pg_indexes` queries |
-| Notification-bell runtime QA | ⏸️ deferred — needs a second user in the org to exercise the `notify_on_task_assignment` trigger naturally (waits for team-management feature) |
+| Liran's end-to-end browser QA of the MVP core | ✅ **passed** 2026-05-17 |
+| Merge `feat/design-tokens` → `main` (PR #3) | ✅ **merged 2026-05-17** (`e49ab0d`) |
+| Apply migration 0007 (manually, via Supabase SQL Editor) | ✅ **applied + verified** 2026-05-17 |
+| Vercel project setup — env vars + production domain | ✅ **done 2026-05-18** — `avi-app`, personal account, Root=`web`, Framework=Next.js, env vars Production-scope only, default subdomain `https://avi-app-1.vercel.app` |
+| Supabase: production Site URL + Redirect URLs | ✅ **done 2026-05-18** — Site URL = `https://avi-app-1.vercel.app`; Redirect URLs = `http://localhost:3000/**` + `https://avi-app-1.vercel.app/**` (no Preview wildcard — Preview auth out of scope) |
+| Fix Vercel finalization ENOENT (`routes-manifest-deterministic.json`) | ✅ **fixed via PR #4 / `cd3fd24`** — removed `outputFileTracingRoot` from `web/next.config.ts` |
+| Re-enable email confirmation in Supabase | ✅ **done 2026-05-18** — Authentication → Providers → Email → "Confirm email" = ON |
+| S8 smoke test — existing user (Liran) on production | ✅ **passed 2026-05-18** — 4 anonymous probes green + browser flow (login, /tasks, /calendar, /clients, /clients/[id], logout, redirects) |
+| S10 smoke test — new signup with real email on production | ✅ **passed 2026-05-18** — signup → confirmation email (production URL, not localhost) → /onboarding pre-filled → /tasks empty → multi-tenant isolation verified → logout + re-login worked |
+| UX: perceived navigation delay between dashboard pages | ⏸️ **observed during S8, deferred** — to be inspected in a separate plan-only round (loading.tsx + skeleton states; no third-party packages; no DB optimization) |
+| Notification-bell runtime QA | ⏸️ deferred — needs a second user (waits for team-management feature) |
 | Physical mobile / PWA install QA on a real device | ⏸️ deferred — F12 responsive view confirmed visually |
 | Full RTL mobile spot-checks | ⏸️ deferred |
-| Vercel project setup — env vars + production domain | pending |
-| Supabase: production Site URL + Redirect URLs | pending |
-| Re-enable email confirmation in Supabase before prod | pending |
-| Resend API key + verified domain → set `RESEND_API_KEY` + `MAIL_FROM` | optional but recommended |
-| Google OAuth provider config (Supabase + Google Cloud) | optional |
-| Israeli Privacy Law compliance — register DB, security officer, contracts | **legal prerequisite**, customer's responsibility |
-| Auto-apply pipeline for migrations (Supabase CLI in GitHub Action, OR Supabase's "Database Migrations from GitHub" dashboard feature) | optional — **not configured today**; see "Operational state" |
-| Dashboard screen ("בוקר טוב, לירן" + KPI cards + kanban preview) | post-MVP |
-| Drag-and-drop on calendar / multi-user team management | post-MVP |
-| Unique constraint on `(org_id, lower(tax_id))` for `clients` | post-MVP |
+| Google OAuth provider config (Supabase + Google Cloud) | ⏸️ deferred — code ready, provider not enabled |
+| Resend API key + verified domain → `RESEND_API_KEY` + `MAIL_FROM` | ⏸️ deferred — assignment emails currently land in console fallback (no real send) |
+| Israeli Privacy Law compliance — register DB, security officer, DPA | **legal prerequisite, customer's responsibility, non-code** — must happen before real client data |
+| Observability (Sentry / log drains) | ⏸️ deferred |
+| Rate limiting on `/api/auth/*` | ⏸️ deferred |
+| E2E tests (Playwright or similar) | ⏸️ deferred |
+| Auto-apply pipeline for migrations (Supabase CLI in GitHub Action) | ⏸️ deferred — every migration is still a manual SQL Editor step; see "Operational state" |
+| Dashboard screen ("בוקר טוב, לירן" + KPI cards + kanban preview) | ⏸️ post-MVP |
+| Drag-and-drop on calendar / multi-user team management | ⏸️ post-MVP |
+| Unique constraint on `(org_id, lower(tax_id))` for `clients` | ⏸️ post-MVP |
 
 ---
 
 ## 🎬 Last action (where the previous session stopped)
 
-**MVP core QA passed end-to-end by Liran in the browser**, after the
-autonomous build was merged via PR #3 (`e49ab0d`).
+**Production deploy executed end-to-end on 2026-05-18.** Live at
+**https://avi-app-1.vercel.app**.
 
-The migration story is important to read in full before adding another
-one: the autonomous build assumed Supabase auto-applies migrations from
-GitHub on merge (that line was inherited from an earlier HANDOFF). When
-the verification query came back empty after the merge, we audited the
-repo and confirmed **there is no auto-apply automation in this project**
-— no `.github/workflows/`, no `supabase/config.toml`, no Supabase CLI
-link. The only path that's actually wired is **manual application via
-the Supabase Dashboard SQL Editor**. Liran applied migration 0007 that
-way and the verification query then returned all three new columns, the
-`task_priority` enum with `urgent / normal / optional`, and the three
-partial indexes. Only after that did authenticated browser QA begin.
+The deploy was run in tightly gated stages with explicit per-step
+approval (S1 → S10, see the "Open" table above for the per-stage tick
+marks). Two issues surfaced during the deploy and both were resolved
+in-band:
 
-The misleading "GitHub integration auto-detects migrations" line has
-been removed from this file and from `.claude/skills/avi-app-architecture/SKILL.md`
-in this doc-cleanup pass. The actual current rule lives in the
-"Operational state" table below and in the skill's critical do-nots.
+### Issue 1 — Framework Preset auto-detected as "Other"
 
-### QA Summary (2026-05-17)
+The first deploy produced a green build but every endpoint returned
+`404` with `Server: Vercel` headers but no functions. Diagnosis: Vercel's
+project setup wizard had defaulted Framework Preset to `Other` instead
+of `Next.js`, so the build ran but no serverless functions or routing
+were wired up. Fixed by switching the preset to `Next.js` in Vercel
+Settings → General.
 
-| Verified end-to-end ✅ | Deferred ⏸️ |
+### Issue 2 — Vercel finalization ENOENT on `routes-manifest-deterministic.json`
+
+After the framework fix, the build started compiling the Next.js routes
+correctly (route table printed in build log) but then crashed at
+finalization with:
+
+```
+ENOENT: no such file or directory, lstat
+  '/vercel/path0/.next/routes-manifest-deterministic.json'
+```
+
+Investigation:
+
+1. The file does **not exist in Next.js 16.2.6 source** — zero references
+   in `node_modules/next`. It is produced by Vercel's deployment
+   pipeline, not by Next.js itself.
+2. Local clean builds (`rm -rf .next && npm run build`) with both
+   Turbopack (default) and `--webpack` produced the same set of
+   manifests — none of which is `routes-manifest-deterministic.json`.
+   This ruled out the build engine as the cause.
+3. The error path was `/vercel/path0/.next/...` (repo root) while the
+   actual `.next/` was at `/vercel/path0/web/.next/` (since Vercel
+   `Root Directory = web`). The mismatch pointed at a file-tracing
+   misconfiguration.
+4. `web/next.config.ts` had `outputFileTracingRoot: path.join(__dirname)`.
+   The adjacent comment explained it had been added to stop Next.js
+   from walking up to a parent workspace on the local dev machine — a
+   scenario that does **not** apply inside Vercel's build sandbox.
+
+Hypothesis: that single option was confusing Vercel's deterministic
+manifest generator into looking at the wrong root.
+
+**Fix landed in PR #4** (`cd3fd24`, merged via `dbf9194`): removed only
+that one line; left the `turbopack.root` setting and its comment intact
+(still relevant for local dev). Local `tsc + lint + build` stayed green.
+Post-merge deploy went `Ready`, and 4 anonymous probes against production
+all returned correct status codes (`/api/health` → 200, `/api/me` → 401,
+`/tasks` → 307 → `/login`, `/` → 200). Hypothesis confirmed.
+
+### S8 / S9 / S10 outcomes
+
+| Stage | Outcome |
 |---|---|
-| Login | Notification bell runtime (needs a second user) |
-| `/tasks` page render (Kanban + toolbar + lifecycle filter) | Physical mobile / PWA install on a real device |
-| Create task (Dialog, validators, default due_at = today 18:00) | Full RTL mobile spot-checks |
-| Status transitions (`new → received → in_progress → done` + Kanban regroup) | |
-| Priority change + chip colors + priority filter | |
-| Archive / Unarchive (lifecycle filter "בארכיון") | |
-| Delete-to-trash / Restore (lifecycle filter "מחוקות") | |
-| `/calendar` (week grid, hour rows, click-to-edit via shared Dialog, prev/next/today nav) | |
-| `/clients/[id]` (header card, info grid, contacts section) | |
-| Client contacts CRUD (create / edit / delete) | |
-| `is_primary` single-row DB trigger (setting one primary unsets the previous) | |
+| **S8** existing-user browser smoke test | ✅ login as Liran → `/tasks` Kanban with existing data → `/calendar` → `/clients` → `/clients/[id]` → logout → `/tasks` re-redirects to `/login`. No tokens in any `/api/*` response body. |
+| **S9** Supabase email confirmation | ✅ toggled ON in Authentication → Providers → Email. Existing user unaffected; new users must confirm. |
+| **S10** new-signup with real email | ✅ signup with new email → `/login?pending=<email>` toast → confirmation email arrived → link pointed to `https://avi-app-1.vercel.app/auth/confirm?…` (not localhost) → `/onboarding` pre-filled from sessionStorage → `/tasks` **empty** (zero tasks, zero clients, zero calendar events) → org name = new test org, user name = new test user, **no data from Liran's org visible** → logout + login again worked. Multi-tenant isolation verified end-to-end on production. |
 
-### Round-A decisions verified in QA
+### Round-level decisions that held up under real production use
 
-The decisions baked in during the autonomous build all held up under
-real use — Kanban groups `new + received` into "לביצוע"; no assignment
-dropdown in single-user org; soft delete recoverable from "מחוקות";
-archive and delete are independent operations; calendar hour window
-08:00–20:00 with an overflow footer for tasks outside it; tasks default
-to today 18:00; priority chip colors map to red / muted / indigo for
-urgent / normal / optional. No surprises in the browser.
+The Round A / MVP build decisions all survived production smoke testing
+without surprises:
 
-### What's NOT production-ready yet
-
-The code is feature-complete for the MVP, but the project is **not yet
-deployed**. Open items: Vercel deployment, Supabase production
-Site URL / Redirect URLs, email confirmation re-enabled, optional
-Resend keys, optional Google OAuth provider, and the Israeli Privacy
-Law compliance (legal, customer's responsibility — see
-`docs/ARCHITECTURE.md §13`).
-
-**Round-level decisions worth a second look during QA:**
-
-| Decision | Where | Worth checking |
+| Decision | Where | Status |
 |---|---|---|
-| Tasks Kanban groups `new + received` into a single "לביצוע" column | components/tasks/task-utils.ts (KANBAN_COLUMNS) | Liran said 3-column kanban; the DB enum has 4 statuses. Reviewable. |
-| No assignment dropdown in task form (Round A) | components/tasks/task-form-dialog.tsx | Single-user org, will land with team management. Confirm OK to defer. |
-| Delete = soft (`deleted_at` set) recoverable from "מחוקות" view | server/repositories/tasks.repository.ts setDeleted | No hard delete anywhere. |
-| Archive and Delete are independent (a task can be deleted without being archived first) | migration 0007 lifecycle composition | Two separate dropdown actions in the card menu. |
-| Calendar hour window 08:00–20:00, tasks outside get a footer counter | components/calendar/calendar-utils.ts CALENDAR_HOUR_START/END | Tightenable to 09–18 if accountant-office hours differ. |
-| Notifications are poll-based (60s unread count) not Supabase Realtime | components/notifications/notification-bell.tsx | Honors the "no @supabase in client" rule. Realtime via SSE adapter is a follow-up. |
-| Email uses Resend HTTP API via fetch (no nodemailer) | server/email/resend-email.adapter.ts | One env-var swap activates real send: `RESEND_API_KEY` + `MAIL_FROM`. |
-| Calendar block height = 30 minutes (fixed, since tasks have no duration column) | components/calendar/week-grid.tsx BLOCK_FIXED_HEIGHT | If you want variable durations, that's a new column on tasks + a migration. |
-| Dashboard screen (the "בוקר טוב, לירן" mockup) — deferred to post-MVP | not built | Liran's call at QA time. |
+| Tasks Kanban groups `new + received` into "לביצוע" | components/tasks/task-utils.ts | ✅ holds |
+| No assignment dropdown (single-user org) | components/tasks/task-form-dialog.tsx | ✅ holds; lands with team management |
+| Delete = soft (`deleted_at`), recoverable from "מחוקות" | server/repositories/tasks.repository.ts | ✅ holds |
+| Archive and Delete are independent | migration 0007 lifecycle composition | ✅ holds |
+| Calendar hour window 08:00–20:00 + overflow footer | components/calendar/calendar-utils.ts | ✅ holds |
+| Notifications poll-based (60s) not Supabase Realtime | components/notifications/notification-bell.tsx | ✅ holds; honors "no @supabase in client" |
+| Email via Resend HTTP API (no nodemailer) | server/email/resend-email.adapter.ts | ✅ code holds; env vars deferred |
+| Calendar block height = fixed 30 min | components/calendar/week-grid.tsx | ✅ holds |
 
-**Next session — Decision point for Liran (after his QA):**
+### Observation worth tracking
 
-1. **Merge the branch** and trigger the production deploy path
-   (Vercel + Supabase prod URL config). See "Open" above.
-2. **Open follow-up issues / PRs** for whatever didn't pass QA — fix in
-   small focused commits.
-3. (Optional, post-merge) **Build the dashboard** mockup screen since
-   the data (clients count, open tasks, etc.) is now all there.
+During S8, Liran noted **perceived navigation delay between dashboard
+pages** (clicks on the sidebar feel slightly sluggish). Not blocking
+production; logged as a follow-up UX inspection round (loading.tsx +
+skeleton states, no third-party packages, no DB optimization until
+inspection confirms whether it's perceived loading or actual slow API
+calls).
+
+### Next session — decision point for Liran
+
+1. **UX inspection round** (plan-only first) for the navigation delay.
+2. **Cleanup carry-over**: this session's `docs/post-deploy-cleanup`
+   branch holds doc updates; if not yet merged, that's still on the
+   table. The merged branch `fix/vercel-output-tracing-root` was
+   deleted locally and remotely after this update.
+3. **Deferred deploy items** (Google OAuth, Resend with verified
+   domain, Israeli Privacy Law compliance, observability) — pick the
+   next one based on priorities.
+4. **Optional**: dashboard mockup screen (all data sources exist).
 
 ---
 
@@ -380,31 +414,22 @@ contract with the customer.
 
 ## 📜 Recent git history
 
-### On `feat/design-tokens` (ready for QA + merge)
+### On `main` (2026-05-18, after PR #4)
 
 ```
+dbf9194 Merge pull request #4 from Liran-Raz/fix/vercel-output-tracing-root
+cd3fd24 Fix Vercel deployment output tracing root
+80533bb Doc cleanup: remove inaccurate auto-apply claims; reflect post-QA state
+e49ab0d Merge pull request #3 from Liran-Raz/feat/design-tokens  ← MVP merge
+77cf8b2 Ignore local design reference exports
 2ddfdb9 Add PWA manifest + mobile polish (#13)
 6424522 Add email notifications on task assignment (#12)
 fcbdbdf Add notifications bell + read endpoints (#11)
-38781a9 Add client contacts CRUD (#8B Round B of feature 8)
-942039f Add weekly calendar (#10)
-8e0b268 Add Tasks queue UI — Kanban + lifecycle views (#9 Round A)
-457f654 Add Tasks queue backend (#9 Round A)
-e5e8a1f Add migration 0007: tasks lifecycle + priority
-02fe53b Adopt Aether design tokens (Phase 0)
 ```
 
-### On `main` (unchanged since 2026-05-17)
-
-```
-5c8e858 Update session handoff for post-Round A state
-bc948c6 Add AVI architecture Claude skill
-6c762ac Merge pull request #2 from Liran-Raz/claude/cool-volhard-fd4cd5  ← Round A
-93eddb0 Ignore local Claude settings
-63d6e7e Add clients CRUD round A
-fd12950 Add session handoff document
-6d6e261 Merge pull request #1 from Liran-Raz/refactor/migration-ready-architecture
-```
+PR #4 was the smallest meaningful diff in the project so far —
+one-line config removal — but it was load-bearing for production.
+See "Last action" above for the full diagnosis.
 
 ---
 
@@ -412,13 +437,17 @@ fd12950 Add session handoff document
 
 | Thing | State | What to do |
 |---|---|---|
-| Branch `feat/design-tokens` | merged into `main` via PR #3 (`e49ab0d`) on 2026-05-17 | Local + remote can be deleted at Liran's convenience: `git branch -d feat/design-tokens && git push origin --delete feat/design-tokens` |
-| Migration 0007 | ✅ **applied to live Supabase manually** via SQL Editor on 2026-05-17 | Verified via `information_schema.columns` (3 new columns), `pg_enum` (`urgent / normal / optional`), and `pg_indexes` (3 partial indexes). **Do NOT re-run** — the file is not idempotent (`CREATE TYPE` would fail). For future migrations, follow the same manual workflow; see "Supabase migration workflow" in the table above. |
-| Worktree `D:\AVI.APP\.claude\worktrees\cool-volhard-fd4cd5` | leftover from PR #2 | Remove with: `git worktree remove .claude/worktrees/cool-volhard-fd4cd5 && git branch -d claude/cool-volhard-fd4cd5` |
-| Remote branch `origin/claude/cool-volhard-fd4cd5` | still on GitHub | Remove with `git push origin --delete claude/cool-volhard-fd4cd5` once Liran approves |
-| `web/.env.local` in worktree | copied from main repo for Round A build | Gitignored. Will disappear with worktree removal. |
-| Resend API key | NOT SET | Optional. Email service falls back to console logging without it. When ready: `RESEND_API_KEY=re_...` and `MAIL_FROM="AVI.APP <noreply@domain>"` in `.env.local`. |
-| `gh` CLI auth | NOT authenticated on Liran's machine | If you need `gh pr create`, ask Liran to run `gh auth login`. Otherwise fall back to the URL from `git push` output. |
+| Production URL | ✅ **live**: `https://avi-app-1.vercel.app` | Vercel default subdomain. No custom domain wired yet. |
+| Vercel project `avi-app` | ✅ **deployed from `main`** at `dbf9194` | Personal account. Root Directory = `web`. Framework = Next.js. Auto-deploy on push to `main`. |
+| Vercel env vars | ✅ set, **Production scope only** | `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `NEXT_PUBLIC_SITE_URL = https://avi-app-1.vercel.app`. No service role key (intentional). No Preview/Development scope (Preview auth out of scope). |
+| Supabase URL configuration | ✅ updated | Site URL = `https://avi-app-1.vercel.app`. Redirect URLs = `http://localhost:3000/**` + `https://avi-app-1.vercel.app/**`. No Preview wildcard. |
+| Supabase email confirmation | ✅ **ON** | Authentication → Providers → Email → "Confirm email" = ON. New signups must confirm; existing users unaffected. |
+| Branch `fix/vercel-output-tracing-root` | ✅ merged via PR #4, **deleted local + remote** 2026-05-18 | — |
+| Migration 0007 | ✅ applied 2026-05-17, verified | **Do NOT re-run** — not idempotent. Future migrations: manual SQL Editor, then `information_schema` / `pg_enum` / `pg_indexes` verify before QA. No CI automation. |
+| Resend API key | ❌ NOT SET | Email service falls back to console logging. Activates with `RESEND_API_KEY=re_…` + `MAIL_FROM="AVI.APP <noreply@domain>"`. Needs verified domain in Resend first. |
+| Google OAuth | ❌ NOT enabled | Code ready (`/api/auth/oauth/google` PKCE flow). Provider toggle off in Supabase. Needs Client ID/Secret from Google Cloud + redirect URI `https://xsuvwihfcxinorzutbve.supabase.co/auth/v1/callback`. |
+| `gh` CLI auth | NOT authenticated on Liran's machine | If you need `gh pr create`, ask Liran to run `gh auth login`. Otherwise rely on the URL from `git push` output. |
+| Worktrees | `D:\AVI.APP\.claude\worktrees\upbeat-dewdney-8dcb8a` is this session's worktree (branch `claude/upbeat-dewdney-8dcb8a`, behind main by 2 since this session's work landed on `main`). | Optional cleanup: `git worktree remove .claude/worktrees/upbeat-dewdney-8dcb8a && git branch -d claude/upbeat-dewdney-8dcb8a` when this session ends. |
 | Port 3000 dev server | may or may not be running | Check with `Get-NetTCPConnection -LocalPort 3000`; ID the process before killing. |
 | Node.js | v24.15.0 at `C:\Program Files\nodejs\` | Bash on Windows doesn't have it on PATH; PowerShell needs `$env:Path += ";C:\Program Files\nodejs"`. |
 
