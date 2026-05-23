@@ -102,3 +102,44 @@ export async function verifyEmailOtp(
 ): Promise<void> {
   await authAdapter.verifyEmailOtp(input);
 }
+
+// ============================================================
+// Password reset
+// ============================================================
+
+export type RequestPasswordResetInput = {
+  email: string;
+};
+
+// Anti-leak: always return success regardless of whether the email
+// belongs to a real user OR whether the provider call actually
+// succeeded. Provider errors are logged server-side so an operator can
+// still see SMTP misconfig / outages without exposing variance to the
+// client (which could be used to enumerate accounts or detect outages).
+export async function requestPasswordReset(
+  input: RequestPasswordResetInput,
+): Promise<void> {
+  const redirectTo =
+    `${env.NEXT_PUBLIC_SITE_URL}/auth/confirm?next=/reset-password`;
+  try {
+    await authAdapter.sendPasswordReset({
+      email: input.email,
+      redirectTo,
+    });
+  } catch (err) {
+    // Swallow — caller MUST see a uniform success response.
+    console.error("[auth.service.requestPasswordReset] swallowed:", err);
+  }
+}
+
+export type ResetPasswordInput = {
+  password: string;
+};
+
+// Update the password of the currently authenticated user. The caller
+// (API route) is expected to enforce session via requireUser(). The
+// adapter throws UnauthorizedError if the recovery session is missing
+// or expired by the time we get here.
+export async function resetPassword(input: ResetPasswordInput): Promise<void> {
+  await authAdapter.updatePassword({ password: input.password });
+}

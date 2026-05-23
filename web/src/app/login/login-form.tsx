@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 
@@ -61,9 +62,16 @@ export function LoginForm() {
   }
 
   const pendingEmail = searchParams.get("pending");
+  const resetSuccess = searchParams.get("reset") === "success";
 
   return (
     <div className="space-y-4">
+      {resetSuccess && (
+        <div className="rounded-md border border-green-600/40 bg-green-600/5 p-3 text-sm">
+          ✓ הסיסמה עודכנה בהצלחה. התחבר עם הסיסמה החדשה.
+        </div>
+      )}
+
       {pendingEmail && (
         <div className="rounded-md border border-primary/30 bg-primary/5 p-3 text-sm">
           📧 שלחנו אימייל אישור ל-<span dir="ltr" className="font-mono">{pendingEmail}</span>.
@@ -113,6 +121,14 @@ export function LoginForm() {
             onChange={(e) => setPassword(e.target.value)}
             required
           />
+          <div className="flex">
+            <Link
+              href="/forgot-password"
+              className="text-xs text-primary hover:underline"
+            >
+              שכחת סיסמה?
+            </Link>
+          </div>
         </div>
         <Button type="submit" className="w-full h-11" disabled={loading}>
           {loading ? "מתחבר..." : "התחבר"}

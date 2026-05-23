@@ -10,11 +10,13 @@ import {
 import type {
   AuthAdapter,
   AuthUser,
+  SendPasswordResetInput,
   SignInInput,
   SignUpInput,
   SignUpResult,
   StartOAuthInput,
   StartOAuthResult,
+  UpdatePasswordInput,
   VerifyEmailOtpInput,
 } from "./auth.adapter";
 
@@ -182,6 +184,43 @@ class SupabaseAuthAdapter implements AuthAdapter {
         type: input.type,
       });
       throw new UnauthorizedError("Could not verify the link");
+    }
+  }
+
+  async sendPasswordReset(input: SendPasswordResetInput): Promise<void> {
+    const supabase = await createSupabaseServerClient();
+    // Supabase's `resetPasswordForEmail` returns the same response
+    // whether the email exists or not, which is the right semantic for
+    // anti-leak. We do NOT log the email itself — only status/message.
+    const { error } = await supabase.auth.resetPasswordForEmail(input.email, {
+      redirectTo: input.redirectTo,
+    });
+    if (error) {
+      console.error("[supabase-auth.sendPasswordReset] error", {
+        status: error.status,
+        message: error.message,
+      });
+      throw new AppError("INTERNAL_ERROR", "Could not send password reset");
+    }
+  }
+
+  async updatePassword(input: UpdatePasswordInput): Promise<void> {
+    const supabase = await createSupabaseServerClient();
+    const { error } = await supabase.auth.updateUser({
+      password: input.password,
+    });
+    if (error) {
+      console.error("[supabase-auth.updatePassword] error", {
+        status: error.status,
+        message: error.message,
+      });
+      if (error.status === 401) {
+        throw new UnauthorizedError("Session expired or invalid");
+      }
+      if (error.status === 422) {
+        throw new ValidationError(error.message);
+      }
+      throw new AppError("INTERNAL_ERROR", "Could not update password");
     }
   }
 }

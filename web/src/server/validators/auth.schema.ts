@@ -34,3 +34,28 @@ export const signupSchema = z.object({
 
 export type SigninPayload = z.infer<typeof signinSchema>;
 export type SignupPayload = z.infer<typeof signupSchema>;
+
+// Forgot password — only the email is sent. The server intentionally
+// returns the same success response whether or not the email matches a
+// real user, so this schema has nothing else to validate.
+export const forgotPasswordSchema = z.object({
+  email: emailField,
+});
+
+export type ForgotPasswordPayload = z.infer<typeof forgotPasswordSchema>;
+
+// Reset password — runs after the recovery-link session is set. We
+// require BOTH `password` and `confirmPassword` and enforce the match
+// server-side too (client-side check is UX only). Reuses the same
+// password rule as signup so behavior stays consistent.
+export const resetPasswordSchema = z
+  .object({
+    password: passwordSignupField,
+    confirmPassword: z.string(),
+  })
+  .refine((v) => v.password === v.confirmPassword, {
+    message: "Passwords do not match",
+    path: ["confirmPassword"],
+  });
+
+export type ResetPasswordPayload = z.infer<typeof resetPasswordSchema>;

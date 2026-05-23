@@ -1,0 +1,43 @@
+import Link from "next/link";
+
+import { ResetPasswordForm } from "./reset-password-form";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+
+// Public page — middleware does NOT protect /reset-password. The
+// actual gate is server-side: POST /api/auth/reset-password calls
+// requireUser() and returns 401 if no recovery session exists. The
+// page itself can render either way; if the user lands here without a
+// session, the form will simply fail on submit and they can request
+// a new reset link.
+export default function ResetPasswordPage() {
+  return (
+    <div className="flex flex-1 items-center justify-center px-4 py-12 bg-muted/30">
+      <div className="w-full max-w-md space-y-6">
+        <div className="text-center space-y-2">
+          <Link href="/" className="inline-flex items-center gap-2">
+            <div className="size-10 rounded-lg bg-primary text-primary-foreground flex items-center justify-center font-bold text-lg">
+              א
+            </div>
+            <span className="font-bold text-xl">AVI.APP</span>
+          </Link>
+        </div>
+
+        <Card>
+          <CardHeader className="text-center">
+            <CardTitle className="text-2xl">הגדרת סיסמה חדשה</CardTitle>
+            <CardDescription>הזן סיסמה חדשה לחשבון שלך.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ResetPasswordForm />
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  );
+}
