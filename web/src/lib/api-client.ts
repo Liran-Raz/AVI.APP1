@@ -6,6 +6,8 @@
 // from @supabase/* or @/server/* values (types only).
 
 import type {
+  ForgotPasswordPayload,
+  ResetPasswordPayload,
   SigninPayload,
   SignupPayload,
 } from "@/server/validators/auth.schema";
@@ -202,6 +204,17 @@ export const apiClient = {
     // can complete the exchange.
     startOAuthGoogle: (input?: { redirect?: string }) =>
       postJson<StartOAuthResult>("/api/auth/oauth/google", input ?? {}),
+    // Request a password-reset email. The server ALWAYS returns success
+    // regardless of whether the email matches a real user — do not
+    // surface variance back to the user.
+    requestPasswordReset: (input: ForgotPasswordPayload) =>
+      postJson<null>("/api/auth/forgot-password", input),
+    // Set a new password for the currently-authenticated user. Requires
+    // an active session — typically the recovery session set by clicking
+    // the email link. Sends both password + confirmPassword; the server
+    // re-validates the match.
+    resetPassword: (input: ResetPasswordPayload) =>
+      postJson<null>("/api/auth/reset-password", input),
   },
   onboarding: {
     bootstrap: (input: BootstrapOrgPayload) =>

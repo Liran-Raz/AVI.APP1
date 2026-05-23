@@ -64,6 +64,22 @@ export type VerifyEmailOtpInput = {
   type: EmailOtpType;
 };
 
+// Password reset — kicks off the email-based recovery flow. The
+// provider sends an email containing a link that hits our /auth/confirm
+// route with `type=recovery` and the `next` we pass through redirectTo.
+export type SendPasswordResetInput = {
+  email: string;
+  // Absolute URL the recovery link should redirect to after the OTP
+  // is verified. Typically `${SITE_URL}/auth/confirm?next=/reset-password`.
+  redirectTo: string;
+};
+
+// Update password — uses the active session (set by clicking a recovery
+// link). No identifier needed because the provider knows who is signed in.
+export type UpdatePasswordInput = {
+  password: string;
+};
+
 export interface AuthAdapter {
   /**
    * Returns the authenticated user for the current request, or null if
@@ -112,4 +128,21 @@ export interface AuthAdapter {
    * persisted via cookies. Throws AppError on failure.
    */
   verifyEmailOtp(input: VerifyEmailOtpInput): Promise<void>;
+
+  /**
+   * Trigger a password-reset email. Implementations SHOULD NOT throw
+   * on "user not found" — that distinction must not leak to the client.
+   * They MAY throw on real provider errors (network, misconfiguration);
+   * the service is expected to swallow those for the same anti-leak
+   * reason and log server-side.
+   */
+  sendPasswordReset(input: SendPasswordResetInput): Promise<void>;
+
+  /**
+   * Update the password of the currently authenticated user. Relies on
+   * the active session set by `verifyEmailOtp({ type: "recovery" })`.
+   * Throws `UnauthorizedError` when no session exists, `ValidationError`
+   * when the provider rejects the password.
+   */
+  updatePassword(input: UpdatePasswordInput): Promise<void>;
 }
