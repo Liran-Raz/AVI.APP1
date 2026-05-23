@@ -1,4 +1,4 @@
-# AVI.APP — Session Handoff (2026-05-18 — production deployed, S10 passed)
+# AVI.APP — Session Handoff (2026-05-23 — UX skeletons + forgot-password deployed)
 
 **You are continuing a session that was started by another Claude.** Read this
 top-to-bottom before doing anything. It is the fastest way to get the same
@@ -12,31 +12,39 @@ context the previous session had, without spending tokens re-discovering it.
 - **Stack**: Next.js 16 + TypeScript + Tailwind v4 + shadcn/ui · Supabase
   (Postgres + Auth + Realtime + RLS) · Vercel.
 - **Production URL**: **https://avi-app-1.vercel.app** — live, end-to-end
-  functional. Deployed from `main` via PR #4 (merge commit `dbf9194`,
-  fix commit `cd3fd24`).
-- **Current branch**: `main` (clean, up to date with origin) at `dbf9194`.
-- **What just finished**: **production deploy path executed end-to-end**
-  in stages S2-S10. Vercel project (`avi-app`, personal account, Root
-  Directory `web`, Framework Next.js, Production-scope env vars only)
-  → Supabase Site URL + Redirect URLs updated → deploy fixed
-  (`outputFileTracingRoot` removed in PR #4, see "Last action" below) →
-  S8 existing-user smoke test passed → S9 email confirmation = ON in
-  Supabase → S10 new-user signup with real email passed including
-  confirmation email arrival, /onboarding pre-fill from sessionStorage,
-  /tasks empty for new org (multi-tenant isolation verified end-to-end
-  on production).
-- **What's next**: small UX follow-up (perceived navigation delay between
-  dashboard pages — Liran observed it during S8, agreed to defer to a
-  separate inspection/plan round). Remaining deferred work: Google OAuth
-  provider enable, Resend with verified domain (for real assignment
-  emails — currently console fallback), notification bell runtime QA
-  (needs a second user via team management), physical mobile / PWA
-  install QA, full RTL mobile pass, dashboard screen, observability
-  (Sentry/logs), rate limits, E2E tests, **legal / Israeli Privacy
-  Law review before real client data** (non-code, customer responsibility).
-- **Working directory**: `D:\AVI.APP` (Windows 11, PowerShell). The
-  leftover worktree `cool-volhard-fd4cd5` was cleaned up earlier;
-  current worktree `upbeat-dewdney-8dcb8a` is what this session ran in.
+  functional. `main` at `a1689e0` (PR #7 merge).
+- **Current branch**: `main` (clean, up to date with origin) at `a1689e0`.
+- **What just finished**: **two production-deployed rounds on top of the
+  S10-passed baseline:**
+  - **PR #6 (`feat/dashboard-loading-states`, merge `5bf826f`)** —
+    Next.js App Router `loading.tsx` skeletons for `/tasks`, `/calendar`,
+    `/clients`, `/clients/[id]` plus a shared `ui/skeleton.tsx` primitive.
+    Resolves the perceived-navigation-delay observation from S8. Zero
+    `page.tsx` / business-logic changes. Production verified.
+  - **PR #7 (`feat/forgot-password-reset`, merge `a1689e0`)** — two
+    commits: (1) protective comment in `web/next.config.ts` warning
+    against re-adding `outputFileTracingRoot` (`d6a370f`); (2) full
+    forgot-password / reset-password flow (`0bd52ae`) — new routes
+    `/forgot-password`, `/reset-password`, `/api/auth/forgot-password`,
+    `/api/auth/reset-password`; server-side `confirmPassword === password`
+    via zod `refine`; anti-leak generic success response; recovery via
+    existing `/auth/confirm?type=recovery`; "שכחת סיסמה?" link on `/login`
+    and green `?reset=success` banner. **Production full-flow test
+    passed**: existing user → /forgot-password → real email → recovery
+    link → /reset-password → new password → /login?reset=success →
+    sign-in with new password → /tasks.
+- **What's next**: deferred items — **Google OAuth provider enable**
+  (code ready, dashboard config only); **Hebrew translation of Supabase
+  email templates** (Confirm signup + Reset Password — default English
+  works but UX-thin for Israeli users); **Resend with verified domain**
+  for real assignment emails (currently console fallback); notification-bell
+  runtime QA (waits for team-management feature); physical mobile / PWA
+  install QA; full RTL mobile pass; dashboard screen ("בוקר טוב, לירן");
+  observability (Sentry/logs); rate limits on `/api/auth/*`; E2E tests;
+  **legal / Israeli Privacy Law review before real client data**
+  (non-code, customer responsibility).
+- **Working directory**: `D:\AVI.APP` (Windows 11, PowerShell). Worktree
+  `upbeat-dewdney-8dcb8a` is where this session ran.
 - **The user is Liran**, Hebrew-speaking founder / product owner. Reply in
   Hebrew unless he switches to English.
 
@@ -203,7 +211,10 @@ Plus: **architecture refactor (PR #1, `6d6e261`) + Round A merge (PR #2, `6c762a
 | Re-enable email confirmation in Supabase | ✅ **done 2026-05-18** — Authentication → Providers → Email → "Confirm email" = ON |
 | S8 smoke test — existing user (Liran) on production | ✅ **passed 2026-05-18** — 4 anonymous probes green + browser flow (login, /tasks, /calendar, /clients, /clients/[id], logout, redirects) |
 | S10 smoke test — new signup with real email on production | ✅ **passed 2026-05-18** — signup → confirmation email (production URL, not localhost) → /onboarding pre-filled → /tasks empty → multi-tenant isolation verified → logout + re-login worked |
-| UX: perceived navigation delay between dashboard pages | ⏸️ **observed during S8, deferred** — to be inspected in a separate plan-only round (loading.tsx + skeleton states; no third-party packages; no DB optimization) |
+| UX: perceived navigation delay between dashboard pages | ✅ **delivered via PR #6 (merge `5bf826f`, fix commit `2833414`)** — 4 route-level `loading.tsx` skeletons + shared `ui/skeleton.tsx` primitive. Local + production browser smoke test passed. Zero `page.tsx` changes. |
+| Forgot password / reset password flow | ✅ **delivered via PR #7 (merge `a1689e0`, feature commit `0bd52ae`)** — full self-service flow with anti-leak generic success response, server-side `confirmPassword === password` validation, recovery via existing `/auth/confirm?type=recovery`. Production full-flow test passed end-to-end (real email → reset → re-login). |
+| Protective comment in `web/next.config.ts` against re-adding `outputFileTracingRoot` | ✅ **delivered via PR #7 commit `d6a370f`** — 8-line comment naming PR #4 and the failure mode. |
+| Hebrew translation of Supabase email templates (Confirm signup + Reset Password) | ⏸️ deferred — default English template works; cosmetic only, not blocking |
 | Notification-bell runtime QA | ⏸️ deferred — needs a second user (waits for team-management feature) |
 | Physical mobile / PWA install QA on a real device | ⏸️ deferred — F12 responsive view confirmed visually |
 | Full RTL mobile spot-checks | ⏸️ deferred |
@@ -305,23 +316,70 @@ without surprises:
 ### Observation worth tracking
 
 During S8, Liran noted **perceived navigation delay between dashboard
-pages** (clicks on the sidebar feel slightly sluggish). Not blocking
-production; logged as a follow-up UX inspection round (loading.tsx +
-skeleton states, no third-party packages, no DB optimization until
-inspection confirms whether it's perceived loading or actual slow API
-calls).
+pages** (clicks on the sidebar feel slightly sluggish). Delivered as
+PR #6 (see "Post-S10 work" below).
+
+### Post-S10 work — PR #6 + PR #7 (2026-05-23)
+
+After the production deploy stabilized, two scoped rounds landed on
+top:
+
+#### PR #6 — `feat/dashboard-loading-states` (merge `5bf826f`)
+- **Trigger**: Liran's S8 observation that intra-dashboard navigation
+  felt sluggish.
+- **Inspection** (plan-only first) found: zero `loading.tsx` files in
+  the entire `web/src/app/`, zero `Suspense` boundaries with fallback,
+  zero `Skeleton` primitive. Every dashboard page is a server component
+  that awaits session + service calls before rendering — and there was
+  no fallback UI during that ~300-700ms window. Classic case for
+  `loading.tsx`.
+- **Change**: 5 new files (`web/src/components/ui/skeleton.tsx` shared
+  primitive + `loading.tsx` under each of `tasks/`, `calendar/`,
+  `clients/`, `clients/[id]/`). Skeletons mirror real layouts to avoid
+  layout shift. Use existing Aether `--muted` token + `animate-pulse`.
+  No third-party packages. No `page.tsx` edits.
+- **Verify**: tsc + lint + build green; local "Slow 3G" DevTools test
+  showed skeletons appearing during transitions; production browser
+  smoke test confirmed feel improved.
+
+#### PR #7 — `feat/forgot-password-reset` (merge `a1689e0`)
+Two commits, one branch:
+- **`d6a370f`** — protective comment in `web/next.config.ts` warning
+  against re-adding `outputFileTracingRoot` (the bug from PR #4 that
+  broke Vercel finalization). Lives in code, not just docs, so a
+  future developer browsing the config sees the warning at the trigger
+  point.
+- **`0bd52ae`** — full self-service forgot-password / reset-password
+  flow. 6 new files + 6 modified, 481 insertions. Follows the existing
+  layered pattern exactly (validator → adapter interface → adapter impl
+  → service → API route → api-client → UI). Two `AuthAdapter` methods
+  added: `sendPasswordReset`, `updatePassword`. Recovery reuses the
+  existing `/auth/confirm?type=recovery` route — no DB changes, no
+  migrations, no Supabase Dashboard touch. Anti-leak: the service
+  always returns success regardless of email existence and swallows
+  provider errors after logging server-side. Server-side
+  `confirmPassword === password` enforced via zod `.refine()`.
+  Production full-flow test passed: existing user →
+  `/forgot-password` → real email arrives → recovery link
+  (`/auth/confirm?type=recovery&next=/reset-password`) →
+  `/reset-password` → new password → `/login?reset=success` (green
+  banner) → sign-in with new password → `/tasks`.
 
 ### Next session — decision point for Liran
 
-1. **UX inspection round** (plan-only first) for the navigation delay.
-2. **Cleanup carry-over**: this session's `docs/post-deploy-cleanup`
-   branch holds doc updates; if not yet merged, that's still on the
-   table. The merged branch `fix/vercel-output-tracing-root` was
-   deleted locally and remotely after this update.
-3. **Deferred deploy items** (Google OAuth, Resend with verified
-   domain, Israeli Privacy Law compliance, observability) — pick the
-   next one based on priorities.
-4. **Optional**: dashboard mockup screen (all data sources exist).
+1. **Google OAuth** — code has been ready since the architecture
+   refactor; only Supabase Dashboard + Google Cloud OAuth client
+   configuration is missing. Liran-action steps documented in the
+   inspection report from the 2026-05-23 auth round.
+2. **Hebrew Supabase email templates** — Confirm signup + Reset
+   Password currently use the default English Supabase templates. Pure
+   Supabase Dashboard work; no code.
+3. **Resend with verified domain** — to make assignment emails actually
+   send instead of falling back to console.
+4. **Optional**: dashboard mockup screen ("בוקר טוב, לירן" + KPI
+   cards + kanban preview) — all data sources exist.
+5. **Deferred safety nets**: observability (Sentry/logs), rate limiting
+   on `/api/auth/*`, E2E tests (Playwright).
 
 ---
 
@@ -414,22 +472,27 @@ contract with the customer.
 
 ## 📜 Recent git history
 
-### On `main` (2026-05-18, after PR #4)
+### On `main` (2026-05-23, after PR #7)
 
 ```
+a1689e0 Merge pull request #7 from Liran-Raz/feat/forgot-password-reset
+0bd52ae Add forgot password reset flow
+d6a370f Add Vercel tracing root warning comment
+5bf826f Merge pull request #6 from Liran-Raz/feat/dashboard-loading-states
+2833414 Add dashboard loading skeletons
+69c0d87 Merge pull request #5 from Liran-Raz/docs/post-deploy-cleanup
+f4d2276 Update handoff after production deploy and S10 pass
 dbf9194 Merge pull request #4 from Liran-Raz/fix/vercel-output-tracing-root
 cd3fd24 Fix Vercel deployment output tracing root
 80533bb Doc cleanup: remove inaccurate auto-apply claims; reflect post-QA state
 e49ab0d Merge pull request #3 from Liran-Raz/feat/design-tokens  ← MVP merge
-77cf8b2 Ignore local design reference exports
-2ddfdb9 Add PWA manifest + mobile polish (#13)
-6424522 Add email notifications on task assignment (#12)
-fcbdbdf Add notifications bell + read endpoints (#11)
 ```
 
-PR #4 was the smallest meaningful diff in the project so far —
-one-line config removal — but it was load-bearing for production.
-See "Last action" above for the full diagnosis.
+PRs since the production deploy: #4 (Vercel tracing fix — load-bearing
+for production), #5 (post-deploy doc cleanup), #6 (dashboard loading
+skeletons), #7 (next.config protective comment + forgot-password feature).
+Each was a small, focused, separately-reviewable change. See "Last
+action" above for the post-S10 narratives.
 
 ---
 
@@ -438,11 +501,14 @@ See "Last action" above for the full diagnosis.
 | Thing | State | What to do |
 |---|---|---|
 | Production URL | ✅ **live**: `https://avi-app-1.vercel.app` | Vercel default subdomain. No custom domain wired yet. |
-| Vercel project `avi-app` | ✅ **deployed from `main`** at `dbf9194` | Personal account. Root Directory = `web`. Framework = Next.js. Auto-deploy on push to `main`. |
+| Vercel project `avi-app` | ✅ **deployed from `main`** at `a1689e0` (latest: PR #7 merge) | Personal account. Root Directory = `web`. Framework = Next.js. Auto-deploy on push to `main`. |
 | Vercel env vars | ✅ set, **Production scope only** | `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `NEXT_PUBLIC_SITE_URL = https://avi-app-1.vercel.app`. No service role key (intentional). No Preview/Development scope (Preview auth out of scope). |
 | Supabase URL configuration | ✅ updated | Site URL = `https://avi-app-1.vercel.app`. Redirect URLs = `http://localhost:3000/**` + `https://avi-app-1.vercel.app/**`. No Preview wildcard. |
 | Supabase email confirmation | ✅ **ON** | Authentication → Providers → Email → "Confirm email" = ON. New signups must confirm; existing users unaffected. |
-| Branch `fix/vercel-output-tracing-root` | ✅ merged via PR #4, **deleted local + remote** 2026-05-18 | — |
+| Branch `fix/vercel-output-tracing-root` | ✅ merged via PR #4, deleted local + remote 2026-05-18 | — |
+| Branch `docs/post-deploy-cleanup` | ✅ merged via PR #5, deleted local + remote 2026-05-18 | — |
+| Branch `feat/dashboard-loading-states` | ✅ merged via PR #6, deleted local + remote 2026-05-23 | — |
+| Branch `feat/forgot-password-reset` | ✅ merged via PR #7, deleted local + remote 2026-05-23 | — |
 | Migration 0007 | ✅ applied 2026-05-17, verified | **Do NOT re-run** — not idempotent. Future migrations: manual SQL Editor, then `information_schema` / `pg_enum` / `pg_indexes` verify before QA. No CI automation. |
 | Resend API key | ❌ NOT SET | Email service falls back to console logging. Activates with `RESEND_API_KEY=re_…` + `MAIL_FROM="AVI.APP <noreply@domain>"`. Needs verified domain in Resend first. |
 | Google OAuth | ❌ NOT enabled | Code ready (`/api/auth/oauth/google` PKCE flow). Provider toggle off in Supabase. Needs Client ID/Secret from Google Cloud + redirect URI `https://xsuvwihfcxinorzutbve.supabase.co/auth/v1/callback`. |
