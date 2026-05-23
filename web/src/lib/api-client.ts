@@ -31,6 +31,17 @@ import type {
 } from "@/server/validators/client-contacts.schema";
 import type { ContactDTO } from "@/server/services/client-contacts.service";
 import type { NotificationDTO } from "@/server/services/notifications.service";
+import type {
+  AcceptInvitationDTO,
+  InvitationDTO,
+  MemberDTO,
+} from "@/server/services/team.service";
+import type {
+  AcceptInvitationPayload,
+  ChangeRolePayload,
+  InvitePayload,
+  InviteSignupPayload,
+} from "@/server/validators/team.schema";
 
 // Re-export DTOs so client components have one stable import path.
 export type { ClientDTO } from "@/server/services/clients.service";
@@ -64,6 +75,19 @@ export type {
 } from "@/server/validators/client-contacts.schema";
 
 export type { NotificationDTO } from "@/server/services/notifications.service";
+
+export type {
+  MemberDTO,
+  InvitationDTO,
+  AcceptInvitationDTO,
+} from "@/server/services/team.service";
+export type {
+  InvitePayload,
+  ChangeRolePayload,
+  AcceptInvitationPayload,
+  InviteSignupPayload,
+  AssignableRole,
+} from "@/server/validators/team.schema";
 
 // ============================================================
 // Response payloads — match what each /api route actually returns
@@ -303,5 +327,30 @@ export const apiClient = {
       ),
     markAllRead: () =>
       postJson<{ updatedCount: number }>("/api/notifications/read-all"),
+  },
+  team: {
+    list: () => getJson<{ items: MemberDTO[] }>("/api/team"),
+    // Create a new invitation. The response includes `inviteUrl` so
+    // admins can copy-paste the link (useful when Resend is not
+    // configured and the email service is in console-fallback mode).
+    invite: (input: InvitePayload) =>
+      postJson<InvitationDTO>("/api/team/invitations", input),
+    changeRole: (memberId: string, input: ChangeRolePayload) =>
+      patchJson<MemberDTO>(
+        `/api/team/members/${memberId}/role`,
+        input,
+      ),
+    deactivate: (memberId: string) =>
+      postJson<MemberDTO>(`/api/team/members/${memberId}/deactivate`),
+  },
+  invite: {
+    // Accept a pending invitation. The caller must have an active
+    // session (the API enforces it). On success the user has a profile
+    // in the inviter's org.
+    accept: (input: AcceptInvitationPayload) =>
+      postJson<AcceptInvitationDTO>("/api/invite/accept", input),
+    // Dedicated signup flow for invited users — see /api/invite/signup.
+    signup: (input: InviteSignupPayload) =>
+      postJson<AuthOperationResult>("/api/invite/signup", input),
   },
 };
