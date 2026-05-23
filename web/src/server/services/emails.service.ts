@@ -110,3 +110,98 @@ function escapeHtml(s: string): string {
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
 }
+
+// ============================================================
+// Team invitation email
+// ============================================================
+
+export type SendInvitationInput = {
+  toEmail: string;
+  inviterName: string;
+  orgName: string;
+  role: "admin" | "employee";
+  inviteUrl: string;
+  expiresAt: string;
+};
+
+function formatExpiry(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleString("he-IL", {
+    day: "numeric",
+    month: "long",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+const ROLE_LABEL_HE: Record<"admin" | "employee", string> = {
+  admin: "מנהל",
+  employee: "עובד",
+};
+
+export async function sendInvitationEmail(
+  input: SendInvitationInput,
+): Promise<void> {
+  const subject = `הזמנה להצטרף ל-${input.orgName} ב-AVI.APP`;
+  const roleHe = ROLE_LABEL_HE[input.role];
+  const expiry = formatExpiry(input.expiresAt);
+
+  const text = [
+    `שלום,`,
+    "",
+    `${input.inviterName} מזמין/מזמינה אותך להצטרף למשרד "${input.orgName}" ב-AVI.APP כ${roleHe}.`,
+    "",
+    `הקישור לאישור ההזמנה (תקף עד ${expiry}):`,
+    input.inviteUrl,
+    "",
+    "אם לא ביקשת את ההזמנה הזו, אפשר להתעלם מהמייל הזה.",
+    "",
+    "AVI.APP",
+  ].join("\n");
+
+  const html = `
+<!doctype html>
+<html lang="he" dir="rtl">
+  <body style="font-family: Arial, Helvetica, sans-serif; background: #f7f9fb; padding: 24px; margin: 0;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+      <tr>
+        <td>
+          <table role="presentation" align="center" cellpadding="0" cellspacing="0" style="max-width: 560px; background: #ffffff; border-radius: 16px; padding: 32px; box-shadow: 0 4px 20px rgba(10,25,47,0.05);">
+            <tr><td>
+              <h1 style="margin: 0 0 12px 0; color: #191c1e; font-size: 22px;">הוזמנת להצטרף למשרד</h1>
+              <p style="margin: 0 0 24px 0; color: #44474d; font-size: 14px;">
+                ${escapeHtml(input.inviterName)} מזמין/מזמינה אותך להצטרף למשרד
+                <strong>${escapeHtml(input.orgName)}</strong> ב-AVI.APP כ<strong>${escapeHtml(roleHe)}</strong>.
+              </p>
+              <table role="presentation" cellpadding="0" cellspacing="0" style="width: 100%; border: 1px solid #c5c6cd; border-radius: 12px; padding: 16px; margin-bottom: 24px;">
+                <tr><td style="padding: 4px 0;">
+                  <p style="margin: 0; color: #44474d; font-size: 12px;">תוקף ההזמנה</p>
+                  <p style="margin: 0; color: #191c1e; font-size: 14px;">עד ${escapeHtml(expiry)}</p>
+                </td></tr>
+              </table>
+              <a href="${input.inviteUrl}" style="display: inline-block; background: #0054cc; color: #ffffff; text-decoration: none; padding: 12px 24px; border-radius: 9999px; font-weight: 600; font-size: 14px;">אשר/י את ההזמנה</a>
+              <p style="margin: 24px 0 0 0; color: #75777e; font-size: 12px;">
+                אם הקישור לא עובד, העתק/י אותו לדפדפן ידנית:<br/>
+                <span dir="ltr" style="word-break: break-all;">${escapeHtml(input.inviteUrl)}</span>
+              </p>
+              <p style="margin: 24px 0 0 0; color: #75777e; font-size: 12px;">
+                אם לא ביקשת את ההזמנה הזו, אפשר להתעלם מהמייל הזה.
+              </p>
+              <p style="margin: 32px 0 0 0; color: #75777e; font-size: 12px;">AVI.APP</p>
+            </td></tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>
+`;
+
+  await getEmailAdapter().send({
+    to: input.toEmail,
+    subject,
+    text,
+    html,
+  });
+}

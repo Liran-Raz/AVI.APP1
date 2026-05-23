@@ -29,9 +29,18 @@ export type NotificationType =
   | "task_due_soon"
   | "task_overdue";
 
+export type InvitationStatus = "pending" | "accepted" | "expired" | "revoked";
+
 // Return shape of the public.bootstrap_org RPC.
 export type BootstrapOrgResult = {
   org_id: string;
+  created: boolean;
+};
+
+// Return shape of the public.accept_invitation RPC.
+export type AcceptInvitationResult = {
+  org_id: string;
+  role: UserRole;
   created: boolean;
 };
 
@@ -277,6 +286,55 @@ export interface Database {
           },
         ];
       };
+      invitations: {
+        Row: {
+          id: string;
+          org_id: string;
+          email: string;
+          role: UserRole;
+          token_hash: string;
+          status: InvitationStatus;
+          expires_at: string;
+          invited_by: string;
+          accepted_by: string | null;
+          accepted_at: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          org_id: string;
+          email: string;
+          role: UserRole;
+          token_hash: string;
+          status?: InvitationStatus;
+          expires_at: string;
+          invited_by: string;
+          accepted_by?: string | null;
+          accepted_at?: string | null;
+          created_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["invitations"]["Insert"]>;
+        Relationships: [
+          {
+            foreignKeyName: "invitations_org_id_fkey";
+            columns: ["org_id"];
+            referencedRelation: "organizations";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "invitations_invited_by_fkey";
+            columns: ["invited_by"];
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "invitations_accepted_by_fkey";
+            columns: ["accepted_by"];
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
     };
     Views: { [_ in never]: never };
     Enums: {
@@ -285,6 +343,7 @@ export interface Database {
       task_priority: TaskPriority;
       user_role: UserRole;
       notification_type: NotificationType;
+      invitation_status: InvitationStatus;
     };
     Functions: {
       bootstrap_org: {
@@ -294,6 +353,12 @@ export interface Database {
           p_full_name: string;
         };
         Returns: BootstrapOrgResult;
+      };
+      accept_invitation: {
+        Args: {
+          p_token: string;
+        };
+        Returns: AcceptInvitationResult;
       };
     };
     CompositeTypes: { [_ in never]: never };
@@ -307,3 +372,4 @@ export type Client = Database["public"]["Tables"]["clients"]["Row"];
 export type ClientContact = Database["public"]["Tables"]["client_contacts"]["Row"];
 export type Task = Database["public"]["Tables"]["tasks"]["Row"];
 export type Notification = Database["public"]["Tables"]["notifications"]["Row"];
+export type Invitation = Database["public"]["Tables"]["invitations"]["Row"];

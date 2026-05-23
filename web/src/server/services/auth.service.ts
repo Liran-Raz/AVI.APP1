@@ -24,6 +24,13 @@ export type SignUpInput = {
   email: string;
   password: string;
   fullName: string;
+  // Optional post-confirmation path (must be a same-origin path
+  // starting with "/"). Defaults to "/onboarding" if omitted. Callers
+  // are responsible for validating this — the public /api/auth/signup
+  // endpoint does NOT expose it; only internal callers (e.g. the
+  // invite-signup route, which derives the path from a server-validated
+  // invitation token) may set it.
+  next?: string;
 };
 
 export type AuthOperationResult = {
@@ -42,13 +49,19 @@ export async function signIn(input: SignInInput): Promise<AuthOperationResult> {
 }
 
 export async function signUp(input: SignUpInput): Promise<AuthOperationResult> {
+  // Default: after email confirmation the user lands on /onboarding
+  // to create their own org. For invite-driven signup, the caller
+  // passes `next=/invite/accept?token=...` so the user lands directly
+  // on the acceptance page after confirming.
+  const nextPath = sanitizeNextPath(input.next, "/onboarding");
+  const emailRedirectTo =
+    `${env.NEXT_PUBLIC_SITE_URL}/auth/confirm?next=${encodeURIComponent(nextPath)}`;
+
   const result = await authAdapter.signUp({
     email: input.email,
     password: input.password,
     fullName: input.fullName,
-    // After clicking the confirmation email, users land on /onboarding,
-    // which redirects to /tasks once a profile exists.
-    emailRedirectTo: `${env.NEXT_PUBLIC_SITE_URL}/auth/confirm?next=/onboarding`,
+    emailRedirectTo,
   });
   return {
     userId: result.user.id,

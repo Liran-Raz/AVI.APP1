@@ -1,4 +1,4 @@
-# AVI.APP — Session Handoff (2026-05-23 — UX skeletons + forgot-password deployed)
+# AVI.APP — Session Handoff (2026-05-23 — team management WIP, awaiting merge + migration)
 
 **You are continuing a session that was started by another Claude.** Read this
 top-to-bottom before doing anything. It is the fastest way to get the same
@@ -12,10 +12,25 @@ context the previous session had, without spending tokens re-discovering it.
 - **Stack**: Next.js 16 + TypeScript + Tailwind v4 + shadcn/ui · Supabase
   (Postgres + Auth + Realtime + RLS) · Vercel.
 - **Production URL**: **https://avi-app-1.vercel.app** — live, end-to-end
-  functional. `main` at `a1689e0` (PR #7 merge).
-- **Current branch**: `main` (clean, up to date with origin) at `a1689e0`.
-- **What just finished**: **two production-deployed rounds on top of the
-  S10-passed baseline:**
+  functional. Production still serves `main` at `f0000fe` (PR #8 docs
+  update was the last merge; Team Management is on a branch, not merged
+  yet).
+- **Active branch**: `feat/team-management` (5 commits ahead of main).
+  `main` itself at `f0000fe`.
+- **In progress (branch only — NOT deployed)**: **Team Management MVP**
+  on `feat/team-management`. Five commits: (1) `0008_invitations.sql`
+  migration + database types; (2) backend (validators, repos,
+  team.service with anti-escalation + last-owner protection,
+  sendInvitationEmail, 6 API routes, api-client extensions); (3) `/team`
+  UI (members table with role/deactivate dropdowns, invite dialog with
+  copy-link fallback); (4) invite acceptance flow (`/invite/accept`,
+  `/invite/signup`, `/api/invite/accept`, `/api/invite/signup`); (5) this
+  HANDOFF update. **Awaits**: (a) PR review + merge to main, (b) manual
+  apply of `0008_invitations.sql` in Supabase SQL Editor, (c) production
+  smoke test. The deployment will fail at runtime against the live DB
+  until step (b) is done — coordinate the merge with the migration apply.
+- **What previously shipped to production**: **two rounds on top of the
+  S10-passed baseline (already in `main` and deployed):**
   - **PR #6 (`feat/dashboard-loading-states`, merge `5bf826f`)** —
     Next.js App Router `loading.tsx` skeletons for `/tasks`, `/calendar`,
     `/clients`, `/clients/[id]` plus a shared `ui/skeleton.tsx` primitive.
@@ -33,12 +48,22 @@ context the previous session had, without spending tokens re-discovering it.
     passed**: existing user → /forgot-password → real email → recovery
     link → /reset-password → new password → /login?reset=success →
     sign-in with new password → /tasks.
-- **What's next**: deferred items — **Google OAuth provider enable**
-  (code ready, dashboard config only); **Hebrew translation of Supabase
-  email templates** (Confirm signup + Reset Password — default English
-  works but UX-thin for Israeli users); **Resend with verified domain**
-  for real assignment emails (currently console fallback); notification-bell
-  runtime QA (waits for team-management feature); physical mobile / PWA
+- **What's next (immediate)**:
+  1. Merge PR for `feat/team-management` after review.
+  2. Apply `supabase/migrations/0008_invitations.sql` MANUALLY in
+     Supabase Dashboard → SQL Editor (no auto-apply pipeline). Run the
+     verification SELECTs in the migration's trailing comments.
+  3. Production smoke test: owner invites a real test email → click
+     link → /invite/signup or /invite/accept → joins org →
+     `/team` shows both users → assign a task to new user → notification
+     bell QA (this is the long-deferred QA item that unblocks).
+- **What's deferred (still)**: **Google OAuth provider enable** (code
+  ready since the original refactor; dashboard config only — see Item 1
+  in the 2026-05-23 auth round inspection report); **Hebrew translation
+  of Supabase email templates** (Confirm signup + Reset Password +
+  Invitation — default English works but UX-thin for Israeli users);
+  **Resend with verified domain** for real outbound (currently console
+  fallback for assignment AND invitation emails); physical mobile / PWA
   install QA; full RTL mobile pass; dashboard screen ("בוקר טוב, לירן");
   observability (Sentry/logs); rate limits on `/api/auth/*`; E2E tests;
   **legal / Israeli Privacy Law review before real client data**
@@ -215,7 +240,9 @@ Plus: **architecture refactor (PR #1, `6d6e261`) + Round A merge (PR #2, `6c762a
 | Forgot password / reset password flow | ✅ **delivered via PR #7 (merge `a1689e0`, feature commit `0bd52ae`)** — full self-service flow with anti-leak generic success response, server-side `confirmPassword === password` validation, recovery via existing `/auth/confirm?type=recovery`. Production full-flow test passed end-to-end (real email → reset → re-login). |
 | Protective comment in `web/next.config.ts` against re-adding `outputFileTracingRoot` | ✅ **delivered via PR #7 commit `d6a370f`** — 8-line comment naming PR #4 and the failure mode. |
 | Hebrew translation of Supabase email templates (Confirm signup + Reset Password) | ⏸️ deferred — default English template works; cosmetic only, not blocking |
-| Notification-bell runtime QA | ⏸️ deferred — needs a second user (waits for team-management feature) |
+| Team Management MVP (`/team`, invite, role/deactivate, accept) | 🟡 **implemented on `feat/team-management`**; awaiting PR review + merge + manual apply of migration 0008 + production smoke. Notification-bell QA unlocks here. |
+| Apply migration `0008_invitations.sql` (manual SQL Editor) | 🟡 **pending** — REQUIRED before the team-management deploy works at runtime. Coordinate with PR merge. |
+| Notification-bell runtime QA | 🟡 **unblocked by Team Management** — test by assigning a task to a second user after they accept the invite |
 | Physical mobile / PWA install QA on a real device | ⏸️ deferred — F12 responsive view confirmed visually |
 | Full RTL mobile spot-checks | ⏸️ deferred |
 | Google OAuth provider config (Supabase + Google Cloud) | ⏸️ deferred — code ready, provider not enabled |
@@ -372,14 +399,73 @@ Two commits, one branch:
    configuration is missing. Liran-action steps documented in the
    inspection report from the 2026-05-23 auth round.
 2. **Hebrew Supabase email templates** — Confirm signup + Reset
-   Password currently use the default English Supabase templates. Pure
-   Supabase Dashboard work; no code.
-3. **Resend with verified domain** — to make assignment emails actually
-   send instead of falling back to console.
+   Password + Invitation currently use the default English Supabase
+   templates. Pure Supabase Dashboard work; no code.
+3. **Resend with verified domain** — to make assignment AND invitation
+   emails actually send instead of falling back to console.
 4. **Optional**: dashboard mockup screen ("בוקר טוב, לירן" + KPI
    cards + kanban preview) — all data sources exist.
 5. **Deferred safety nets**: observability (Sentry/logs), rate limiting
    on `/api/auth/*`, E2E tests (Playwright).
+
+### Post-PR-8 work — PR for Team Management (branch `feat/team-management`, NOT MERGED)
+
+After the doc cleanup PR #8 landed, the Team Management MVP was
+implemented across 5 commits on `feat/team-management`. **The branch is
+pushed but not merged; the migration is NOT applied to production.**
+
+#### Commit chain
+- `b604d91` — Add team invitations migration and types
+  - `supabase/migrations/0008_invitations.sql` (additive, manual apply)
+  - `web/src/server/db/database.types.ts` (Invitation, InvitationStatus,
+    AcceptInvitationResult)
+- `8b95529` — Add team management backend
+  - validators, repos, team.service, sendInvitationEmail,
+    `/api/team/*` (GET list, POST invite, PATCH role,
+    POST deactivate), `/api/invite/accept`, `/api/invite/signup`
+  - api-client.ts gains `team.*` and `invite.*` namespaces
+  - auth.service.signUp gains optional `next` param so invite-signup
+    can route post-confirmation to `/invite/accept` instead of `/onboarding`
+- `f5bfae2` — Add team management UI
+  - `(dashboard)/team/page.tsx` + `team-page.tsx` + `invite-dialog.tsx`
+  - `loading.tsx` skeleton matching the team table
+- `cd09282` — Add invite acceptance flow
+  - public `/invite/accept` (server component with preview +
+    logged-in/logged-out branches + AcceptClient)
+  - public `/invite/signup` (dedicated form for invited users; email is
+    derived from invitation, not user-typed; orgName/orgCode skipped
+    because they are inviting into an existing org)
+- `<this commit>` — Update handoff for team management
+
+#### Security model (key safeguards)
+- **Raw tokens never stored**: only `sha256(token)`. Raw token lives
+  only in the invite URL (sent via email).
+- **`accept_invitation` SECURITY DEFINER RPC** enforces (a) caller is
+  authenticated, (b) caller has no existing profile, (c) caller's auth
+  email matches the invitation's email, (d) status is pending and not
+  expired. The service-side check `assertCanAssignRole` rejects "owner"
+  defensively even though the validator already does.
+- **Anti-escalation**: cannot change own role; admins cannot promote
+  to admin (only owner can); cannot demote/deactivate last active owner.
+- **RLS on `invitations`**: only owners/admins of the same org can see
+  or manage them. Nobody else.
+- **API never returns `token_hash`**. The invite URL (with raw token)
+  is returned exactly once — on the immediate creation response, so
+  the inviter can copy-paste when Resend is in console fallback.
+
+#### Known limitations / by design
+- **Soft deactivation only**. We do not hard-delete the auth user
+  (would require service role key, which we do not use). Effects:
+  active sessions for a deactivated user continue until their token
+  expires (~1 hour). New task assignments cannot target them and they
+  do not appear in active member lists.
+- **One org per user**. A user with an existing profile cannot accept
+  an invite to a different org without signing out first.
+- **Invitation emails default to console** unless `RESEND_API_KEY` +
+  `MAIL_FROM` are set. The invite dialog always shows the URL for
+  manual copy as a safety net.
+- **No invite revoke / resend UI** in MVP. The migration's enum has
+  `'revoked'` for forward compatibility but no surface invokes it yet.
 
 ---
 
@@ -510,6 +596,7 @@ action" above for the post-S10 narratives.
 | Branch `feat/dashboard-loading-states` | ✅ merged via PR #6, deleted local + remote 2026-05-23 | — |
 | Branch `feat/forgot-password-reset` | ✅ merged via PR #7, deleted local + remote 2026-05-23 | — |
 | Migration 0007 | ✅ applied 2026-05-17, verified | **Do NOT re-run** — not idempotent. Future migrations: manual SQL Editor, then `information_schema` / `pg_enum` / `pg_indexes` verify before QA. No CI automation. |
+| Migration 0008 (`invitations` + `accept_invitation` RPC) | 🟡 **PENDING manual apply** — exists on branch `feat/team-management` but not in `main` and not in Supabase yet. Apply via Supabase Dashboard → SQL Editor when the team-management PR is merged. Run the verification SELECTs in the migration's trailing comments. The team-management code will fail at runtime against production until this is applied. |
 | Resend API key | ❌ NOT SET | Email service falls back to console logging. Activates with `RESEND_API_KEY=re_…` + `MAIL_FROM="AVI.APP <noreply@domain>"`. Needs verified domain in Resend first. |
 | Google OAuth | ❌ NOT enabled | Code ready (`/api/auth/oauth/google` PKCE flow). Provider toggle off in Supabase. Needs Client ID/Secret from Google Cloud + redirect URI `https://xsuvwihfcxinorzutbve.supabase.co/auth/v1/callback`. |
 | `gh` CLI auth | NOT authenticated on Liran's machine | If you need `gh pr create`, ask Liran to run `gh auth login`. Otherwise rely on the URL from `git push` output. |
