@@ -2,7 +2,10 @@ import "server-only";
 import { createHash, randomBytes } from "node:crypto";
 
 import type { FullSession } from "@/server/auth/session";
-import { createSupabaseServerClient } from "@/server/db/supabase";
+import {
+  createSupabaseServerClient,
+  createSupabasePublicClient,
+} from "@/server/db/supabase";
 import type {
   Invitation,
   UserRole,
@@ -344,7 +347,12 @@ export async function previewInvitation(
   // preview-safe fields (email, role, org_name, status, expires_at). It
   // never returns token_hash, org_id, invited_by, accepted_by, or any
   // internal id.
-  const supabase = await createSupabaseServerClient();
+  //
+  // Use the cookie-less PUBLIC anon client: this is an anonymous read with no
+  // user session. The cookie-bound SSR client's .rpc() fails in this
+  // anonymous Server Component context (caused the prior /invite/accept 500);
+  // the public client replicates the anon REST path that works.
+  const supabase = createSupabasePublicClient();
   const { data, error } = await supabase.rpc("preview_invitation", {
     p_token: rawToken,
   });
