@@ -5,6 +5,7 @@ import { ok, withErrorHandler } from "@/server/errors/api-handler";
 import * as authService from "@/server/services/auth.service";
 import * as teamService from "@/server/services/team.service";
 import { ValidationError } from "@/server/errors/app-error";
+import { writePendingInviteCookie } from "@/server/auth/pending-invite-cookie";
 import { inviteSignupSchema } from "@/server/validators/team.schema";
 
 // POST /api/invite/signup
@@ -48,6 +49,13 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
     fullName: input.fullName,
     next: `/invite/accept?token=${input.token}`,
   });
+
+  // Carry the invite token across the email-confirmation round-trip. The
+  // `next` above is the primary mechanism, but Supabase's confirmation
+  // redirect drops that nested query, so the confirmed (office-less) user
+  // lands on /onboarding — which reads this cookie and routes them back to
+  // /invite/accept. Cleared on successful accept. Not logged.
+  await writePendingInviteCookie(input.token);
 
   return ok(result);
 });
