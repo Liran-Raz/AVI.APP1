@@ -2,28 +2,57 @@ import "server-only";
 
 import { authAdapter } from "@/server/auth/supabase-auth.adapter";
 import type { AuthUser } from "@/server/auth/auth.adapter";
+import { readActiveOrgCookie } from "@/server/auth/active-org-cookie";
 import { UnauthorizedError } from "@/server/errors/app-error";
 import * as profileRepo from "@/server/repositories/profile.repository";
 import * as organizationRepo from "@/server/repositories/organization.repository";
+import * as membershipsRepo from "@/server/repositories/memberships.repository";
 import type {
   Organization,
   Profile,
   UserRole,
 } from "@/server/db/database.types";
 
-// One session model the rest of the code can rely on.
-//   user        — always present after authentication
-//   profile     — present only after onboarding has completed
-//   organization — present when profile is present
+// One membership the session exposes. Org name/code are denormalized for
+// the office switcher UI. Only ACTIVE, visible memberships appear here.
+export type Membership = {
+  orgId: string;
+  orgName: string;
+  orgCode: string;
+  role: UserRole;
+  isActive: boolean;
+};
+
+// The session model the rest of the code relies on.
+//
+//   user         — always present after authentication
+//   profile      — present only after onboarding (a profile row exists).
+//                  NOTE: role / is_active / org_id on this object are
+//                  OVERLAID from the ACTIVE membership, so existing code
+//                  that reads `session.profile.role` keeps working and
+//                  reflects the per-org role. The persisted profiles
+//                  columns are legacy shadows and are NOT what you read
+//                  here.
+//   organization — ALIAS for `activeOrg` (kept for backward compat with
+//                  all the PR #1–#9 code that reads session.organization).
+//   memberships  — every active office the user belongs to (for the
+//                  office switcher).
+//   activeOrg    — the office currently in scope (validated per request).
+//   activeRole   — the user's role IN the active office.
 export type Session = {
   user: AuthUser;
   profile: Profile | null;
   organization: Organization | null;
+  memberships: Membership[];
+  activeOrg: Organization | null;
+  activeRole: UserRole | null;
 };
 
 export type FullSession = Session & {
   profile: Profile;
   organization: Organization;
+  activeOrg: Organization;
+  activeRole: UserRole;
 };
 
 // ============================================================
@@ -39,13 +68,79 @@ export async function getCurrentSession(): Promise<Session | null> {
   const user = await getCurrentUser();
   if (!user) return null;
 
-  const profile = await profileRepo.findByUserId(user.id);
-  if (!profile) {
-    return { user, profile: null, organization: null };
+  const [profile, allMemberships] = await Promise.all([
+    profileRepo.findByUserId(user.id),
+    membershipsRepo.findByUserId(user.id),
+  ]);
+
+  // Resolve the orgs behind the user's ACTIVE memberships. RLS returns
+  // only the orgs the user is an active member of, so this is also a
+  // visibility filter.
+  const activeRows = allMemberships.filter((m) => m.is_active);
+  const orgs = await organizationRepo.findByIds(activeRows.map((m) => m.org_id));
+  const orgById = new Map(orgs.map((o) => [o.id, o]));
+
+  const memberships: Membership[] = activeRows
+    .map((m): Membership | null => {
+      const org = orgById.get(m.org_id);
+      if (!org) return null;
+      return {
+        orgId: org.id,
+        orgName: org.name,
+        orgCode: org.org_code,
+        role: m.role,
+        isActive: m.is_active,
+      };
+    })
+    .filter((m): m is Membership => m !== null);
+
+  // Office-less: authenticated but no profile yet, or no active office.
+  // Callers treat this like the old "onboarding incomplete" state.
+  if (!profile || memberships.length === 0) {
+    return {
+      user,
+      profile: profile ?? null,
+      organization: null,
+      memberships,
+      activeOrg: null,
+      activeRole: null,
+    };
   }
 
-  const organization = await organizationRepo.findById(profile.org_id);
-  return { user, profile, organization };
+  // Pick the active office: the cookie's org if it is a valid active
+  // membership, otherwise the first one (deterministic join order). We do
+  // NOT write the cookie here — getCurrentSession runs during Server
+  // Component render where cookie writes are disallowed. The switch
+  // endpoint and the invite-accept route are the authoritative writers;
+  // the fallback keeps single-office users working with no cookie at all.
+  let chosen = memberships[0];
+  const cookieOrgId = await readActiveOrgCookie();
+  if (cookieOrgId) {
+    const fromCookie = memberships.find((m) => m.orgId === cookieOrgId);
+    if (fromCookie) chosen = fromCookie;
+  }
+
+  const activeOrg = orgById.get(chosen.orgId) as Organization;
+  const activeRole = chosen.role;
+
+  // Overlay the legacy fields from the ACTIVE membership so that every
+  // existing service reading session.profile.role / org_id sees the
+  // per-org truth without having to change.
+  const overlaidProfile: Profile = {
+    ...profile,
+    org_id: activeOrg.id,
+    role: activeRole,
+    is_active: true,
+  };
+
+  return {
+    user,
+    profile: overlaidProfile,
+    organization: activeOrg,
+    memberships,
+    activeOrg,
+    activeRole,
+  };
 }
 
 // ============================================================
@@ -62,19 +157,23 @@ export async function requireUser(): Promise<AuthUser> {
 export async function requireSession(): Promise<FullSession> {
   const session = await getCurrentSession();
   if (!session) throw new UnauthorizedError();
-  if (!session.profile || !session.organization) {
-    // Authenticated but onboarding incomplete. API callers can treat
-    // this as a 401 and send the user to /onboarding. Server Components
-    // should prefer getCurrentSession() and redirect explicitly.
+  if (!session.profile || !session.activeOrg || !session.activeRole) {
+    // Authenticated but no active office (onboarding incomplete, or the
+    // user has been deactivated from every office). API callers treat
+    // this as 401; Server Components prefer getCurrentSession() and
+    // redirect explicitly.
     throw new UnauthorizedError("Onboarding required");
   }
   return session as FullSession;
 }
 
-export async function requireRole(role: UserRole | UserRole[]): Promise<FullSession> {
+export async function requireRole(
+  role: UserRole | UserRole[],
+): Promise<FullSession> {
   const session = await requireSession();
   const allowed = Array.isArray(role) ? role : [role];
-  if (!allowed.includes(session.profile.role)) {
+  // activeRole is the role IN the active office (per-org).
+  if (!allowed.includes(session.activeRole)) {
     throw new UnauthorizedError("Insufficient role");
   }
   return session;

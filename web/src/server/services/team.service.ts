@@ -5,7 +5,6 @@ import type { FullSession } from "@/server/auth/session";
 import { createSupabaseServerClient } from "@/server/db/supabase";
 import type {
   Invitation,
-  Profile,
   UserRole,
 } from "@/server/db/database.types";
 import { env } from "@/server/env";
@@ -18,6 +17,8 @@ import {
 } from "@/server/errors/app-error";
 import * as invitationsRepo from "@/server/repositories/invitations.repository";
 import * as teamRepo from "@/server/repositories/team.repository";
+import type { TeamMemberRow } from "@/server/repositories/team.repository";
+import * as membershipsRepo from "@/server/repositories/memberships.repository";
 import { sendInvitationEmail } from "@/server/services/emails.service";
 
 // ============================================================
@@ -70,14 +71,14 @@ export type AcceptInvitationDTO = {
   created: boolean;
 };
 
-function memberToDTO(row: Profile): MemberDTO {
+function memberToDTO(row: TeamMemberRow): MemberDTO {
   return {
-    id: row.id,
-    fullName: row.full_name,
+    id: row.userId,
+    fullName: row.fullName,
     email: row.email,
     role: row.role,
-    isActive: row.is_active,
-    createdAt: row.created_at,
+    isActive: row.isActive,
+    createdAt: row.joinedAt,
   };
 }
 
@@ -155,8 +156,9 @@ export async function listMembers(
   session: FullSession,
 ): Promise<{ items: MemberDTO[] }> {
   // RLS already restricts to the caller's org; the explicit org_id
-  // filter in the repo is defense-in-depth.
-  const rows = await teamRepo.findMembersByOrgId(session.organization.id);
+  // filter in the repo is defense-in-depth. Roster now comes from
+  // organization_memberships (joined to profiles for identity).
+  const rows = await teamRepo.findMembersByOrgId(session.activeOrg.id);
   return { items: rows.map(memberToDTO) };
 }
 
@@ -180,16 +182,16 @@ export async function inviteMember(
   assertCanInvite(session);
   assertCanAssignRole(session, input.role);
 
-  const orgId = session.organization.id;
+  const orgId = session.activeOrg.id;
   const email = input.email.trim().toLowerCase();
 
-  // Refuse if the email is already an active member of this org.
-  const existingMember = await teamRepo.findByEmailInOrg(orgId, email);
+  // Refuse if the email is already a member of this org.
+  const existingMember = await teamRepo.findMemberByEmailInOrg(orgId, email);
   if (existingMember) {
     throw new ConflictError(
-      existingMember.is_active
+      existingMember.isActive
         ? "This email is already a member of the organization"
-        : "This email is already a member (currently inactive). Reactivate the profile instead.",
+        : "This email is already a member (currently inactive). Reactivate the membership instead.",
     );
   }
 
@@ -245,7 +247,7 @@ export async function inviteMember(
 
 export async function changeRole(
   session: FullSession,
-  targetProfileId: string,
+  targetUserId: string,
   newRole: UserRole,
 ): Promise<MemberDTO> {
   assertCanManageTeam(session);
@@ -253,36 +255,33 @@ export async function changeRole(
 
   // Anti-self-escalation: a member cannot change their own role at all.
   // (Even no-op changes are refused so the rule is simple to audit.)
-  if (targetProfileId === session.profile.id) {
+  if (targetUserId === session.user.id) {
     throw new ForbiddenError("You cannot change your own role");
   }
 
-  const target = await teamRepo.findById(targetProfileId);
-  if (!target || target.org_id !== session.organization.id) {
+  const orgId = session.activeOrg.id;
+  const target = await teamRepo.findMemberInOrg(orgId, targetUserId);
+  if (!target) {
     throw new NotFoundError("Member not found in your organization");
   }
 
   // Anti-owner-demotion: only the owner can change another owner's role,
   // AND we forbid demoting the last owner.
   if (target.role === "owner") {
-    if (session.profile.role !== "owner") {
+    if (session.activeRole !== "owner") {
       throw new ForbiddenError("Only an owner can change an owner's role");
     }
     if (newRole !== "owner") {
       // Demoting an owner — make sure another active owner remains.
-      const owners = await teamRepo.countActiveOwners(session.organization.id);
+      const owners = await membershipsRepo.countActiveOwners(orgId);
       if (owners <= 1) {
         throw new ForbiddenError("Cannot demote the last active owner");
       }
     }
   }
 
-  const updated = await teamRepo.updateRole(
-    targetProfileId,
-    session.organization.id,
-    newRole,
-  );
-  return memberToDTO(updated);
+  const updated = await membershipsRepo.updateRole(targetUserId, orgId, newRole);
+  return memberToDTO({ ...target, role: updated.role });
 }
 
 // ============================================================
@@ -291,21 +290,22 @@ export async function changeRole(
 
 export async function deactivateMember(
   session: FullSession,
-  targetProfileId: string,
+  targetUserId: string,
 ): Promise<MemberDTO> {
   assertCanManageTeam(session);
 
   // Anti-self-deactivation: enforced as a hard rule. Mistake-prevention.
-  if (targetProfileId === session.profile.id) {
+  if (targetUserId === session.user.id) {
     throw new ForbiddenError("You cannot deactivate yourself");
   }
 
-  const target = await teamRepo.findById(targetProfileId);
-  if (!target || target.org_id !== session.organization.id) {
+  const orgId = session.activeOrg.id;
+  const target = await teamRepo.findMemberInOrg(orgId, targetUserId);
+  if (!target) {
     throw new NotFoundError("Member not found in your organization");
   }
 
-  if (!target.is_active) {
+  if (!target.isActive) {
     // Idempotent — already inactive.
     return memberToDTO(target);
   }
@@ -313,21 +313,17 @@ export async function deactivateMember(
   // Owner protection: admins cannot deactivate owners; owners cannot
   // deactivate the last active owner.
   if (target.role === "owner") {
-    if (session.profile.role !== "owner") {
+    if (session.activeRole !== "owner") {
       throw new ForbiddenError("Only an owner can deactivate another owner");
     }
-    const owners = await teamRepo.countActiveOwners(session.organization.id);
+    const owners = await membershipsRepo.countActiveOwners(orgId);
     if (owners <= 1) {
       throw new ForbiddenError("Cannot deactivate the last active owner");
     }
   }
 
-  const updated = await teamRepo.setActive(
-    targetProfileId,
-    session.organization.id,
-    false,
-  );
-  return memberToDTO(updated);
+  const updated = await membershipsRepo.setActive(targetUserId, orgId, false);
+  return memberToDTO({ ...target, isActive: updated.is_active });
 }
 
 // ============================================================
@@ -400,8 +396,10 @@ export async function acceptInvitation(
       );
     }
     if (message.includes("already a member")) {
+      // Multi-office: being a member of OTHER orgs is fine. This only
+      // fires when the user is already a member of THIS specific org.
       throw new ConflictError(
-        "You are already a member of an organization. Sign out first if you want to accept this invitation under a different account.",
+        "You are already a member of this organization.",
       );
     }
     console.error("[team.service.acceptInvitation] RPC failed", {

@@ -2,6 +2,7 @@ import "server-only";
 import type { NextRequest } from "next/server";
 
 import { requireUser } from "@/server/auth/session";
+import { writeActiveOrgCookie } from "@/server/auth/active-org-cookie";
 import { ok, withErrorHandler } from "@/server/errors/api-handler";
 import * as teamService from "@/server/services/team.service";
 import { acceptInvitationSchema } from "@/server/validators/team.schema";
@@ -21,5 +22,10 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
   const body = await request.json().catch(() => ({}));
   const input = acceptInvitationSchema.parse(body);
   const result = await teamService.acceptInvitation(input.token);
+  // Make the just-joined office the active one. For a brand-new user it
+  // is their only office; for an existing user it's the intuitive landing
+  // context after accepting. The membership was just created, so the
+  // cookie passes the per-request validation on the next render.
+  await writeActiveOrgCookie(result.orgId);
   return ok(result);
 });
