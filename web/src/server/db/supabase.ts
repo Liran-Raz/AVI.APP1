@@ -1,5 +1,6 @@
 import "server-only";
 import { createServerClient } from "@supabase/ssr";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { cookies } from "next/headers";
 
 import { env } from "@/server/env";
@@ -33,4 +34,36 @@ export async function createSupabaseServerClient() {
       },
     },
   );
+}
+
+// Cookie-less, stateless anon client for PUBLIC reads that have NO user
+// session — e.g. the invitation preview rendered on /invite/accept and
+// /invite/signup, which run in an anonymous Server Component.
+//
+// Why this exists: createSupabaseServerClient() binds to the request
+// cookies and the @supabase/ssr session machinery. In an anonymous public
+// Server Component, its `.rpc()` fails at runtime (this was the cause of the
+// /invite/accept 500). This client carries ONLY the anon key and performs a
+// plain PostgREST request — exactly replicating the anonymous REST call that
+// works. It never reads or writes cookies, never persists or refreshes a
+// session, and never uses the service role key.
+//
+// Stateless → safe to share as a lazily-created module singleton.
+let publicClient: SupabaseClient<Database> | null = null;
+
+export function createSupabasePublicClient(): SupabaseClient<Database> {
+  if (!publicClient) {
+    publicClient = createClient<Database>(
+      env.NEXT_PUBLIC_SUPABASE_URL,
+      env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+      {
+        auth: {
+          persistSession: false,
+          autoRefreshToken: false,
+          detectSessionInUrl: false,
+        },
+      },
+    );
+  }
+  return publicClient;
 }
