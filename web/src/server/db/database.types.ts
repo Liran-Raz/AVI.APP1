@@ -44,6 +44,17 @@ export type AcceptInvitationResult = {
   created: boolean;
 };
 
+// Return shape of the public.preview_invitation RPC (0010). Minimal,
+// preview-safe projection ONLY — never token_hash / org_id / invited_by /
+// accepted_by / internal ids.
+export type PreviewInvitationResult = {
+  email: string;
+  role: UserRole;
+  org_name: string;
+  status: InvitationStatus;
+  expires_at: string;
+};
+
 export interface Database {
   public: {
     Tables: {
@@ -395,6 +406,12 @@ export interface Database {
           p_token: string;
         };
         Returns: AcceptInvitationResult;
+      };
+      preview_invitation: {
+        Args: {
+          p_token: string;
+        };
+        Returns: PreviewInvitationResult;
       };
     };
     CompositeTypes: { [_ in never]: never };
