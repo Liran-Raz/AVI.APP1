@@ -3,6 +3,7 @@ import type { NextRequest } from "next/server";
 
 import { requireUser } from "@/server/auth/session";
 import { writeActiveOrgCookie } from "@/server/auth/active-org-cookie";
+import { clearPendingInviteCookie } from "@/server/auth/pending-invite-cookie";
 import { ok, withErrorHandler } from "@/server/errors/api-handler";
 import * as teamService from "@/server/services/team.service";
 import { acceptInvitationSchema } from "@/server/validators/team.schema";
@@ -27,5 +28,8 @@ export const POST = withErrorHandler(async (request: NextRequest) => {
   // context after accepting. The membership was just created, so the
   // cookie passes the per-request validation on the next render.
   await writeActiveOrgCookie(result.orgId);
+  // Invite consumed — clear the pending-invite carrier cookie so a later
+  // visit to /onboarding doesn't re-route to the (now accepted) invite.
+  await clearPendingInviteCookie();
   return ok(result);
 });
