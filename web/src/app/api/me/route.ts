@@ -27,6 +27,7 @@ export const GET = withErrorHandler(async () => {
           role: session.profile.role,
         }
       : null,
+    // `organization` is the ACTIVE office (kept for backward compat).
     organization: session.organization
       ? {
           id: session.organization.id,
@@ -34,5 +35,15 @@ export const GET = withErrorHandler(async () => {
           orgCode: session.organization.org_code,
         }
       : null,
+    // Every active office the user belongs to — drives the office
+    // switcher. No secrets: org name/code + the caller's role.
+    memberships: session.memberships.map((m) => ({
+      orgId: m.orgId,
+      name: m.orgName,
+      orgCode: m.orgCode,
+      role: m.role,
+      isActive: m.isActive,
+    })),
+    activeOrgId: session.activeOrg?.id ?? null,
   });
 });

@@ -106,10 +106,23 @@ export type BootstrapOrgResult = {
 
 export type MeRole = "owner" | "admin" | "employee";
 
+// One office the user belongs to (active memberships only). Drives the
+// office switcher. `role` is the caller's role IN that office.
+export type MembershipSummary = {
+  orgId: string;
+  name: string;
+  orgCode: string;
+  role: MeRole;
+  isActive: boolean;
+};
+
 export type Me = {
   user: { id: string; email: string | null };
   profile: { fullName: string; role: MeRole } | null;
+  // The ACTIVE office (backward-compatible field name).
   organization: { id: string; name: string; orgCode: string } | null;
+  memberships: MembershipSummary[];
+  activeOrgId: string | null;
 };
 
 // ============================================================
@@ -246,6 +259,11 @@ export const apiClient = {
   },
   me: {
     get: () => getJson<Me>("/api/me"),
+    // Switch the active office. Server validates an active membership in
+    // the target org before writing the cookie. Caller should
+    // router.refresh() afterwards so server components re-render in scope.
+    setActiveOrg: (orgId: string) =>
+      postJson<{ activeOrgId: string }>("/api/me/active-org", { orgId }),
   },
   clients: {
     list: (query?: Partial<ListClientsQuery>) =>

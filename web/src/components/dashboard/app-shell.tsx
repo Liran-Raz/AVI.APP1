@@ -25,6 +25,10 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import { apiClient } from "@/lib/api-client";
+import {
+  OfficeSwitcher,
+  type SwitcherOffice,
+} from "@/components/dashboard/office-switcher";
 import type { Organization, Profile } from "@/lib/types/database";
 
 const NAV_ITEMS = [
@@ -38,10 +42,17 @@ const NAV_ITEMS = [
 export function AppShell({
   profile,
   organization,
+  memberships = [],
+  activeOrgId,
   children,
 }: {
   profile: Profile;
   organization: Organization;
+  // Active offices the user belongs to. When more than one, the sidebar
+  // shows an office switcher instead of a static label. Optional + default
+  // [] so single-office rendering is byte-for-byte unchanged.
+  memberships?: SwitcherOffice[];
+  activeOrgId?: string;
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
@@ -72,9 +83,15 @@ export function AppShell({
           <div className="size-9 rounded-lg bg-primary text-primary-foreground flex items-center justify-center font-bold">
             א
           </div>
-          <div className="flex flex-col">
+          <div className="flex flex-col min-w-0">
             <span className="font-bold text-sm">AVI.APP</span>
-            <span className="text-xs text-muted-foreground">{organization.name}</span>
+            {memberships.length > 1 && activeOrgId ? (
+              <OfficeSwitcher offices={memberships} activeOrgId={activeOrgId} />
+            ) : (
+              <span className="text-xs text-muted-foreground truncate">
+                {organization.name}
+              </span>
+            )}
           </div>
         </div>
         <nav className="flex-1 px-3 py-4 space-y-1">

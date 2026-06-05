@@ -1,88 +1,145 @@
 import "server-only";
 
 import { createSupabaseServerClient } from "@/server/db/supabase";
-import type { Profile, UserRole } from "@/server/db/database.types";
+import type { UserRole } from "@/server/db/database.types";
 
-// Team repository — `profiles` access scoped to a single org.
-// Returns Profile rows; the service is responsible for DTO mapping.
+// Team repository — reads the team roster for an org from the AUTHORITATIVE
+// organization_memberships table, joined to `profiles` for identity
+// (name / email). Role + active-status come from the membership, NOT from
+// the legacy profiles columns.
+//
+// Membership mutations (role change, deactivation, owner counting) live
+// in memberships.repository.ts. This file only does the join-shaped reads
+// the team UI needs.
 
-export async function findMembersByOrgId(orgId: string): Promise<Profile[]> {
+// A row in the team roster: the user's identity plus their per-org
+// role/active state. `userId` === profiles.id === auth.users.id.
+export type TeamMemberRow = {
+  userId: string;
+  fullName: string;
+  email: string;
+  role: UserRole;
+  isActive: boolean;
+  joinedAt: string;
+};
+
+type MembershipLite = {
+  user_id: string;
+  role: UserRole;
+  is_active: boolean;
+  joined_at: string;
+};
+
+type ProfileLite = {
+  id: string;
+  full_name: string;
+  email: string;
+};
+
+// All members of an org, ordered by join time. Two reads (memberships,
+// then profiles) zipped on user_id — avoids PostgREST embeds so the
+// hand-written Database types stay simple.
+export async function findMembersByOrgId(
+  orgId: string,
+): Promise<TeamMemberRow[]> {
   const supabase = await createSupabaseServerClient();
-  const { data } = await supabase
-    .from("profiles")
-    .select("*")
+
+  const { data: membershipData } = await supabase
+    .from("organization_memberships")
+    .select("user_id, role, is_active, joined_at")
     .eq("org_id", orgId)
-    .order("created_at", { ascending: true });
-  return (data as unknown as Profile[]) ?? [];
-}
+    .order("joined_at", { ascending: true });
 
-export async function findById(profileId: string): Promise<Profile | null> {
-  const supabase = await createSupabaseServerClient();
-  const { data } = await supabase
+  const memberships = (membershipData as unknown as MembershipLite[]) ?? [];
+  if (memberships.length === 0) return [];
+
+  const userIds = memberships.map((m) => m.user_id);
+  const { data: profileData } = await supabase
     .from("profiles")
-    .select("*")
-    .eq("id", profileId)
-    .maybeSingle();
-  return (data as unknown as Profile | null) ?? null;
+    .select("id, full_name, email")
+    .in("id", userIds);
+
+  const profiles = (profileData as unknown as ProfileLite[]) ?? [];
+  const profileById = new Map(profiles.map((p) => [p.id, p]));
+
+  return memberships.map((m) => {
+    const p = profileById.get(m.user_id);
+    return {
+      userId: m.user_id,
+      fullName: p?.full_name ?? "",
+      email: p?.email ?? "",
+      role: m.role,
+      isActive: m.is_active,
+      joinedAt: m.joined_at,
+    };
+  });
 }
 
-export async function findByEmailInOrg(
+// A single member of an org (identity + per-org role/active), or null if
+// the user has no membership in this org. Used for target lookups and to
+// shape the DTO returned after a role change / deactivation.
+export async function findMemberInOrg(
+  orgId: string,
+  userId: string,
+): Promise<TeamMemberRow | null> {
+  const supabase = await createSupabaseServerClient();
+
+  const { data: membershipRow } = await supabase
+    .from("organization_memberships")
+    .select("user_id, role, is_active, joined_at")
+    .eq("org_id", orgId)
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  const membership = membershipRow as unknown as MembershipLite | null;
+  if (!membership) return null;
+
+  const { data: profileRow } = await supabase
+    .from("profiles")
+    .select("id, full_name, email")
+    .eq("id", userId)
+    .maybeSingle();
+
+  const profile = profileRow as unknown as ProfileLite | null;
+
+  return {
+    userId,
+    fullName: profile?.full_name ?? "",
+    email: profile?.email ?? "",
+    role: membership.role,
+    isActive: membership.is_active,
+    joinedAt: membership.joined_at,
+  };
+}
+
+// Is this email already a member of this org? Returns the membership's
+// active state when found. RLS restricts the profile lookup to co-members,
+// so an email that belongs to nobody in any of the caller's orgs simply
+// returns null (treated as "not a member" — the invite can proceed).
+export async function findMemberByEmailInOrg(
   orgId: string,
   email: string,
-): Promise<Profile | null> {
+): Promise<{ userId: string; isActive: boolean } | null> {
   const supabase = await createSupabaseServerClient();
-  // Lower-case both sides for safety; Supabase Auth stores normalized
-  // emails but profile.email could in principle drift.
-  const { data } = await supabase
+
+  const { data: profileRow } = await supabase
     .from("profiles")
-    .select("*")
-    .eq("org_id", orgId)
+    .select("id")
     .ilike("email", email)
     .maybeSingle();
-  return (data as unknown as Profile | null) ?? null;
-}
 
-export async function countActiveOwners(orgId: string): Promise<number> {
-  const supabase = await createSupabaseServerClient();
-  const { count } = await supabase
-    .from("profiles")
-    .select("id", { count: "exact", head: true })
-    .eq("org_id", orgId)
-    .eq("role", "owner")
-    .eq("is_active", true);
-  return count ?? 0;
-}
+  const profile = profileRow as unknown as { id: string } | null;
+  if (!profile) return null;
 
-export async function updateRole(
-  profileId: string,
-  orgId: string,
-  role: UserRole,
-): Promise<Profile> {
-  const supabase = await createSupabaseServerClient();
-  const { data, error } = await supabase
-    .from("profiles")
-    .update({ role })
-    .eq("id", profileId)
+  const { data: membershipRow } = await supabase
+    .from("organization_memberships")
+    .select("is_active")
+    .eq("user_id", profile.id)
     .eq("org_id", orgId)
-    .select("*")
-    .single();
-  if (error) throw error;
-  return data as unknown as Profile;
-}
+    .maybeSingle();
 
-export async function setActive(
-  profileId: string,
-  orgId: string,
-  isActive: boolean,
-): Promise<Profile> {
-  const supabase = await createSupabaseServerClient();
-  const { data, error } = await supabase
-    .from("profiles")
-    .update({ is_active: isActive })
-    .eq("id", profileId)
-    .eq("org_id", orgId)
-    .select("*")
-    .single();
-  if (error) throw error;
-  return data as unknown as Profile;
+  const membership = membershipRow as unknown as { is_active: boolean } | null;
+  if (!membership) return null;
+
+  return { userId: profile.id, isActive: membership.is_active };
 }

@@ -335,6 +335,42 @@ export interface Database {
           },
         ];
       };
+      organization_memberships: {
+        // The membership model (0009): one row per (user, org). The
+        // AUTHORITATIVE source of a user's role + active-status in an org.
+        // profiles.org_id / role / is_active are now legacy shadow fields.
+        Row: {
+          id: string;
+          user_id: string;
+          org_id: string;
+          role: UserRole;
+          is_active: boolean;
+          joined_at: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          org_id: string;
+          role: UserRole;
+          is_active?: boolean;
+          joined_at?: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<
+          Database["public"]["Tables"]["organization_memberships"]["Insert"]
+        >;
+        Relationships: [
+          {
+            foreignKeyName: "organization_memberships_org_id_fkey";
+            columns: ["org_id"];
+            referencedRelation: "organizations";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
     };
     Views: { [_ in never]: never };
     Enums: {
@@ -373,3 +409,5 @@ export type ClientContact = Database["public"]["Tables"]["client_contacts"]["Row
 export type Task = Database["public"]["Tables"]["tasks"]["Row"];
 export type Notification = Database["public"]["Tables"]["notifications"]["Row"];
 export type Invitation = Database["public"]["Tables"]["invitations"]["Row"];
+export type OrganizationMembership =
+  Database["public"]["Tables"]["organization_memberships"]["Row"];
