@@ -337,30 +337,47 @@ export async function deactivateMember(
 export async function previewInvitation(
   rawToken: string,
 ): Promise<InvitationPreviewDTO> {
-  const tokenHash = hashToken(rawToken);
-  const inv = await invitationsRepo.findByTokenHash(tokenHash);
-  if (!inv) {
+  // Read via the SECURITY DEFINER preview_invitation RPC (migration 0010).
+  // The invitations table RLS is admin/owner-only, so a direct table read
+  // here returns nothing — the invitee is logged-out, or logged-in but not
+  // a member of the inviting org. The RPC bypasses RLS and returns ONLY
+  // preview-safe fields (email, role, org_name, status, expires_at). It
+  // never returns token_hash, org_id, invited_by, accepted_by, or any
+  // internal id.
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase.rpc("preview_invitation", {
+    p_token: rawToken,
+  });
+
+  if (error) {
+    console.error("[team.service.previewInvitation] RPC failed", {
+      code: error.code,
+      message: error.message,
+    });
+    throw new AppError("INTERNAL_ERROR", "Failed to load invitation");
+  }
+
+  // The RPC returns SQL NULL (-> null) when no invitation matches the token.
+  if (!data || typeof data !== "object" || !("email" in data)) {
     throw new NotFoundError("Invitation not found");
   }
-  // Look up org name with a direct query (avoids creating a whole repo
-  // method just for one read). RLS would normally block anon, but the
-  // /invite/accept page runs as a server component without a user
-  // session yet — so the lookup goes through anon. To keep this
-  // working without expanding anon's RLS scope, we use the Supabase
-  // server client which uses the anon key and just attempt the read;
-  // org names are not secret. If it returns null we degrade gracefully.
-  const supabase = await createSupabaseServerClient();
-  const { data: orgRow } = await supabase
-    .from("organizations")
-    .select("name")
-    .eq("id", inv.org_id)
-    .maybeSingle();
+
+  const row = data as {
+    email: string;
+    role: UserRole;
+    org_name: string;
+    status: InvitationPreviewDTO["status"];
+    expires_at: string;
+  };
+
   return {
-    email: inv.email,
-    role: inv.role,
-    orgName: (orgRow as { name?: string } | null)?.name ?? "המשרד שהזמין אותך",
-    status: inv.status,
-    expiresAt: inv.expires_at,
+    email: row.email,
+    role: row.role,
+    // org_name is empty only if the org row vanished; keep the friendly
+    // fallback the page showed before.
+    orgName: row.org_name || "המשרד שהזמין אותך",
+    status: row.status,
+    expiresAt: row.expires_at,
   };
 }
 
