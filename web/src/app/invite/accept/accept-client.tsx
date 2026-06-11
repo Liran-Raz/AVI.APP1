@@ -68,7 +68,12 @@ export function AcceptClient({
     router.refresh();
   }
 
-  if (hasExistingProfile) {
+  // Multi-office: an already-onboarded user CAN accept an invite to a
+  // *different* office — the accept RPC creates a second membership (or
+  // returns a clean "already a member of this org" conflict). So only block
+  // the accept button when the logged-in account is the WRONG one (email
+  // mismatch) and guide them to switch accounts; a matching email proceeds.
+  if (hasExistingProfile && emailMismatch) {
     return (
       <div className="space-y-3">
         <div className="rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm">
