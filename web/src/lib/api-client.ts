@@ -99,6 +99,14 @@ export type AuthOperationResult = {
   needsEmailConfirmation: boolean;
 };
 
+// Public signup response — intentionally omits userId so an
+// already-registered email is indistinguishable from a fresh signup
+// (anti-enumeration). The client only needs needsEmailConfirmation + email.
+export type SignUpResponse = {
+  email: string;
+  needsEmailConfirmation: boolean;
+};
+
 export type BootstrapOrgResult = {
   orgId: string;
   created: boolean;
@@ -233,7 +241,7 @@ export const apiClient = {
     signIn: (input: SigninPayload) =>
       postJson<AuthOperationResult>("/api/auth/signin", input),
     signUp: (input: SignupPayload) =>
-      postJson<AuthOperationResult>("/api/auth/signup", input),
+      postJson<SignUpResponse>("/api/auth/signup", input),
     signOut: () => postJson<null>("/api/auth/signout"),
     // Begin a Google OAuth flow. Returns the URL the browser should
     // navigate to (window.location.assign). Cookies for PKCE/state are

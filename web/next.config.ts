@@ -20,6 +20,27 @@ const nextConfig: NextConfig = {
   async headers() {
     return [
       {
+        // Baseline security headers for every route. nosniff + DENY +
+        // Permissions-Policy are safe to enforce immediately. CSP is
+        // Report-Only for now so it cannot break the Next/Tailwind/font
+        // asset graph — violations are observed (browser console) before a
+        // future enforcing policy is tuned and turned on.
+        source: "/:path*",
+        headers: [
+          { key: "X-Content-Type-Options", value: "nosniff" },
+          { key: "X-Frame-Options", value: "DENY" },
+          {
+            key: "Permissions-Policy",
+            value: "camera=(), microphone=(), geolocation=(), browsing-topics=()",
+          },
+          {
+            key: "Content-Security-Policy-Report-Only",
+            value:
+              "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; connect-src 'self' https://*.supabase.co",
+          },
+        ],
+      },
+      {
         // The invite pages carry the secret invite token in the query
         // string (?token=...). no-referrer guarantees the full URL is
         // never sent as a Referer to any destination — modern browser

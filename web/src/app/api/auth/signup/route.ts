@@ -7,14 +7,22 @@ import { signupSchema } from "@/server/validators/auth.schema";
 
 // POST /api/auth/signup
 // Body: { email, password, fullName }
-// Returns: { success: true, data: { userId, email, needsEmailConfirmation } }
-// On failure: { success: false, error: { code, message } } (409 / 400 / 500)
+// Returns: { success: true, data: { email, needsEmailConfirmation } }
+// On failure: { success: false, error: { code, message } } (400 / 500)
 //
-// We deliberately do NOT return raw session, tokens, or provider metadata.
-// The client will know if the user needs to confirm via `needsEmailConfirmation`.
+// Anti-enumeration: the response is uniform whether or not the email is
+// already registered — no userId, and needsEmailConfirmation is true in
+// both cases. We never return raw session, tokens, or provider metadata.
 export const POST = withErrorHandler(async (request: NextRequest) => {
   const body = await request.json().catch(() => ({}));
   const input = signupSchema.parse(body);
   const result = await authService.signUp(input);
-  return ok(result);
+  // Anti-enumeration: return a uniform shape that does NOT reveal whether
+  // the email already exists — no userId, and needsEmailConfirmation is
+  // true for both a fresh signup (email confirmation is enabled) and an
+  // already-registered email (the service collapses that case).
+  return ok({
+    email: result.email,
+    needsEmailConfirmation: result.needsEmailConfirmation,
+  });
 });
