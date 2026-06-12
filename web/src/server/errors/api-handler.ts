@@ -2,7 +2,7 @@ import "server-only";
 import { NextResponse } from "next/server";
 import { ZodError } from "zod";
 
-import { AppError } from "./app-error";
+import { AppError, RateLimitError } from "./app-error";
 
 // Single shape for every API response so the client can treat success/failure
 // uniformly. New API routes should use ok() / fail() and wrap their handlers
@@ -55,6 +55,12 @@ export function withErrorHandler<TArgs extends unknown[]>(
           message: i.message,
         }));
         return fail("VALIDATION_ERROR", "Invalid input", 400, issues);
+      }
+      if (err instanceof RateLimitError) {
+        // Uniform body (no details — no key/limit/email oracle) + Retry-After.
+        const res = fail(err.code, err.message, err.status);
+        res.headers.set("Retry-After", String(err.retryAfterSeconds));
+        return res;
       }
       if (err instanceof AppError) {
         return fail(err.code, err.message, err.status, err.details);

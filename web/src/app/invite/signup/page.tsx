@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { headers } from "next/headers";
 
 import { InviteSignupForm } from "./invite-signup-form";
 import {
@@ -10,6 +11,7 @@ import {
 } from "@/components/ui/card";
 import { AppError } from "@/server/errors/app-error";
 import * as teamService from "@/server/services/team.service";
+import { checkRateLimit, clientIp } from "@/server/security/rate-limit";
 
 // Public — dedicated signup form for invited users. We deliberately do
 // NOT reuse /signup because:
@@ -35,6 +37,22 @@ export default async function InviteSignupPage({
           title="קישור לא תקין"
           message="חסר token. נסה לפתוח את הקישור המלא מהמייל שוב."
         />
+      </Shell>
+    );
+  }
+
+  // Throttle anonymous preview probing per IP (skips the preview RPC when
+  // tripped). A legitimate invitee loads this page only a few times.
+  const previewLimit = await checkRateLimit(
+    "invite-preview:ip",
+    clientIp(await headers()),
+    30,
+    "10 m",
+  );
+  if (!previewLimit.allowed) {
+    return (
+      <Shell>
+        <ErrorCard title="יותר מדי בקשות" message="נסה שוב בעוד כמה דקות." />
       </Shell>
     );
   }

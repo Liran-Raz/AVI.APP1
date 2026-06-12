@@ -10,6 +10,7 @@ export type AppErrorCode =
   | "NOT_FOUND"
   | "VALIDATION_ERROR"
   | "CONFLICT"
+  | "RATE_LIMITED"
   | "INTERNAL_ERROR";
 
 export class AppError extends Error {
@@ -58,5 +59,18 @@ export class ValidationError extends AppError {
 export class ConflictError extends AppError {
   constructor(message: string) {
     super("CONFLICT", message, 409);
+  }
+}
+
+// 429. Message is intentionally generic and uniform — it must never reveal
+// the key, the limit internals, or whether an email/account exists. The
+// retry hint travels in a Retry-After header (set by withErrorHandler),
+// not in the response body.
+export class RateLimitError extends AppError {
+  public readonly retryAfterSeconds: number;
+  constructor(retryAfterSeconds = 60) {
+    super("RATE_LIMITED", "Too many requests. Please try again later.", 429);
+    this.name = "RateLimitError";
+    this.retryAfterSeconds = retryAfterSeconds;
   }
 }

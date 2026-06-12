@@ -7,6 +7,7 @@ import * as teamService from "@/server/services/team.service";
 import { ValidationError } from "@/server/errors/app-error";
 import { writePendingInviteCookie } from "@/server/auth/pending-invite-cookie";
 import { inviteSignupSchema } from "@/server/validators/team.schema";
+import { clientIp, enforceRateLimit } from "@/server/security/rate-limit";
 
 // POST /api/invite/signup
 // Body: { token, password, fullName }
@@ -22,6 +23,8 @@ import { inviteSignupSchema } from "@/server/validators/team.schema";
 // We validate the invitation BEFORE calling supabase.auth.signUp so a
 // bogus token never creates a stray auth.users row.
 export const POST = withErrorHandler(async (request: NextRequest) => {
+  await enforceRateLimit("invite-signup:ip", clientIp(request.headers), 10, "1 h");
+
   const body = await request.json().catch(() => ({}));
   const input = inviteSignupSchema.parse(body);
 

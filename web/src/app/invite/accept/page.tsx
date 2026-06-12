@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { headers } from "next/headers";
 
 import { AcceptClient } from "./accept-client";
 import {
@@ -11,6 +12,7 @@ import {
 import { getCurrentSession } from "@/server/auth/session";
 import { AppError } from "@/server/errors/app-error";
 import * as teamService from "@/server/services/team.service";
+import { checkRateLimit, clientIp } from "@/server/security/rate-limit";
 
 // Public page — middleware does NOT include /invite/accept in
 // PROTECTED_PREFIXES. The actual gate is application-level:
@@ -40,6 +42,23 @@ export default async function InviteAcceptPage({
           title="קישור לא תקין"
           message="חסר token בכתובת ההזמנה. ודא שהעתקת את כל הקישור מהמייל."
         />
+      </InvitationShell>
+    );
+  }
+
+  // Throttle anonymous preview probing per IP (a legitimate accept loads
+  // this page only a handful of times, well under the limit). When tripped
+  // we skip the preview RPC entirely.
+  const previewLimit = await checkRateLimit(
+    "invite-preview:ip",
+    clientIp(await headers()),
+    30,
+    "10 m",
+  );
+  if (!previewLimit.allowed) {
+    return (
+      <InvitationShell>
+        <ErrorState title="יותר מדי בקשות" message="נסה שוב בעוד כמה דקות." />
       </InvitationShell>
     );
   }
