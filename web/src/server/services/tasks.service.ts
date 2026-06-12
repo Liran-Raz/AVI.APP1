@@ -3,6 +3,8 @@ import "server-only";
 import type { FullSession } from "@/server/auth/session";
 import * as tasksRepo from "@/server/repositories/tasks.repository";
 import * as profileRepo from "@/server/repositories/profile.repository";
+import * as clientsRepo from "@/server/repositories/clients.repository";
+import * as membershipsRepo from "@/server/repositories/memberships.repository";
 import { env } from "@/server/env";
 import { sendTaskAssignmentEmail } from "@/server/services/emails.service";
 import type {
@@ -11,7 +13,7 @@ import type {
   TaskPriority,
   TaskStatus,
 } from "@/server/db/database.types";
-import { NotFoundError } from "@/server/errors/app-error";
+import { NotFoundError, ValidationError } from "@/server/errors/app-error";
 import type {
   CreateTaskPayload,
   ListTasksQuery,
@@ -68,6 +70,47 @@ function toDTO(row: Task): TaskDTO {
 // authenticated org member can create, update, transition, archive,
 // delete, restore, and reassign any task in their own org.
 
+// ============================================================
+// F1 — cross-org reference guard
+// ============================================================
+//
+// `assignedTo` and `clientId` arrive from the client validated only for
+// UUID shape (tasks.schema). Without an org check a member of org A could
+// plant a task in their OWN org that references an org-B user (firing a
+// cross-tenant assignment notification via the DB trigger) or an org-B
+// client (a dangling cross-tenant reference). Both lookups below are scoped
+// to the caller's active org, so they neither accept a foreign reference
+// nor reveal whether the id exists in another org. Only keys the caller
+// actually set are checked (null/undefined = unassign/untouched = allowed).
+
+async function assertAssignmentRefsInOrg(
+  session: FullSession,
+  refs: { assignedTo?: string | null; clientId?: string | null },
+): Promise<void> {
+  const orgId = session.organization.id;
+
+  if (refs.assignedTo) {
+    const membership = await membershipsRepo.findByUserAndOrg(
+      refs.assignedTo,
+      orgId,
+    );
+    if (!membership || !membership.is_active) {
+      throw new ValidationError(
+        "Assigned user is not an active member of this organization",
+      );
+    }
+  }
+
+  if (refs.clientId) {
+    const client = await clientsRepo.findByIdAndOrgId(refs.clientId, orgId);
+    if (!client) {
+      throw new ValidationError(
+        "Client does not belong to this organization",
+      );
+    }
+  }
+}
+
 export async function listTasks(
   session: FullSession,
   query: ListTasksQuery,
@@ -100,6 +143,11 @@ export async function createTask(
   session: FullSession,
   input: CreateTaskPayload,
 ): Promise<TaskDTO> {
+  // F1: reject cross-org assignee/client references before creating.
+  await assertAssignmentRefsInOrg(session, {
+    assignedTo: input.assignedTo ?? null,
+    clientId: input.clientId ?? null,
+  });
   const row = await tasksRepo.create({
     org_id: session.organization.id,
     creator_id: session.profile.id,
@@ -124,6 +172,12 @@ export async function updateTask(
   id: string,
   patch: UpdateTaskPayload,
 ): Promise<TaskDTO> {
+  // F1: reject cross-org assignee/client references before any read/write.
+  await assertAssignmentRefsInOrg(session, {
+    assignedTo: patch.assignedTo,
+    clientId: patch.clientId,
+  });
+
   // Build a snake_case partial. Only include keys the caller sent.
   const dbPatch: TaskUpdate = {};
   if (patch.title !== undefined) dbPatch.title = patch.title;
