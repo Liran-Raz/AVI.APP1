@@ -7,6 +7,7 @@ import { clearPendingInviteCookie } from "@/server/auth/pending-invite-cookie";
 import { ok, withErrorHandler } from "@/server/errors/api-handler";
 import * as teamService from "@/server/services/team.service";
 import { acceptInvitationSchema } from "@/server/validators/team.schema";
+import { enforceRateLimit } from "@/server/security/rate-limit";
 
 // POST /api/invite/accept
 // Body: { token }
@@ -19,7 +20,9 @@ import { acceptInvitationSchema } from "@/server/validators/team.schema";
 // `requireUser` (not `requireSession`) — invitee doesn't have a
 // profile yet, so requireSession would 401 with "Onboarding required".
 export const POST = withErrorHandler(async (request: NextRequest) => {
-  await requireUser();
+  const user = await requireUser();
+  // Throttle accept attempts per authenticated user (replay/abuse).
+  await enforceRateLimit("invite-accept:user", user.id, 10, "10 m");
   const body = await request.json().catch(() => ({}));
   const input = acceptInvitationSchema.parse(body);
   const result = await teamService.acceptInvitation(input.token);

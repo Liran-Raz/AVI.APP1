@@ -17,6 +17,14 @@ const serverEnvSchema = z.object({
     .url("NEXT_PUBLIC_SITE_URL must be a valid URL")
     .default("http://localhost:3000"),
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
+  // Rate limiting (F2) — server-only, OPTIONAL. When absent the limiter
+  // fails open (dev: in-memory; preview/prod: disabled with a loud log).
+  // Never prefix with NEXT_PUBLIC_ — these are secrets.
+  UPSTASH_REDIS_REST_URL: z
+    .string()
+    .url("UPSTASH_REDIS_REST_URL must be a valid URL")
+    .optional(),
+  UPSTASH_REDIS_REST_TOKEN: z.string().min(1).optional(),
 });
 
 export type ServerEnv = z.infer<typeof serverEnvSchema>;
