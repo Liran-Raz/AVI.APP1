@@ -65,3 +65,4 @@ supabase/.env
 
 # Local design reference (Stitch exports — not a build input)
 design/
+.vercel

@@ -17,6 +17,19 @@ const nextConfig: NextConfig = {
   // pinned. Removed in PR #4 (cd3fd24). Local dev / build worked either
   // way — the regression only manifests in Vercel. If you ever need to
   // re-add it, redeploy to Vercel and verify the production build first.
+  async headers() {
+    return [
+      {
+        // The invite pages carry the secret invite token in the query
+        // string (?token=...). no-referrer guarantees the full URL is
+        // never sent as a Referer to any destination — modern browser
+        // defaults already strip the query cross-origin, but the pages
+        // must not depend on client defaults for that.
+        source: "/invite/:path*",
+        headers: [{ key: "Referrer-Policy", value: "no-referrer" }],
+      },
+    ];
+  },
 };
 
 export default nextConfig;
