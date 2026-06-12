@@ -1,7 +1,7 @@
 import "server-only";
 import type { NextRequest } from "next/server";
 
-import { requireSession } from "@/server/auth/session";
+import { requireRole } from "@/server/auth/session";
 import { ok, withErrorHandler } from "@/server/errors/api-handler";
 import * as teamService from "@/server/services/team.service";
 
@@ -22,7 +22,9 @@ type Params = { params: Promise<{ id: string }> };
 // can deactivate owner, no last-owner deactivation.
 export const POST = withErrorHandler(
   async (_request: NextRequest, { params }: Params) => {
-    const session = await requireSession();
+    // Route-level role belt (defense in depth). The service still enforces
+    // the finer rules (assertCanManageTeam / owner protection).
+    const session = await requireRole(["owner", "admin"]);
     const { id } = await params;
     const result = await teamService.deactivateMember(session, id);
     return ok(result);

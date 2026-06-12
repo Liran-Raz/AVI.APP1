@@ -6,6 +6,7 @@ import type {
   OAuthProvider,
 } from "@/server/auth/auth.adapter";
 import { sanitizeNextPath } from "@/server/auth/redirect";
+import { ConflictError } from "@/server/errors/app-error";
 import { env } from "@/server/env";
 
 // Auth service — the only consumer of AuthAdapter for sign-in/up/out,
@@ -57,17 +58,34 @@ export async function signUp(input: SignUpInput): Promise<AuthOperationResult> {
   const emailRedirectTo =
     `${env.NEXT_PUBLIC_SITE_URL}/auth/confirm?next=${encodeURIComponent(nextPath)}`;
 
-  const result = await authAdapter.signUp({
-    email: input.email,
-    password: input.password,
-    fullName: input.fullName,
-    emailRedirectTo,
-  });
-  return {
-    userId: result.user.id,
-    email: result.user.email ?? input.email,
-    needsEmailConfirmation: result.needsEmailConfirmation,
-  };
+  try {
+    const result = await authAdapter.signUp({
+      email: input.email,
+      password: input.password,
+      fullName: input.fullName,
+      emailRedirectTo,
+    });
+    return {
+      userId: result.user.id,
+      email: result.user.email ?? input.email,
+      needsEmailConfirmation: result.needsEmailConfirmation,
+    };
+  } catch (err) {
+    // Anti-enumeration (F3): an "already registered" email must NOT be
+    // distinguishable from a fresh signup. Mirror the forgot-password
+    // anti-leak posture and return the same confirmation-pending shape.
+    // Email confirmation is enabled, so a genuine new signup also reports
+    // needsEmailConfirmation=true; the public /api/auth/signup route
+    // additionally omits userId so the two responses are byte-identical.
+    if (err instanceof ConflictError) {
+      return {
+        userId: "",
+        email: input.email,
+        needsEmailConfirmation: true,
+      };
+    }
+    throw err;
+  }
 }
 
 export async function signOut(): Promise<void> {
