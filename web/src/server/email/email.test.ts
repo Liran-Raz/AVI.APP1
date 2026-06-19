@@ -4,7 +4,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 // getEmailAdapter() caches its result, so each scenario resets the module
 // registry and re-imports a fresh copy with the desired env.
 
-const ENV_KEYS = ["RESEND_API_KEY", "MAIL_FROM", "NODE_ENV"] as const;
+const ENV_KEYS = [
+  "RESEND_API_KEY",
+  "MAIL_FROM",
+  "NODE_ENV",
+  "VERCEL_ENV",
+  "VERCEL_TARGET_ENV",
+] as const;
 const PROD = "production";
 const DEV = "development";
 
@@ -42,10 +48,16 @@ async function resolveAdapterWith(env: {
   RESEND_API_KEY?: string;
   MAIL_FROM?: string;
   NODE_ENV: string;
+  VERCEL_ENV?: string;
+  VERCEL_TARGET_ENV?: string;
 }) {
+  // Set ALL tracked keys every call (undefined → delete) so no scenario
+  // leaks Vercel signals into another.
   setEnv("RESEND_API_KEY", env.RESEND_API_KEY);
   setEnv("MAIL_FROM", env.MAIL_FROM);
   setEnv("NODE_ENV", env.NODE_ENV);
+  setEnv("VERCEL_ENV", env.VERCEL_ENV);
+  setEnv("VERCEL_TARGET_ENV", env.VERCEL_TARGET_ENV);
   vi.resetModules();
   const mod = await import("./email");
   return mod.getEmailAdapter();
@@ -145,6 +157,49 @@ describe("getEmailAdapter — production must FAIL LOUD, never silently no-op", 
       .map((c: unknown[]) => JSON.stringify(c))
       .join(" ");
     expect(logged).not.toContain("re_live_key");
+  });
+});
+
+describe("getEmailAdapter — Vercel Preview must FAIL LOUD too", () => {
+  it("Preview (NODE_ENV=production, VERCEL_ENV/TARGET=preview) + missing RESEND_API_KEY → send() throws, no provider call", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const adapter = await resolveAdapterWith({
+      RESEND_API_KEY: undefined,
+      MAIL_FROM: "AVI.APP <noreply@example.test>",
+      NODE_ENV: PROD,
+      VERCEL_ENV: "preview",
+      VERCEL_TARGET_ENV: "preview",
+    });
+
+    const err = await captureError(adapter.send(message));
+    expect(err.name).toBe("EmailConfigError");
+    // The no-op console adapter must NOT be selected on Preview.
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("Preview + missing MAIL_FROM → send() throws", async () => {
+    const adapter = await resolveAdapterWith({
+      RESEND_API_KEY: "re_live_key",
+      MAIL_FROM: undefined,
+      NODE_ENV: PROD,
+      VERCEL_ENV: "preview",
+      VERCEL_TARGET_ENV: "preview",
+    });
+    const err = await captureError(adapter.send(message));
+    expect(err.name).toBe("EmailConfigError");
+  });
+
+  it("a deployed Vercel preview signal forces fail-loud even if NODE_ENV is not production (defense in depth)", async () => {
+    const adapter = await resolveAdapterWith({
+      RESEND_API_KEY: undefined,
+      MAIL_FROM: undefined,
+      NODE_ENV: "test", // not production
+      VERCEL_ENV: "preview", // but a deployed Vercel preview
+    });
+    const err = await captureError(adapter.send(message));
+    expect(err.name).toBe("EmailConfigError");
   });
 });
 

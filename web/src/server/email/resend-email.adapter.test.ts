@@ -66,7 +66,7 @@ describe("resend email adapter", () => {
     expect(init.method).toBe("POST");
   });
 
-  it("throws EmailDeliveryError (never success) when the provider returns an error status", async () => {
+  it("throws EmailDeliveryError (never success) with status + allowlisted code on a non-2xx", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       fakeResponse({
         status: 422,
@@ -78,11 +78,16 @@ describe("resend email adapter", () => {
 
     const err = await captureError(adapter.send(sample));
     expect(err).toBeInstanceOf(EmailDeliveryError);
-    expect((err as EmailDeliveryError).status).toBe(422);
+    const delivery = err as EmailDeliveryError;
+    expect(delivery.status).toBe(422);
+    expect(delivery.providerCode).toBe("validation_error");
     expect(err.message).toContain("422");
+    expect(err.message).toContain("validation_error");
+    // The free-form provider message must NOT be carried through.
+    expect(err.message).not.toContain("bad from");
   });
 
-  it("throws (does not swallow) when fetch itself throws", async () => {
+  it("throws (does not swallow) when fetch itself throws, without leaking the transport reason", async () => {
     const fetchMock = vi
       .fn()
       .mockRejectedValue(new Error("ECONNREFUSED 1.2.3.4:443"));
@@ -90,7 +95,10 @@ describe("resend email adapter", () => {
 
     const err = await captureError(adapter.send(sample));
     expect(err).toBeInstanceOf(EmailDeliveryError);
-    expect(err.message).toContain("ECONNREFUSED");
+    expect((err as EmailDeliveryError).transport).toBe(true);
+    // The raw fetch reason (host/IP) must not appear.
+    expect(err.message).not.toContain("ECONNREFUSED");
+    expect(err.message).not.toContain("1.2.3.4");
   });
 
   it("never includes the API key in the error message", async () => {
@@ -98,28 +106,41 @@ describe("resend email adapter", () => {
       fakeResponse({
         status: 401,
         statusText: "Unauthorized",
-        body: "API key is invalid",
+        body: '{"name":"restricted_api_key","message":"key is invalid"}',
       }),
     );
     vi.stubGlobal("fetch", fetchMock);
 
     const err = await captureError(adapter.send(sample));
-    expect(err).toBeInstanceOf(EmailDeliveryError);
     expect(err.message).not.toContain(API_KEY);
   });
 
-  it("caps an oversized provider body in the error message", async () => {
-    const huge = "x".repeat(5000);
+  it("never surfaces PII, tokens, or arbitrary private text from the provider body", async () => {
+    const leakyEmail = "victim@secret-domain.example.com";
+    const leakyToken = "tok_live_SUPERSECRET_abc123XYZ";
+    const leakyText = "internal note: customer SSN 123-45-6789";
     const fetchMock = vi.fn().mockResolvedValue(
       fakeResponse({
-        status: 500,
-        statusText: "Internal Server Error",
-        body: huge,
+        status: 422,
+        statusText: "Unprocessable Entity",
+        body: JSON.stringify({
+          // Even a malicious/free-form `name` must be dropped (not allowlisted).
+          name: `${leakyEmail} ${leakyToken}`,
+          message: `contact ${leakyEmail} with ${leakyToken}. ${leakyText}`,
+          recipient: leakyEmail,
+        }),
       }),
     );
     vi.stubGlobal("fetch", fetchMock);
 
     const err = await captureError(adapter.send(sample));
-    expect(err.message.length).toBeLessThan(500);
+    expect(err.message).not.toContain(leakyEmail);
+    expect(err.message).not.toContain(leakyToken);
+    expect(err.message).not.toContain(leakyText);
+    expect(err.message).not.toContain("123-45-6789");
+    // Only stable metadata survives.
+    expect(err.message).toContain("provider=resend");
+    expect(err.message).toContain("422");
+    expect((err as EmailDeliveryError).providerCode).toBeUndefined();
   });
 });

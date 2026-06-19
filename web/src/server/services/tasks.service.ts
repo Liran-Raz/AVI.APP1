@@ -227,8 +227,10 @@ export async function updateTask(
 // notification is the primary channel). In dev without RESEND_API_KEY the
 // console adapter logs the would-be send; in production a missing config
 // now fails loudly (the adapter throws) and is recorded here as an error.
-
-async function sendAssignmentEmailIfNeeded(
+//
+// Exported for unit testing the best-effort failure path. The call sites
+// keep invoking it fire-and-forget; exporting does not change the flow.
+export async function sendAssignmentEmailIfNeeded(
   session: FullSession,
   task: Task,
   previousAssignedTo: string | null,

@@ -12,18 +12,34 @@ import { makeResendEmailAdapter } from "./resend-email.adapter";
 //
 // Fail-loud contract (F7):
 //   - If RESEND_API_KEY and MAIL_FROM are both set → Resend (every env).
-//   - If they are missing/empty IN PRODUCTION → an "unconfigured" adapter
-//     whose send() THROWS. Production must never silently fall back to a
-//     no-op that reports fake successful deliveries.
-//   - If they are missing/empty in development/test → the console adapter
-//     (explicit, environment-gated) so the app still runs locally without
-//     a provider. This fallback is deliberately *not* available in prod.
+//   - If they are missing/empty in any DEPLOYED environment (Vercel
+//     Production or Preview) → an "unconfigured" adapter whose send()
+//     THROWS. No deployed environment may silently fall back to a no-op
+//     that reports fake successful deliveries.
+//   - If they are missing/empty in genuine local development or the test
+//     runner → the console adapter (explicit, environment-gated) so the
+//     app still runs locally without a provider.
 
 let cached: EmailAdapter | null = null;
 
-// Adapter that refuses to succeed. Returned in production when email is
-// not configured: each send() throws a typed, non-secret error so the
-// failure is loud and observable instead of a silent drop.
+// Whether a missing/empty email config must FAIL LOUD rather than fall back
+// to the dev console adapter.
+//
+// True for production AND for any deployed Vercel environment (preview or
+// production). Vercel builds every deployment with NODE_ENV=production, and
+// VERCEL_ENV is an explicit, independent signal — so the guard holds even
+// if NODE_ENV were ever misconfigured on a deployment. False ONLY for
+// genuine local development (`next dev` / `vercel dev`) and the test runner.
+function mustFailLoudWithoutConfig(): boolean {
+  if (process.env.NODE_ENV === "production") return true;
+  const vercelEnv = process.env.VERCEL_ENV;
+  if (vercelEnv === "production" || vercelEnv === "preview") return true;
+  return false;
+}
+
+// Adapter that refuses to succeed. Returned in deployed environments when
+// email is not configured: each send() throws a typed, non-secret error so
+// the failure is loud and observable instead of a silent drop.
 function makeUnconfiguredEmailAdapter(): EmailAdapter {
   return {
     async send(): Promise<void> {
@@ -46,22 +62,24 @@ export function getEmailAdapter(): EmailAdapter {
   }
 
   // Config missing or empty.
-  if (process.env.NODE_ENV === "production") {
-    // NEVER silently no-op in production. Return a fail-loud adapter; do
-    // NOT cache it, so a corrected environment (new deploy / fresh
-    // instance) can recover and so the loud log is re-emitted on retry.
+  if (mustFailLoudWithoutConfig()) {
+    // NEVER silently no-op in a deployed environment. Return a fail-loud
+    // adapter; do NOT cache it, so a corrected environment (new deploy /
+    // fresh instance) can recover and the loud log is re-emitted on retry.
     console.error(
-      "[email] RESEND_API_KEY/MAIL_FROM missing in production — real " +
-        "email delivery is DISABLED; send attempts will fail loudly",
+      "[email] RESEND_API_KEY/MAIL_FROM missing in a deployed environment " +
+        "(production/preview) — real email delivery is DISABLED; send " +
+        "attempts will fail loudly",
     );
     return makeUnconfiguredEmailAdapter();
   }
 
-  // Development / test only: explicit, environment-gated console fallback.
+  // Genuine local development / test only: explicit, environment-gated
+  // console fallback.
   cached = consoleEmailAdapter;
   if (process.env.NODE_ENV !== "test") {
     console.info(
-      "[email] using console adapter (dev) — set RESEND_API_KEY and MAIL_FROM to send for real",
+      "[email] using console adapter (local dev) — set RESEND_API_KEY and MAIL_FROM to send for real",
     );
   }
   return cached;
