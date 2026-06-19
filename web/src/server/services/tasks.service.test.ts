@@ -94,9 +94,14 @@ describe("sendAssignmentEmailIfNeeded — best-effort failure handling", () => {
       Record<string, unknown>,
     ];
     expect(msg).toBe("[tasks] assignment email send failed");
-    // Only approved, stable fields are logged.
-    expect(Object.keys(meta).sort()).toEqual(["reason", "taskId"]);
-    expect(meta.taskId).toBe("task-123");
+    // Only the task id plus approved, stable metadata are logged.
+    expect(meta).toEqual({
+      taskId: "task-123",
+      category: "delivery_error",
+      provider: "resend",
+      status: 500,
+      providerCode: "internal_server_error",
+    });
 
     // Nothing sensitive in the log: no recipient, no body, no token/secret.
     const logged = errorSpy.mock.calls
@@ -105,6 +110,37 @@ describe("sendAssignmentEmailIfNeeded — best-effort failure handling", () => {
     expect(logged).not.toContain(RECIPIENT);
     expect(logged).not.toContain("BODY_TITLE_SECRET");
     expect(logged).not.toContain("BODY_DESCRIPTION_SECRET");
+  });
+
+  it("a malicious plain Error leaks nothing — logs taskId + unknown_error only", async () => {
+    const apiKeyLike = "re_LEAK_SECRET_abc123";
+    const tokenLike = "tok_live_SUPERSECRET";
+    const providerBody = "<html>provider secret</html>";
+    vi.mocked(sendTaskAssignmentEmail).mockRejectedValue(
+      new Error(
+        `to ${RECIPIENT} apikey=${apiKeyLike} token=${tokenLike} body=${providerBody} ${"BODY_TITLE_SECRET"}`,
+      ),
+    );
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    await expect(
+      sendAssignmentEmailIfNeeded(session, task, null),
+    ).resolves.toBeUndefined();
+
+    const [, meta] = errorSpy.mock.calls[0] as [
+      string,
+      Record<string, unknown>,
+    ];
+    expect(meta).toEqual({ taskId: "task-123", category: "unknown_error" });
+
+    const logged = errorSpy.mock.calls
+      .map((c: unknown[]) => JSON.stringify(c))
+      .join(" ");
+    expect(logged).not.toContain(RECIPIENT);
+    expect(logged).not.toContain(apiKeyLike);
+    expect(logged).not.toContain(tokenLike);
+    expect(logged).not.toContain(providerBody);
+    expect(logged).not.toContain("BODY_TITLE_SECRET");
   });
 
   it("a successful assignment email logs no error", async () => {

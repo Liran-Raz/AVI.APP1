@@ -7,6 +7,7 @@ import * as clientsRepo from "@/server/repositories/clients.repository";
 import * as membershipsRepo from "@/server/repositories/memberships.repository";
 import { env } from "@/server/env";
 import { sendTaskAssignmentEmail } from "@/server/services/emails.service";
+import { toSafeErrorMeta } from "@/server/email/email-errors";
 import type {
   Database,
   Task,
@@ -256,11 +257,12 @@ export async function sendAssignmentEmailIfNeeded(
       taskUrl,
     });
   } catch (err) {
-    // Log a SAFE summary (no provider body, no task content beyond the id)
-    // so the failure is observable without leaking internals.
+    // Log ONLY the task id plus stable, allowlisted metadata via
+    // toSafeErrorMeta — never err.message/stack, recipient, task content,
+    // or any provider body.
     console.error("[tasks] assignment email send failed", {
       taskId: task.id,
-      reason: err instanceof Error ? err.message : "unknown",
+      ...toSafeErrorMeta(err),
     });
   }
 }

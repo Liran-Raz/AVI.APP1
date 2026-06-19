@@ -69,3 +69,42 @@ export class EmailDeliveryError extends EmailError {
     this.transport = input.transport ?? false;
   }
 }
+
+// Log-safe metadata for ANY thrown value. This is the ONLY shape callers
+// should log for an email failure: it can never carry free-form text
+// (err.message / err.stack, a provider body, a recipient, a subject, a
+// body, an invite URL, a token, or arbitrary error properties) — only a
+// stable category and, for known email errors, allowlisted fields.
+export type SafeErrorMeta =
+  | { category: "config_error" }
+  | {
+      category: "delivery_error";
+      provider: string;
+      status?: number;
+      providerCode?: string;
+      transport?: boolean;
+    }
+  | { category: "unknown_error" };
+
+export function toSafeErrorMeta(err: unknown): SafeErrorMeta {
+  if (err instanceof EmailConfigError) {
+    return { category: "config_error" };
+  }
+  if (err instanceof EmailDeliveryError) {
+    // Build with only the fields that exist — never spread the error object.
+    const meta: {
+      category: "delivery_error";
+      provider: string;
+      status?: number;
+      providerCode?: string;
+      transport?: boolean;
+    } = { category: "delivery_error", provider: err.provider };
+    if (typeof err.status === "number") meta.status = err.status;
+    if (err.providerCode) meta.providerCode = err.providerCode;
+    if (err.transport) meta.transport = true;
+    return meta;
+  }
+  // Plain Error / non-Error / anything unexpected: category ONLY. We never
+  // read err.message or any property, so nothing sensitive can leak.
+  return { category: "unknown_error" };
+}

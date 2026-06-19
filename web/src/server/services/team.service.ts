@@ -23,6 +23,7 @@ import * as teamRepo from "@/server/repositories/team.repository";
 import type { TeamMemberRow } from "@/server/repositories/team.repository";
 import * as membershipsRepo from "@/server/repositories/memberships.repository";
 import { sendInvitationEmail } from "@/server/services/emails.service";
+import { toSafeErrorMeta } from "@/server/email/email-errors";
 
 // ============================================================
 // DTOs
@@ -253,11 +254,12 @@ export async function inviteMember(
     });
     emailDelivered = true;
   } catch (err) {
-    // Log a SAFE summary only — never the inviteUrl/raw token, and never
-    // the full provider body (email errors are already sanitised).
-    console.error("[team.service.inviteMember] invitation email send failed", {
-      reason: err instanceof Error ? err.message : "unknown",
-    });
+    // Log ONLY stable, allowlisted metadata via toSafeErrorMeta — never
+    // err.message/stack, the inviteUrl/raw token, or any provider body.
+    console.error(
+      "[team.service.inviteMember] invitation email send failed",
+      toSafeErrorMeta(err),
+    );
   }
 
   return invitationToDTO(row, inviteUrl, emailDelivered);

@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { EmailDeliveryError } from "@/server/email/email-errors";
 import type { FullSession } from "@/server/auth/session";
 import type { Invitation } from "@/server/db/database.types";
 
@@ -97,21 +98,56 @@ describe("inviteMember — email delivery is reported truthfully", () => {
     expect(dto.emailDelivered).toBe(false);
   });
 
-  it("never logs the raw invite token on send failure", async () => {
-    vi.mocked(sendInvitationEmail).mockRejectedValue(
-      new Error("Resend send failed: 500"),
+  it("logs only safe metadata — a malicious plain Error leaks nothing", async () => {
+    const recipientEmail = "victim@secret.example.com";
+    const apiKeyLike = "re_LEAK_SECRET_abc123";
+    const providerBody = "<html>secret provider body</html>";
+    // A plain Error whose message is stuffed with sensitive strings.
+    const leaky = new Error(
+      `to ${recipientEmail} apikey=${apiKeyLike} body=${providerBody} token=PLACEHOLDER`,
     );
+    vi.mocked(sendInvitationEmail).mockRejectedValue(leaky);
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
     const dto = await inviteMember(session, {
-      email: "x@example.test",
+      email: recipientEmail,
       role: "employee",
     });
-
     const rawToken = (dto.inviteUrl ?? "").split("token=")[1] ?? "";
     expect(rawToken.length).toBeGreaterThan(10);
 
-    const logged = errorSpy.mock.calls.map((c) => JSON.stringify(c)).join(" ");
+    // The logged metadata is category-only for an unknown error.
+    const [, meta] = errorSpy.mock.calls[0] as [string, Record<string, unknown>];
+    expect(meta).toEqual({ category: "unknown_error" });
+
+    // None of the sensitive strings appear anywhere in the log call.
+    const logged = errorSpy.mock.calls
+      .map((c: unknown[]) => JSON.stringify(c))
+      .join(" ");
+    expect(logged).not.toContain(recipientEmail);
+    expect(logged).not.toContain(apiKeyLike);
+    expect(logged).not.toContain(providerBody);
     expect(logged).not.toContain(rawToken);
+  });
+
+  it("a real EmailDeliveryError logs only approved stable metadata", async () => {
+    vi.mocked(sendInvitationEmail).mockRejectedValue(
+      new EmailDeliveryError({
+        provider: "resend",
+        status: 502,
+        code: "application_error",
+      }),
+    );
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    await inviteMember(session, { email: "x@example.test", role: "employee" });
+
+    const [, meta] = errorSpy.mock.calls[0] as [string, Record<string, unknown>];
+    expect(meta).toEqual({
+      category: "delivery_error",
+      provider: "resend",
+      status: 502,
+      providerCode: "application_error",
+    });
   });
 });
