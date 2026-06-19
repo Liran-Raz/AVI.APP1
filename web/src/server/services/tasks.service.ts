@@ -223,8 +223,10 @@ export async function updateTask(
 //   - the assignee is NOT the creator (self-assignment is silent).
 //
 // Errors are caught + logged so the surrounding task operation never
-// fails because email is misconfigured. Without RESEND_API_KEY this
-// just logs to the server console via the console adapter.
+// fails because email is misconfigured (best-effort: the in-app
+// notification is the primary channel). In dev without RESEND_API_KEY the
+// console adapter logs the would-be send; in production a missing config
+// now fails loudly (the adapter throws) and is recorded here as an error.
 
 async function sendAssignmentEmailIfNeeded(
   session: FullSession,
@@ -252,7 +254,12 @@ async function sendAssignmentEmailIfNeeded(
       taskUrl,
     });
   } catch (err) {
-    console.error("[tasks] failed to send assignment email", err);
+    // Log a SAFE summary (no provider body, no task content beyond the id)
+    // so the failure is observable without leaking internals.
+    console.error("[tasks] assignment email send failed", {
+      taskId: task.id,
+      reason: err instanceof Error ? err.message : "unknown",
+    });
   }
 }
 

@@ -63,7 +63,12 @@ export function InviteDialog({
     try {
       const result = await apiClient.team.invite({ email, role });
       setLastInvite(result);
-      toast.success("ההזמנה נוצרה");
+      if (result.emailDelivered) {
+        toast.success("ההזמנה נוצרה ונשלחה");
+      } else {
+        // Honest: the invitation was created but the email did NOT go out.
+        toast.warning("ההזמנה נוצרה אך המייל לא נשלח — העתק/י את הקישור ושלח/י ידנית");
+      }
       onInvited?.(result);
     } catch (err) {
       if (err instanceof ApiError) {
@@ -98,17 +103,28 @@ export function InviteDialog({
         </DialogHeader>
 
         {lastInvite ? (
-          // Success state — show the invite URL so the admin can copy it
-          // when the email adapter is in console fallback. Always show
-          // it (the email is best-effort and may have silently failed).
+          // Success state — show the invite URL so the admin can copy it.
+          // The status banner reflects whether the email actually went out:
+          // the email is best-effort and the invitation is usable via the
+          // link regardless, but we never claim it was sent when it wasn't.
           <div className="space-y-4">
-            <div className="rounded-md border border-primary/30 bg-primary/5 p-3 text-sm">
-              ✓ ההזמנה נוצרה ונשלחה ל-
-              <span dir="ltr" className="font-mono">
-                {lastInvite.email}
-              </span>
-              .
-            </div>
+            {lastInvite.emailDelivered ? (
+              <div className="rounded-md border border-primary/30 bg-primary/5 p-3 text-sm">
+                ✓ ההזמנה נוצרה ונשלחה ל-
+                <span dir="ltr" className="font-mono">
+                  {lastInvite.email}
+                </span>
+                .
+              </div>
+            ) : (
+              <div className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
+                ✓ ההזמנה נוצרה, אך שליחת המייל ל-
+                <span dir="ltr" className="font-mono">
+                  {lastInvite.email}
+                </span>{" "}
+                <strong>נכשלה</strong>. העתק/י את הקישור למטה ושלח/י אותו ידנית.
+              </div>
+            )}
 
             <div className="space-y-2">
               <Label htmlFor="inviteUrl">קישור ההזמנה</Label>
