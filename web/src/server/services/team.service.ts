@@ -23,6 +23,7 @@ import * as teamRepo from "@/server/repositories/team.repository";
 import type { TeamMemberRow } from "@/server/repositories/team.repository";
 import * as membershipsRepo from "@/server/repositories/memberships.repository";
 import { sendInvitationEmail } from "@/server/services/emails.service";
+import { toSafeErrorMeta } from "@/server/email/email-errors";
 
 // ============================================================
 // DTOs
@@ -54,6 +55,12 @@ export type InvitationDTO = {
   // link. Subsequent reads of the invitation never expose it (the raw
   // token is not stored).
   inviteUrl?: string;
+  // Whether the invitation email was actually accepted by the provider
+  // (true), vs. the send failing (false). The invitation row exists and
+  // is usable via `inviteUrl` regardless — but the UI must NOT claim the
+  // email was sent when it was not. In dev the console fallback "succeeds"
+  // (logs the send), so this is true there too.
+  emailDelivered: boolean;
 };
 
 // Invitation preview DTO — returned by the public lookup that
@@ -85,7 +92,11 @@ function memberToDTO(row: TeamMemberRow): MemberDTO {
   };
 }
 
-function invitationToDTO(row: Invitation, inviteUrl?: string): InvitationDTO {
+function invitationToDTO(
+  row: Invitation,
+  inviteUrl: string | undefined,
+  emailDelivered: boolean,
+): InvitationDTO {
   return {
     id: row.id,
     email: row.email,
@@ -94,6 +105,7 @@ function invitationToDTO(row: Invitation, inviteUrl?: string): InvitationDTO {
     expiresAt: row.expires_at,
     createdAt: row.created_at,
     inviteUrl,
+    emailDelivered,
   };
 }
 
@@ -225,9 +237,12 @@ export async function inviteMember(
 
   const inviteUrl = `${env.NEXT_PUBLIC_SITE_URL}/invite/accept?token=${rawToken}`;
 
-  // Best-effort email send. If the email adapter throws, we still
-  // return success so the inviter can copy the URL — they may even be
-  // running the console adapter on purpose. Errors are logged.
+  // Best-effort email send. The invitation row already exists and is
+  // usable via `inviteUrl` (the admin can copy it), so a send failure
+  // must NOT discard the invitation. But it must be reported truthfully:
+  // we surface the outcome via `emailDelivered` instead of swallowing the
+  // failure and implying the mail went out.
+  let emailDelivered = false;
   try {
     await sendInvitationEmail({
       toEmail: email,
@@ -237,11 +252,17 @@ export async function inviteMember(
       inviteUrl,
       expiresAt,
     });
+    emailDelivered = true;
   } catch (err) {
-    console.error("[team.service.inviteMember] email send failed:", err);
+    // Log ONLY stable, allowlisted metadata via toSafeErrorMeta — never
+    // err.message/stack, the inviteUrl/raw token, or any provider body.
+    console.error(
+      "[team.service.inviteMember] invitation email send failed",
+      toSafeErrorMeta(err),
+    );
   }
 
-  return invitationToDTO(row, inviteUrl);
+  return invitationToDTO(row, inviteUrl, emailDelivered);
 }
 
 // ============================================================

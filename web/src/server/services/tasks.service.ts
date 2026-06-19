@@ -7,6 +7,7 @@ import * as clientsRepo from "@/server/repositories/clients.repository";
 import * as membershipsRepo from "@/server/repositories/memberships.repository";
 import { env } from "@/server/env";
 import { sendTaskAssignmentEmail } from "@/server/services/emails.service";
+import { toSafeErrorMeta } from "@/server/email/email-errors";
 import type {
   Database,
   Task,
@@ -223,10 +224,14 @@ export async function updateTask(
 //   - the assignee is NOT the creator (self-assignment is silent).
 //
 // Errors are caught + logged so the surrounding task operation never
-// fails because email is misconfigured. Without RESEND_API_KEY this
-// just logs to the server console via the console adapter.
-
-async function sendAssignmentEmailIfNeeded(
+// fails because email is misconfigured (best-effort: the in-app
+// notification is the primary channel). In dev without RESEND_API_KEY the
+// console adapter logs the would-be send; in production a missing config
+// now fails loudly (the adapter throws) and is recorded here as an error.
+//
+// Exported for unit testing the best-effort failure path. The call sites
+// keep invoking it fire-and-forget; exporting does not change the flow.
+export async function sendAssignmentEmailIfNeeded(
   session: FullSession,
   task: Task,
   previousAssignedTo: string | null,
@@ -252,7 +257,13 @@ async function sendAssignmentEmailIfNeeded(
       taskUrl,
     });
   } catch (err) {
-    console.error("[tasks] failed to send assignment email", err);
+    // Log ONLY the task id plus stable, allowlisted metadata via
+    // toSafeErrorMeta — never err.message/stack, recipient, task content,
+    // or any provider body.
+    console.error("[tasks] assignment email send failed", {
+      taskId: task.id,
+      ...toSafeErrorMeta(err),
+    });
   }
 }
 
