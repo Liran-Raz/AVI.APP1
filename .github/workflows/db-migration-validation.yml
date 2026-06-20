@@ -28,7 +28,7 @@ permissions:
   contents: read
 
 jobs:
-  validate-0011:
+  validate-migrations:
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -87,6 +87,15 @@ jobs:
             echo "FAIL: anon can read role_permissions"; exit 1
           fi
           echo "PASS: anon denied on role_permissions"
+
+      - name: Apply 0012 seed (system roles + default grants)
+        run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/0012_seed_system_roles_and_grants.sql
+
+      - name: Re-apply 0012 (idempotency)
+        run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/0012_seed_system_roles_and_grants.sql
+
+      - name: Verify 0012 seed (S1-S8)
+        run: psql -v ON_ERROR_STOP=1 -f supabase/validation/0012_verify.sql
 
       - name: Rollback rehearsal (R1-R2)
         run: psql -v ON_ERROR_STOP=1 -f supabase/validation/0011_rollback.sql
