@@ -2,6 +2,7 @@ import { notFound, redirect } from "next/navigation";
 
 import { ClientDetail } from "@/components/clients/client-detail";
 import { getCurrentSession, type FullSession } from "@/server/auth/session";
+import { resolveCapabilities } from "@/server/auth/authorization";
 import { AppError } from "@/server/errors/app-error";
 import * as clientsService from "@/server/services/clients.service";
 import * as contactsService from "@/server/services/client-contacts.service";
@@ -33,6 +34,10 @@ export default async function ClientDetailRoute({ params }: Props) {
   }
 
   return (
-    <ClientDetail client={client} initialContacts={contactsResult.items} />
+    <ClientDetail
+      client={client}
+      initialContacts={contactsResult.items}
+      capabilities={resolveCapabilities(fullSession)}
+    />
   );
 }

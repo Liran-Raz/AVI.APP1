@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 
 import { ClientsPage } from "@/components/clients/clients-page";
 import { getCurrentSession, type FullSession } from "@/server/auth/session";
+import { resolveCapabilities } from "@/server/auth/authorization";
 import * as clientsService from "@/server/services/clients.service";
 
 export default async function ClientsRoute() {
@@ -22,6 +23,9 @@ export default async function ClientsRoute() {
   });
 
   return (
-    <ClientsPage initialItems={initial.items} role={fullSession.profile.role} />
+    <ClientsPage
+      initialItems={initial.items}
+      capabilities={resolveCapabilities(fullSession)}
+    />
   );
 }
