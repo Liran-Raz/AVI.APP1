@@ -38,6 +38,7 @@ import {
   type AssignableRole,
   type MemberDTO,
 } from "@/lib/api-client";
+import { hasCapability, PERMISSIONS, type Capability } from "@/lib/capabilities";
 
 import { InviteDialog } from "./invite-dialog";
 
@@ -69,16 +70,22 @@ export function TeamPage({
   initialItems,
   currentUserId,
   currentUserRole,
+  capabilities,
 }: {
   initialItems: MemberDTO[];
   currentUserId: string;
   currentUserRole: Role;
+  capabilities: Capability[];
 }) {
   const [members, setMembers] = useState<MemberDTO[]>(initialItems);
   const [inviteOpen, setInviteOpen] = useState(false);
   const [busyMemberId, setBusyMemberId] = useState<string | null>(null);
 
-  const canManage = currentUserRole === "owner" || currentUserRole === "admin";
+  // Flat capability hint (display only; server is authoritative). The
+  // per-row relational rules below (owner-protection, only-owner-promotes-
+  // to-admin) still use currentUserRole — they are relational invariants that
+  // a flat capability cannot express; the server enforces them regardless.
+  const canManage = hasCapability(capabilities, PERMISSIONS.TEAM_INVITE);
 
   // Sort: self first, then owners, admins, employees, by createdAt within group.
   const sortedMembers = useMemo(() => {

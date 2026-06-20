@@ -29,6 +29,7 @@ import {
   type ClientDTO,
   type ContactDTO,
 } from "@/lib/api-client";
+import { hasCapability, PERMISSIONS, type Capability } from "@/lib/capabilities";
 import { cn } from "@/lib/utils";
 
 import { ContactFormDialog } from "./contact-form-dialog";
@@ -37,9 +38,16 @@ import { formatBusinessType } from "./business-types";
 type Props = {
   client: ClientDTO;
   initialContacts: ContactDTO[];
+  capabilities: Capability[];
 };
 
-export function ClientDetail({ client, initialContacts }: Props) {
+export function ClientDetail({ client, initialContacts, capabilities }: Props) {
+  // Display-only hint: contacts.delete is Owner/Manager-only. The server
+  // re-enforces this on every delete call regardless of what the UI shows.
+  const canDeleteContact = hasCapability(
+    capabilities,
+    PERMISSIONS.CONTACTS_DELETE,
+  );
   const router = useRouter();
   const [contacts, setContacts] = useState<ContactDTO[]>(initialContacts);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -185,6 +193,7 @@ export function ClientDetail({ client, initialContacts }: Props) {
               <ContactCard
                 key={c.id}
                 contact={c}
+                canDelete={canDeleteContact}
                 onEdit={() => handleEditClick(c)}
                 onDelete={() => handleDelete(c)}
               />
@@ -207,10 +216,12 @@ export function ClientDetail({ client, initialContacts }: Props) {
 
 function ContactCard({
   contact,
+  canDelete,
   onEdit,
   onDelete,
 }: {
   contact: ContactDTO;
+  canDelete: boolean;
   onEdit: () => void;
   onDelete: () => void;
 }) {
@@ -252,13 +263,15 @@ function ContactCard({
               <Pencil className="size-4" />
               ערוך
             </DropdownMenuItem>
-            <DropdownMenuItem
-              onClick={onDelete}
-              className="text-destructive focus:text-destructive"
-            >
-              <Trash2 className="size-4" />
-              מחק
-            </DropdownMenuItem>
+            {canDelete && (
+              <DropdownMenuItem
+                onClick={onDelete}
+                className="text-destructive focus:text-destructive"
+              >
+                <Trash2 className="size-4" />
+                מחק
+              </DropdownMenuItem>
+            )}
           </DropdownMenuContent>
         </DropdownMenu>
       </div>

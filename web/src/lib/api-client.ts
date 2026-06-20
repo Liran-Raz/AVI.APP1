@@ -30,6 +30,7 @@ import type {
   UpdateContactPayload,
 } from "@/server/validators/client-contacts.schema";
 import type { ContactDTO } from "@/server/services/client-contacts.service";
+import type { Capability } from "@/server/auth/permissions";
 import type { NotificationDTO } from "@/server/services/notifications.service";
 import type {
   AcceptInvitationDTO,
@@ -131,6 +132,8 @@ export type Me = {
   organization: { id: string; name: string; orgCode: string } | null;
   memberships: MembershipSummary[];
   activeOrgId: string | null;
+  // Display-only authorization hints for the active office (never authoritative).
+  capabilities: Capability[];
 };
 
 // ============================================================

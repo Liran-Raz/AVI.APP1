@@ -304,6 +304,13 @@ describe("capabilities include scope and exclude protected actions", () => {
       ).toBe(false);
     }
   });
+  it("returns no usable capabilities for an office-less session (no active role)", () => {
+    const officeless = {
+      ...session("employee"),
+      activeRole: null,
+    } as unknown as FullSession;
+    expect(resolveCapabilities(officeless)).toEqual([]);
+  });
 });
 
 describe("compatibility with current role keys", () => {

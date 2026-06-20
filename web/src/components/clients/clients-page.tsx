@@ -46,10 +46,9 @@ import {
   type ClientDTO,
   type ListClientsQuery,
 } from "@/lib/api-client";
+import { hasCapability, PERMISSIONS, type Capability } from "@/lib/capabilities";
 import { ClientFormDialog } from "./client-form-dialog";
 import { BUSINESS_TYPE_LABELS, formatBusinessType } from "./business-types";
-
-type Role = "owner" | "admin" | "employee";
 
 type StatusFilter = "active" | "archived" | "all";
 type BusinessTypeFilter = "all" | (typeof BUSINESS_TYPES)[number];
@@ -58,10 +57,10 @@ const SEARCH_DEBOUNCE_MS = 300;
 
 export function ClientsPage({
   initialItems,
-  role,
+  capabilities,
 }: {
   initialItems: ClientDTO[];
-  role: Role;
+  capabilities: Capability[];
 }) {
   const [items, setItems] = useState<ClientDTO[]>(initialItems);
   const [searchInput, setSearchInput] = useState("");
@@ -74,7 +73,8 @@ export function ClientsPage({
   const [dialogMode, setDialogMode] = useState<"create" | "edit">("create");
   const [dialogTarget, setDialogTarget] = useState<ClientDTO | null>(null);
 
-  const canArchive = role === "owner" || role === "admin";
+  // Display-only hint; the server re-checks clients.archive on every call.
+  const canArchive = hasCapability(capabilities, PERMISSIONS.CLIENTS_ARCHIVE);
 
   // Debounce the search input → debouncedSearch.
   useEffect(() => {

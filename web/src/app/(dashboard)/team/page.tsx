@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 
 import { TeamPage } from "@/components/team/team-page";
 import { getCurrentSession, type FullSession } from "@/server/auth/session";
+import { resolveCapabilities } from "@/server/auth/authorization";
 import * as teamService from "@/server/services/team.service";
 
 export default async function TeamRoute() {
@@ -19,6 +20,7 @@ export default async function TeamRoute() {
       initialItems={items}
       currentUserId={fullSession.profile.id}
       currentUserRole={fullSession.profile.role}
+      capabilities={resolveCapabilities(fullSession)}
     />
   );
 }

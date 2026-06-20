@@ -1,6 +1,7 @@
 import "server-only";
 
-import { getCurrentSession } from "@/server/auth/session";
+import { getCurrentSession, type FullSession } from "@/server/auth/session";
+import { resolveCapabilities } from "@/server/auth/authorization";
 import { UnauthorizedError } from "@/server/errors/app-error";
 import { ok, withErrorHandler } from "@/server/errors/api-handler";
 
@@ -45,5 +46,13 @@ export const GET = withErrorHandler(async () => {
       isActive: m.isActive,
     })),
     activeOrgId: session.activeOrg?.id ?? null,
+    // Display-only capability hints for the active office. Resolved
+    // server-side from the active membership's role; excludes protected
+    // system actions (e.g. ownership.transfer is never a grantable capability).
+    // Empty for an office-less (no active membership) session.
+    capabilities:
+      session.profile && session.activeRole
+        ? resolveCapabilities(session as FullSession)
+        : [],
   });
 });
