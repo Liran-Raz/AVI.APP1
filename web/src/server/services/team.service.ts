@@ -2,6 +2,8 @@ import "server-only";
 import { createHash, randomBytes } from "node:crypto";
 
 import type { FullSession } from "@/server/auth/session";
+import { requirePermission } from "@/server/auth/authorization";
+import { PERMISSIONS } from "@/server/auth/permissions";
 import {
   createSupabaseServerClient,
   createSupabasePublicClient,
@@ -110,23 +112,16 @@ function invitationToDTO(
 }
 
 // ============================================================
-// Authorization helpers
+// Authorization
 // ============================================================
-
-function assertCanInvite(session: FullSession): void {
-  const role = session.profile.role;
-  if (role !== "owner" && role !== "admin") {
-    throw new ForbiddenError("Only owner or admin can invite members");
-  }
-}
-
-function assertCanManageTeam(session: FullSession): void {
-  const role = session.profile.role;
-  if (role !== "owner" && role !== "admin") {
-    throw new ForbiddenError("Only owner or admin can manage team members");
-  }
-}
-
+//
+// Coarse capability is enforced via the centralized permission system
+// (requirePermission against PERMISSIONS.TEAM_*). The function below is a
+// business INVARIANT layered on top of that capability: it constrains WHICH
+// target role a manager may assign (anti-escalation). It is intentionally
+// role-relational and is retained as an owner/manager invariant per the
+// approved Roles & Permissions plan (only Owner may create/assign a Manager).
+//
 // Admins cannot promote anyone to admin (only owner can elevate to admin).
 // They CAN keep members at employee. Owners can set admin or employee.
 function assertCanAssignRole(
@@ -170,6 +165,8 @@ function isoDaysFromNow(days: number): string {
 export async function listMembers(
   session: FullSession,
 ): Promise<{ items: MemberDTO[] }> {
+  // Any active member may view the roster (team.view granted to all roles).
+  requirePermission(session, PERMISSIONS.TEAM_VIEW);
   // RLS already restricts to the caller's org; the explicit org_id
   // filter in the repo is defense-in-depth. Roster now comes from
   // organization_memberships (joined to profiles for identity).
@@ -194,7 +191,9 @@ export async function inviteMember(
   session: FullSession,
   input: InviteMemberInput,
 ): Promise<InvitationDTO> {
-  assertCanInvite(session);
+  // Authoritative capability check (owner/admin). The escalation invariant
+  // below additionally restricts which role may be assigned.
+  requirePermission(session, PERMISSIONS.TEAM_INVITE);
   assertCanAssignRole(session, input.role);
 
   const orgId = session.activeOrg.id;
@@ -274,20 +273,31 @@ export async function changeRole(
   targetUserId: string,
   newRole: UserRole,
 ): Promise<MemberDTO> {
-  assertCanManageTeam(session);
-  assertCanAssignRole(session, newRole);
-
   // Anti-self-escalation: a member cannot change their own role at all.
   // (Even no-op changes are refused so the rule is simple to audit.)
   if (targetUserId === session.user.id) {
     throw new ForbiddenError("You cannot change your own role");
   }
 
+  // Escalation invariant (rejects non-managers and admin→admin) before any
+  // read — preserves the prior contract that a disallowed assignment fails
+  // regardless of target existence.
+  assertCanAssignRole(session, newRole);
+
   const orgId = session.activeOrg.id;
   const target = await teamRepo.findMemberInOrg(orgId, targetUserId);
   if (!target) {
     throw new NotFoundError("Member not found in your organization");
   }
+
+  // Authoritative capability check with a SERVER-TRUSTED target context
+  // (target role + org loaded via the org-scoped repo above). Cross-org
+  // targets never reach here — findMemberInOrg returns null → 404.
+  requirePermission(session, PERMISSIONS.TEAM_CHANGE_ROLE, {
+    targetUserId,
+    targetRole: target.role,
+    targetMembershipOrgId: orgId,
+  });
 
   // Anti-owner-demotion: only the owner can change another owner's role,
   // AND we forbid demoting the last owner.
@@ -316,8 +326,6 @@ export async function deactivateMember(
   session: FullSession,
   targetUserId: string,
 ): Promise<MemberDTO> {
-  assertCanManageTeam(session);
-
   // Anti-self-deactivation: enforced as a hard rule. Mistake-prevention.
   if (targetUserId === session.user.id) {
     throw new ForbiddenError("You cannot deactivate yourself");
@@ -328,6 +336,14 @@ export async function deactivateMember(
   if (!target) {
     throw new NotFoundError("Member not found in your organization");
   }
+
+  // Authoritative capability check with a SERVER-TRUSTED target context.
+  // Cross-org targets never reach here (findMemberInOrg returns null → 404).
+  requirePermission(session, PERMISSIONS.TEAM_DEACTIVATE, {
+    targetUserId,
+    targetRole: target.role,
+    targetMembershipOrgId: orgId,
+  });
 
   if (!target.isActive) {
     // Idempotent — already inactive.

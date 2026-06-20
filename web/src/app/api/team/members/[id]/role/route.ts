@@ -17,9 +17,9 @@ type Params = { params: Promise<{ id: string }> };
 // target role (defense in depth — service double-checks anyway).
 export const PATCH = withErrorHandler(
   async (request: NextRequest, { params }: Params) => {
-    // Route-level role belt (defense in depth). The service still enforces
-    // the finer rules (assertCanManageTeam / assertCanAssignRole / owner
-    // protection).
+    // Route-level coarse belt (defense in depth). The service is authoritative:
+    // requirePermission(TEAM_CHANGE_ROLE) + the role-escalation invariant +
+    // owner protection.
     const session = await requireRole(["owner", "admin"]);
     const { id } = await params;
     const body = await request.json().catch(() => ({}));

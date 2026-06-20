@@ -22,8 +22,8 @@ type Params = { params: Promise<{ id: string }> };
 // can deactivate owner, no last-owner deactivation.
 export const POST = withErrorHandler(
   async (_request: NextRequest, { params }: Params) => {
-    // Route-level role belt (defense in depth). The service still enforces
-    // the finer rules (assertCanManageTeam / owner protection).
+    // Route-level coarse belt (defense in depth). The service is authoritative:
+    // requirePermission(TEAM_DEACTIVATE) + owner protection.
     const session = await requireRole(["owner", "admin"]);
     const { id } = await params;
     const result = await teamService.deactivateMember(session, id);

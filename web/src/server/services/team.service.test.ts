@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { EmailDeliveryError } from "@/server/email/email-errors";
 import type { FullSession } from "@/server/auth/session";
-import type { Invitation } from "@/server/db/database.types";
+import type { Invitation, UserRole } from "@/server/db/database.types";
 
 // Mock all of team.service's heavy dependencies so importing it does not
 // boot env validation or the Supabase client, and so we can drive the
@@ -34,8 +34,16 @@ vi.mock("@/server/services/emails.service", () => ({
 
 import * as invitationsRepo from "@/server/repositories/invitations.repository";
 import * as teamRepo from "@/server/repositories/team.repository";
+import type { TeamMemberRow } from "@/server/repositories/team.repository";
+import * as membershipsRepo from "@/server/repositories/memberships.repository";
 import { sendInvitationEmail } from "@/server/services/emails.service";
-import { inviteMember } from "@/server/services/team.service";
+import {
+  changeRole,
+  deactivateMember,
+  inviteMember,
+  listMembers,
+} from "@/server/services/team.service";
+import { ForbiddenError, NotFoundError } from "@/server/errors/app-error";
 
 const session = {
   user: { id: "owner-user" },
@@ -149,5 +157,196 @@ describe("inviteMember — email delivery is reported truthfully", () => {
       status: 502,
       providerCode: "application_error",
     });
+  });
+});
+
+// ============================================================
+// Phase 2 — Team & Invitations authorization (permission-wired)
+// ============================================================
+
+function makeSession(
+  role: UserRole,
+  opts: { userId?: string } = {},
+): FullSession {
+  const userId = opts.userId ?? `${role}-user`;
+  return {
+    user: { id: userId },
+    profile: { id: userId, role, full_name: `${role} U`, email: `${role}@x.test` },
+    activeOrg: { id: "org-1" },
+    activeRole: role,
+    organization: { id: "org-1", name: "Test Org" },
+  } as unknown as FullSession;
+}
+
+function memberRow(o: {
+  userId: string;
+  role: UserRole;
+  isActive?: boolean;
+}): TeamMemberRow {
+  return {
+    userId: o.userId,
+    fullName: "Target U",
+    email: "target@x.test",
+    role: o.role,
+    isActive: o.isActive ?? true,
+    joinedAt: "2026-01-01T00:00:00.000Z",
+  };
+}
+
+const ownerS = makeSession("owner", { userId: "owner-user" });
+const adminS = makeSession("admin", { userId: "admin-user" });
+const employeeS = makeSession("employee", { userId: "employee-user" });
+
+describe("listMembers — any active member may view the roster", () => {
+  beforeEach(() => {
+    vi.mocked(teamRepo.findMembersByOrgId).mockResolvedValue([]);
+  });
+  it.each(["owner", "admin", "employee"] as const)("allows %s", async (role) => {
+    await expect(listMembers(makeSession(role))).resolves.toEqual({ items: [] });
+  });
+});
+
+describe("inviteMember — capability + escalation invariant", () => {
+  beforeEach(() => {
+    vi.mocked(sendInvitationEmail).mockResolvedValue(undefined);
+  });
+  it("owner may invite an employee", async () => {
+    const dto = await inviteMember(ownerS, { email: "a@x.test", role: "employee" });
+    expect(dto.id).toBe("inv-1");
+  });
+  it("admin (Manager) may invite an employee", async () => {
+    const dto = await inviteMember(adminS, { email: "a@x.test", role: "employee" });
+    expect(dto.id).toBe("inv-1");
+  });
+  it("admin may NOT invite another admin (only Owner creates Managers)", async () => {
+    await expect(
+      inviteMember(adminS, { email: "a@x.test", role: "admin" }),
+    ).rejects.toBeInstanceOf(ForbiddenError);
+    expect(invitationsRepo.create).not.toHaveBeenCalled();
+  });
+  it("employee may NOT invite (no team.invite grant)", async () => {
+    await expect(
+      inviteMember(employeeS, { email: "a@x.test", role: "employee" }),
+    ).rejects.toBeInstanceOf(ForbiddenError);
+    expect(invitationsRepo.create).not.toHaveBeenCalled();
+  });
+});
+
+describe("changeRole — permission + invariants", () => {
+  it("owner promotes an employee to admin", async () => {
+    vi.mocked(teamRepo.findMemberInOrg).mockResolvedValue(
+      memberRow({ userId: "t1", role: "employee" }),
+    );
+    vi.mocked(membershipsRepo.updateRole).mockResolvedValue({
+      role: "admin",
+    } as unknown as Awaited<ReturnType<typeof membershipsRepo.updateRole>>);
+    const dto = await changeRole(ownerS, "t1", "admin");
+    expect(dto.role).toBe("admin");
+  });
+  it("admin may NOT promote to admin (escalation invariant)", async () => {
+    await expect(changeRole(adminS, "t1", "admin")).rejects.toBeInstanceOf(
+      ForbiddenError,
+    );
+  });
+  it("employee may NOT change roles", async () => {
+    await expect(changeRole(employeeS, "t1", "employee")).rejects.toBeInstanceOf(
+      ForbiddenError,
+    );
+  });
+  it("cannot change own role (anti-self)", async () => {
+    await expect(
+      changeRole(ownerS, "owner-user", "employee"),
+    ).rejects.toBeInstanceOf(ForbiddenError);
+  });
+  it("non-existent / cross-org target → NotFound", async () => {
+    vi.mocked(teamRepo.findMemberInOrg).mockResolvedValue(null);
+    await expect(changeRole(ownerS, "ghost", "employee")).rejects.toBeInstanceOf(
+      NotFoundError,
+    );
+  });
+  it("admin cannot change an owner's role", async () => {
+    vi.mocked(teamRepo.findMemberInOrg).mockResolvedValue(
+      memberRow({ userId: "o2", role: "owner" }),
+    );
+    await expect(changeRole(adminS, "o2", "employee")).rejects.toBeInstanceOf(
+      ForbiddenError,
+    );
+  });
+  it("cannot demote the last active owner", async () => {
+    vi.mocked(teamRepo.findMemberInOrg).mockResolvedValue(
+      memberRow({ userId: "o2", role: "owner" }),
+    );
+    vi.mocked(membershipsRepo.countActiveOwners).mockResolvedValue(1);
+    await expect(changeRole(ownerS, "o2", "employee")).rejects.toBeInstanceOf(
+      ForbiddenError,
+    );
+  });
+});
+
+describe("deactivateMember — permission + invariants", () => {
+  it("owner deactivates an employee", async () => {
+    vi.mocked(teamRepo.findMemberInOrg).mockResolvedValue(
+      memberRow({ userId: "t1", role: "employee", isActive: true }),
+    );
+    vi.mocked(membershipsRepo.setActive).mockResolvedValue({
+      is_active: false,
+    } as unknown as Awaited<ReturnType<typeof membershipsRepo.setActive>>);
+    const dto = await deactivateMember(ownerS, "t1");
+    expect(dto.isActive).toBe(false);
+  });
+  it("admin deactivates an employee", async () => {
+    vi.mocked(teamRepo.findMemberInOrg).mockResolvedValue(
+      memberRow({ userId: "t1", role: "employee", isActive: true }),
+    );
+    vi.mocked(membershipsRepo.setActive).mockResolvedValue({
+      is_active: false,
+    } as unknown as Awaited<ReturnType<typeof membershipsRepo.setActive>>);
+    const dto = await deactivateMember(adminS, "t1");
+    expect(dto.isActive).toBe(false);
+  });
+  it("employee may NOT deactivate (no team.deactivate grant)", async () => {
+    vi.mocked(teamRepo.findMemberInOrg).mockResolvedValue(
+      memberRow({ userId: "t1", role: "employee" }),
+    );
+    await expect(deactivateMember(employeeS, "t1")).rejects.toBeInstanceOf(
+      ForbiddenError,
+    );
+    expect(membershipsRepo.setActive).not.toHaveBeenCalled();
+  });
+  it("admin cannot deactivate an owner", async () => {
+    vi.mocked(teamRepo.findMemberInOrg).mockResolvedValue(
+      memberRow({ userId: "o2", role: "owner" }),
+    );
+    await expect(deactivateMember(adminS, "o2")).rejects.toBeInstanceOf(
+      ForbiddenError,
+    );
+  });
+  it("cannot deactivate yourself (anti-self)", async () => {
+    await expect(deactivateMember(ownerS, "owner-user")).rejects.toBeInstanceOf(
+      ForbiddenError,
+    );
+  });
+  it("cannot deactivate the last active owner", async () => {
+    vi.mocked(teamRepo.findMemberInOrg).mockResolvedValue(
+      memberRow({ userId: "o2", role: "owner", isActive: true }),
+    );
+    vi.mocked(membershipsRepo.countActiveOwners).mockResolvedValue(1);
+    await expect(deactivateMember(ownerS, "o2")).rejects.toBeInstanceOf(
+      ForbiddenError,
+    );
+  });
+  it("idempotent when already inactive (no write)", async () => {
+    vi.mocked(teamRepo.findMemberInOrg).mockResolvedValue(
+      memberRow({ userId: "t1", role: "employee", isActive: false }),
+    );
+    const dto = await deactivateMember(ownerS, "t1");
+    expect(dto.isActive).toBe(false);
+    expect(membershipsRepo.setActive).not.toHaveBeenCalled();
+  });
+  it("non-existent / cross-org target → NotFound", async () => {
+    vi.mocked(teamRepo.findMemberInOrg).mockResolvedValue(null);
+    await expect(deactivateMember(ownerS, "ghost")).rejects.toBeInstanceOf(
+      NotFoundError,
+    );
   });
 });
