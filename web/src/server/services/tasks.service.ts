@@ -1,6 +1,11 @@
 import "server-only";
 
 import type { FullSession } from "@/server/auth/session";
+import {
+  requirePermission,
+  resolveListScope,
+} from "@/server/auth/authorization";
+import { PERMISSIONS } from "@/server/auth/permissions";
 import * as tasksRepo from "@/server/repositories/tasks.repository";
 import * as profileRepo from "@/server/repositories/profile.repository";
 import * as clientsRepo from "@/server/repositories/clients.repository";
@@ -64,12 +69,56 @@ function toDTO(row: Task): TaskDTO {
 }
 
 // ============================================================
-// Public API
+// Authorization (the service is the authoritative layer)
 // ============================================================
 //
-// Per product decision (2026-05-17): no role gating on tasks. Any
-// authenticated org member can create, update, transition, archive,
-// delete, restore, and reassign any task in their own org.
+// Tasks are operable by every active org member (no role distinction in the
+// current product policy). Phase 4 makes this EXPLICIT through the centralized
+// permission system instead of leaving it implicit: each operation calls
+// requirePermission against a SERVER-LOADED task context. Because all roles
+// hold every task permission at scope "all", behavior is preserved.
+//
+// Assignment is governed by DISTINCT permissions (tasks.assign_self /
+// tasks.assign_others) — never folded into recordScope. Phase 4 grants both
+// to all roles (compatibility); the future Employee→self-only restriction will
+// flip only the assign_others grant in a separate, approved PR.
+
+function taskContext(task: Task): {
+  orgId: string;
+  creatorId: string;
+  assigneeId: string | null;
+} {
+  return {
+    orgId: task.org_id,
+    creatorId: task.creator_id,
+    assigneeId: task.assigned_to,
+  };
+}
+
+async function loadTaskInOrg(session: FullSession, id: string): Promise<Task> {
+  const task = await tasksRepo.findByIdAndOrgId(id, session.organization.id);
+  if (!task) throw new NotFoundError("Task not found");
+  return task;
+}
+
+// Assignment authorization. The target's active membership in the active org
+// is validated by assertAssignmentRefsInOrg BEFORE this runs, so the active /
+// same-org facts are server-trusted here (never client-supplied).
+function requireAssignmentPermission(
+  session: FullSession,
+  assignedTo: string,
+): void {
+  const permission =
+    assignedTo === session.profile.id
+      ? PERMISSIONS.TASKS_ASSIGN_SELF
+      : PERMISSIONS.TASKS_ASSIGN_OTHERS;
+  requirePermission(session, permission, {
+    orgId: session.organization.id,
+    targetAssigneeId: assignedTo,
+    targetAssigneeActive: true,
+    targetAssigneeOrgId: session.organization.id,
+  });
+}
 
 // ============================================================
 // F1 — cross-org reference guard
@@ -116,6 +165,9 @@ export async function listTasks(
   session: FullSession,
   query: ListTasksQuery,
 ): Promise<{ items: TaskDTO[] }> {
+  // Collection authorization: requires tasks.view at a supported scope.
+  // Phase 4 supports only "all" (assigned/team fail closed) → list all.
+  resolveListScope(session, PERMISSIONS.TASKS_VIEW);
   const rows = await tasksRepo.findManyByOrgId(session.organization.id, {
     search: query.search,
     status: query.status,
@@ -135,8 +187,8 @@ export async function getTask(
   session: FullSession,
   id: string,
 ): Promise<TaskDTO> {
-  const row = await tasksRepo.findByIdAndOrgId(id, session.organization.id);
-  if (!row) throw new NotFoundError("Task not found");
+  const row = await loadTaskInOrg(session, id);
+  requirePermission(session, PERMISSIONS.TASKS_VIEW, taskContext(row));
   return toDTO(row);
 }
 
@@ -144,11 +196,14 @@ export async function createTask(
   session: FullSession,
   input: CreateTaskPayload,
 ): Promise<TaskDTO> {
+  requirePermission(session, PERMISSIONS.TASKS_CREATE);
   // F1: reject cross-org assignee/client references before creating.
   await assertAssignmentRefsInOrg(session, {
     assignedTo: input.assignedTo ?? null,
     clientId: input.clientId ?? null,
   });
+  if (input.assignedTo) requireAssignmentPermission(session, input.assignedTo);
+
   const row = await tasksRepo.create({
     org_id: session.organization.id,
     creator_id: session.profile.id,
@@ -179,6 +234,13 @@ export async function updateTask(
     clientId: patch.clientId,
   });
 
+  // Load the task (org-scoped) for a trusted authorization context.
+  const before = await loadTaskInOrg(session, id);
+  requirePermission(session, PERMISSIONS.TASKS_EDIT, taskContext(before));
+  // Assigning to a (non-null) user requires the relevant assignment permission.
+  if (patch.assignedTo) requireAssignmentPermission(session, patch.assignedTo);
+  const previousAssignedTo = before.assigned_to;
+
   // Build a snake_case partial. Only include keys the caller sent.
   const dbPatch: TaskUpdate = {};
   if (patch.title !== undefined) dbPatch.title = patch.title;
@@ -188,18 +250,6 @@ export async function updateTask(
   if (patch.priority !== undefined) dbPatch.priority = patch.priority;
   if (patch.assignedTo !== undefined) dbPatch.assigned_to = patch.assignedTo;
   if (patch.clientId !== undefined) dbPatch.client_id = patch.clientId;
-
-  // If assigned_to is changing, peek at the previous value so the
-  // email helper can decide whether this counts as a real reassignment
-  // (vs. an update that doesn't touch assignment).
-  let previousAssignedTo: string | null = null;
-  if (patch.assignedTo !== undefined) {
-    const before = await tasksRepo.findByIdAndOrgId(
-      id,
-      session.organization.id,
-    );
-    previousAssignedTo = before?.assigned_to ?? null;
-  }
 
   const row = await tasksRepo.updateByIdAndOrgId(
     id,
@@ -272,6 +322,8 @@ export async function transitionStatus(
   id: string,
   status: TaskStatus,
 ): Promise<TaskDTO> {
+  const before = await loadTaskInOrg(session, id);
+  requirePermission(session, PERMISSIONS.TASKS_CHANGE_STATUS, taskContext(before));
   const row = await tasksRepo.setStatus(id, session.organization.id, status);
   if (!row) throw new NotFoundError("Task not found");
   return toDTO(row);
@@ -281,6 +333,8 @@ export async function archiveTask(
   session: FullSession,
   id: string,
 ): Promise<TaskDTO> {
+  const before = await loadTaskInOrg(session, id);
+  requirePermission(session, PERMISSIONS.TASKS_ARCHIVE, taskContext(before));
   const row = await tasksRepo.setArchived(id, session.organization.id, true);
   if (!row) throw new NotFoundError("Task not found");
   return toDTO(row);
@@ -290,6 +344,8 @@ export async function unarchiveTask(
   session: FullSession,
   id: string,
 ): Promise<TaskDTO> {
+  const before = await loadTaskInOrg(session, id);
+  requirePermission(session, PERMISSIONS.TASKS_ARCHIVE, taskContext(before));
   const row = await tasksRepo.setArchived(id, session.organization.id, false);
   if (!row) throw new NotFoundError("Task not found");
   return toDTO(row);
@@ -299,6 +355,8 @@ export async function deleteTask(
   session: FullSession,
   id: string,
 ): Promise<TaskDTO> {
+  const before = await loadTaskInOrg(session, id);
+  requirePermission(session, PERMISSIONS.TASKS_DELETE, taskContext(before));
   const row = await tasksRepo.setDeleted(id, session.organization.id, true);
   if (!row) throw new NotFoundError("Task not found");
   return toDTO(row);
@@ -308,6 +366,10 @@ export async function restoreTask(
   session: FullSession,
   id: string,
 ): Promise<TaskDTO> {
+  // Restore (clear deleted_at) is governed by the same capability as delete
+  // (managing the recycle-bin state).
+  const before = await loadTaskInOrg(session, id);
+  requirePermission(session, PERMISSIONS.TASKS_DELETE, taskContext(before));
   const row = await tasksRepo.setDeleted(id, session.organization.id, false);
   if (!row) throw new NotFoundError("Task not found");
   return toDTO(row);
