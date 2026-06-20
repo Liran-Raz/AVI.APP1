@@ -45,6 +45,7 @@ const OWNER: GrantMap = {
   "clients.create": true,
   "clients.edit": "all",
   "clients.archive": "all",
+  "clients.restore": "all",
   "clients.delete": "all",
   "clients.export": "all",
   "contacts.view": "all",
@@ -86,6 +87,7 @@ const MANAGER: GrantMap = {
   "clients.create": true,
   "clients.edit": "all",
   "clients.archive": "all",
+  "clients.restore": "all",
   // clients.delete / export: DENY (owner-only / future)
   "contacts.view": "all",
   "contacts.create": true,

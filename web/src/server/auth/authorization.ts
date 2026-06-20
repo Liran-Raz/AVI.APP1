@@ -182,6 +182,20 @@ export type Authorizer = {
     permission: P,
     ...args: ContextArgs<P>
   ) => void;
+  // Coarse capability gate: does the active role have ANY grant for this
+  // permission (ignoring scope/context)? Use as a pre-load check before the
+  // record is fetched, so a forbidden caller is rejected without revealing
+  // whether the target record exists. The full requirePermission(perm, ctx)
+  // still runs after the trusted record is loaded.
+  requireCapability: (session: FullSession, permission: Permission) => void;
+  // Collection (list) authorization for a record-scoped permission. Returns
+  // the granted record scope (which shapes the query). Throws ForbiddenError
+  // when there is no grant OR the granted scope is unsupported (assigned/team)
+  // — fail-closed; we never list "everything" for a scope we cannot enforce.
+  resolveListScope: (
+    session: FullSession,
+    permission: Permission,
+  ) => RecordScope;
   resolveCapabilities: (session: FullSession) => Capability[];
 };
 
@@ -207,6 +221,27 @@ export function makeAuthorizer(grants: Record<UserRole, GrantMap>): Authorizer {
     }
   }
 
+  function requireCapability(
+    session: FullSession,
+    permission: Permission,
+  ): void {
+    const grant = grants[session.activeRole]?.[permission];
+    if (grant === undefined) throw new ForbiddenError();
+  }
+
+  function resolveListScope(
+    session: FullSession,
+    permission: Permission,
+  ): RecordScope {
+    const grant = grants[session.activeRole]?.[permission];
+    if (grant === undefined) throw new ForbiddenError(); // no grant = deny
+    const scope: RecordScope = grant === true ? "all" : grant;
+    if (!SUPPORTED_RECORD_SCOPES.includes(scope)) {
+      throw new ForbiddenError(); // unsupported scope (assigned/team) = fail closed
+    }
+    return scope;
+  }
+
   function resolveCapabilities(session: FullSession): Capability[] {
     const roleGrants = grants[session.activeRole] ?? {};
     const caps: Capability[] = [];
@@ -222,7 +257,13 @@ export function makeAuthorizer(grants: Record<UserRole, GrantMap>): Authorizer {
     return caps;
   }
 
-  return { can, requirePermission, resolveCapabilities };
+  return {
+    can,
+    requirePermission,
+    requireCapability,
+    resolveListScope,
+    resolveCapabilities,
+  };
 }
 
 // ============================================================
@@ -233,6 +274,8 @@ const defaultAuthorizer = makeAuthorizer(ROLE_GRANTS);
 
 export const can = defaultAuthorizer.can;
 export const requirePermission = defaultAuthorizer.requirePermission;
+export const requireCapability = defaultAuthorizer.requireCapability;
+export const resolveListScope = defaultAuthorizer.resolveListScope;
 export const resolveCapabilities = defaultAuthorizer.resolveCapabilities;
 
 // ============================================================

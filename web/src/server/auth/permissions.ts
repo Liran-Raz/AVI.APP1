@@ -52,6 +52,7 @@ export const PERMISSIONS = {
   CLIENTS_CREATE: "clients.create",
   CLIENTS_EDIT: "clients.edit",
   CLIENTS_ARCHIVE: "clients.archive",
+  CLIENTS_RESTORE: "clients.restore",
   CLIENTS_DELETE: "clients.delete", // future
   CLIENTS_EXPORT: "clients.export", // future
 
@@ -208,6 +209,7 @@ export const PERMISSION_META = {
   "clients.create": { context: "none", scoped: false },
   "clients.edit": { context: "client", scoped: true },
   "clients.archive": { context: "client", scoped: true },
+  "clients.restore": { context: "client", scoped: true },
   "clients.delete": { context: "client", scoped: true },
   "clients.export": { context: "client", scoped: true },
 

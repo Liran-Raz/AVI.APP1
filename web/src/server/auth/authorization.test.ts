@@ -11,7 +11,9 @@ import {
   canPerformProtectedAction,
   isGrantablePermission,
   makeAuthorizer,
+  requireCapability,
   requirePermission,
+  resolveListScope,
   resolveCapabilities,
 } from "./authorization";
 
@@ -308,5 +310,84 @@ describe("compatibility with current role keys", () => {
   it("admin role key resolves as Manager", () => {
     expect(can(session("admin"), PERMISSIONS.TEAM_INVITE)).toBe(true);
     expect(ROLE_GRANTS.admin["team.invite"]).toBe(true);
+  });
+});
+
+describe("requireCapability — coarse pre-load gate", () => {
+  it("allows a role that holds the grant (owner: clients.archive)", () => {
+    expect(() =>
+      requireCapability(owner, PERMISSIONS.CLIENTS_ARCHIVE),
+    ).not.toThrow();
+  });
+  it("denies a role without the grant (employee: clients.archive)", () => {
+    expect(() =>
+      requireCapability(employee, PERMISSIONS.CLIENTS_ARCHIVE),
+    ).toThrow(ForbiddenError);
+  });
+  it("denies contacts.delete for employee (Owner/Manager only)", () => {
+    expect(() =>
+      requireCapability(employee, PERMISSIONS.CONTACTS_DELETE),
+    ).toThrow(ForbiddenError);
+    expect(() =>
+      requireCapability(owner, PERMISSIONS.CONTACTS_DELETE),
+    ).not.toThrow();
+    expect(() =>
+      requireCapability(manager, PERMISSIONS.CONTACTS_DELETE),
+    ).not.toThrow();
+  });
+});
+
+describe("resolveListScope — collection authorization", () => {
+  it("returns 'all' for clients.view (granted to all roles)", () => {
+    expect(resolveListScope(owner, PERMISSIONS.CLIENTS_VIEW)).toBe("all");
+    expect(resolveListScope(manager, PERMISSIONS.CLIENTS_VIEW)).toBe("all");
+    expect(resolveListScope(employee, PERMISSIONS.CLIENTS_VIEW)).toBe("all");
+  });
+  it("throws when the role lacks the grant", () => {
+    expect(() => resolveListScope(employee, PERMISSIONS.TEAM_INVITE)).toThrow(
+      ForbiddenError,
+    );
+  });
+  it("fails closed for unsupported scopes (assigned / team)", () => {
+    const a = makeAuthorizer({
+      owner: { "clients.view": "assigned" } as GrantMap,
+      admin: { "clients.view": "team" } as GrantMap,
+      employee: {} as GrantMap,
+    });
+    expect(() => a.resolveListScope(owner, PERMISSIONS.CLIENTS_VIEW)).toThrow(
+      ForbiddenError,
+    );
+    expect(() => a.resolveListScope(manager, PERMISSIONS.CLIENTS_VIEW)).toThrow(
+      ForbiddenError,
+    );
+  });
+});
+
+describe("clients.restore default grants", () => {
+  it("owner/manager allowed, employee denied", () => {
+    expect(() =>
+      requireCapability(owner, PERMISSIONS.CLIENTS_RESTORE),
+    ).not.toThrow();
+    expect(() =>
+      requireCapability(manager, PERMISSIONS.CLIENTS_RESTORE),
+    ).not.toThrow();
+    expect(() =>
+      requireCapability(employee, PERMISSIONS.CLIENTS_RESTORE),
+    ).toThrow(ForbiddenError);
+  });
+});
+
+describe("contacts inherit parent-client scope (unsupported scope denies)", () => {
+  it("an 'assigned' contacts grant fails closed (no assignment model)", () => {
+    const a = makeAuthorizer({
+      owner: { "contacts.view": "assigned" } as GrantMap,
+      admin: {} as GrantMap,
+      employee: {} as GrantMap,
+    });
+    expect(
+      a.can(owner, PERMISSIONS.CONTACTS_VIEW, {
+        parentClient: { orgId: ORG, ownerId: SELF },
+      }),
+    ).toBe(false);
   });
 });
