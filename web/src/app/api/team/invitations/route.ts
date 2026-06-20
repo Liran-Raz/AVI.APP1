@@ -15,8 +15,8 @@ import { inviteSchema } from "@/server/validators/team.schema";
 // URL; it is never returned outside this immediate creation response.
 // `token_hash` is never returned.
 export const POST = withErrorHandler(async (request: NextRequest) => {
-  // Route-level role belt (defense in depth). The service still enforces
-  // the finer rules (assertCanInvite / assertCanAssignRole).
+  // Route-level coarse belt (defense in depth). The service is authoritative:
+  // requirePermission(TEAM_INVITE) + the role-escalation invariant.
   const session = await requireRole(["owner", "admin"]);
   const body = await request.json().catch(() => ({}));
   const input = inviteSchema.parse(body);
