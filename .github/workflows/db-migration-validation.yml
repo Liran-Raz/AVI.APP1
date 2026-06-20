@@ -97,5 +97,14 @@ jobs:
       - name: Verify 0012 seed (S1-S8)
         run: psql -v ON_ERROR_STOP=1 -f supabase/validation/0012_verify.sql
 
+      - name: Apply 0013 backfill (membership role_id)
+        run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/0013_backfill_membership_role_id.sql
+
+      - name: Re-apply 0013 (idempotency)
+        run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/0013_backfill_membership_role_id.sql
+
+      - name: Verify 0013 backfill (B1-B7)
+        run: psql -v ON_ERROR_STOP=1 -f supabase/validation/0013_verify.sql
+
       - name: Rollback rehearsal (R1-R2)
         run: psql -v ON_ERROR_STOP=1 -f supabase/validation/0011_rollback.sql
