@@ -37,8 +37,8 @@ begin
   if r.args <> 'p_org_id uuid' then raise exception 'D2 FAIL: args=%', r.args; end if;
   if r.result !~* 'TABLE\(role_key text, is_system boolean, permission_key text, record_scope text\)' then
     raise exception 'D2 FAIL: unexpected result type: %', r.result; end if;
-  if r.owner in ('anon', 'authenticated') then
-    raise exception 'D2 FAIL: unsafe function owner %', r.owner; end if;
+  if r.owner <> 'postgres' then
+    raise exception 'D2 FAIL: owner=% (want exactly postgres)', r.owner; end if;
 end $$;
 
 -- ===== Privileges =====
@@ -51,7 +51,21 @@ begin
     raise exception 'P1 FAIL: anon has EXECUTE'; end if;
 end $$;
 
--- T1: underlying tables remain closed; no new policies.
+-- P2: PUBLIC has no EXECUTE, verified directly through the function ACL
+-- (grantee 0 = PUBLIC in aclexplode).
+do $$
+declare pub int;
+begin
+  select count(*) into pub
+  from pg_proc p
+  join pg_namespace n on n.oid = p.pronamespace
+  cross join lateral aclexplode(p.proacl) a
+  where n.nspname = 'public' and p.proname = 'resolve_my_role_permissions'
+    and a.grantee = 0 and a.privilege_type = 'EXECUTE';
+  if pub <> 0 then raise exception 'P2 FAIL: PUBLIC has EXECUTE in the function ACL'; end if;
+end $$;
+
+-- T1: underlying tables remain closed; RLS enabled; no policies.
 do $$
 declare pol int;
 begin
@@ -61,6 +75,11 @@ begin
      or has_table_privilege('anon', 'public.role_permissions', 'SELECT') then
     raise exception 'T1 FAIL: direct table SELECT is open to anon/authenticated';
   end if;
+  if exists (
+    select 1 from pg_class c join pg_namespace n on n.oid = c.relnamespace
+    where n.nspname = 'public' and c.relname in ('roles', 'role_permissions')
+      and not c.relrowsecurity
+  ) then raise exception 'T1 FAIL: RLS not enabled on roles/role_permissions'; end if;
   select count(*) into pol from pg_policies
   where schemaname = 'public' and tablename in ('roles', 'role_permissions');
   if pol <> 0 then raise exception 'T1 FAIL: % policies on new tables (want 0)', pol; end if;
@@ -175,4 +194,4 @@ begin
   if n <> 0 then raise exception 'B10 FAIL: nonexistent org expected 0 rows, got %', n; end if;
 end $$;
 
-select 'ALL 0014 RPC CHECKS PASSED (D1-D2, P1, T1, B1-B10)' as result;
+select 'ALL 0014 RPC CHECKS PASSED (D1-D2, P1-P2, T1, B1-B10)' as result;

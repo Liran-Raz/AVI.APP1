@@ -18,18 +18,23 @@
 --   * No direct table SELECT grant, no broad read policy, no service-role key,
 --     and no new environment variable are introduced (see threat model doc).
 --
+-- APPLY AS ROLE postgres:
+--   Select Role "postgres" in the Supabase SQL Editor before running. The
+--   migration ASSERTS current_user = 'postgres' and aborts otherwise, so the
+--   SECURITY DEFINER owner is guaranteed to be postgres (never a
+--   user-controlled role).
+--
+-- NO OVERLOAD FAMILY:
+--   The migration aborts if ANY function named public.resolve_my_role_permissions
+--   already exists (regardless of arguments). Keeps `create function` (not
+--   `create or replace`); it cannot create or leave an overloaded family.
+--
 -- WHAT THIS MIGRATION DOES NOT DO:
 --   * No data mutation (no INSERT/UPDATE/DELETE); no change to existing
 --     memberships, roles, grants, RLS, policies, or table privileges.
 --   * No change to migrations 0011-0013. No authorization cutover. The legacy
 --     `organization_memberships.role` enum and code `ROLE_GRANTS` stay
 --     authoritative; this function is non-authoritative input only.
---
--- SAFETY:
---   * `create function` (not `create or replace`): a pre-existing function of
---     the same signature causes a clean failure (transaction rolls back).
---   * Apply MANUALLY in the Supabase Dashboard SQL Editor (no auto-apply).
---     NOT applied in this PR. Run the VERIFICATION block after applying.
 --
 -- OUTPUT CONTRACT (typed rowset; authorization metadata only, never PII):
 --   role_key       text     - the caller's role key in the org (e.g. owner)
@@ -38,13 +43,37 @@
 --                             zero-permission sentinel row
 --   record_scope   text     - the grant's record scope, or NULL
 --   Interpretation:
---     0 rows                       => no active same-org role (no access)
+--     0 rows                        => no active same-org role (no access)
 --     1 row, permission_key IS NULL => valid role with ZERO permissions
 --     >=1 row, permission_key set   => valid role with those permissions
---   (A LEFT JOIN yields the single sentinel row so "zero permissions" is
---    distinguishable from "no membership".)
 
 begin;
+
+-- Guard 1: enforce the SECURITY DEFINER owner. The function is owned by its
+-- creator; require that to be exactly postgres.
+do $$
+begin
+  if current_user <> 'postgres' then
+    raise exception
+      'Migration 0014 must be applied as role postgres (current_user = %). Select Role: postgres in the SQL Editor.',
+      current_user;
+  end if;
+end $$;
+
+-- Guard 2: forbid any pre-existing same-name function (no overload family),
+-- regardless of argument signature. Aborts the transaction if one exists.
+do $$
+begin
+  if exists (
+    select 1
+    from pg_proc p
+    join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'resolve_my_role_permissions'
+  ) then
+    raise exception
+      'Refusing to create public.resolve_my_role_permissions: a function with that name already exists (no overloads permitted). Drop it first and review.';
+  end if;
+end $$;
 
 create function public.resolve_my_role_permissions(p_org_id uuid)
 returns table (
@@ -75,7 +104,7 @@ as $$
 $$;
 
 comment on function public.resolve_my_role_permissions(uuid) is
-  'Returns the CALLER''s own active-membership role key, is_system flag, and (permission_key, record_scope) grants for p_org_id, resolved from auth.uid(). SECURITY DEFINER with pinned empty search_path; authorization metadata only (no PII). Zero rows when the caller has no active same-org role; a single NULL-permission row is the zero-permission sentinel. Non-authoritative input for the shadow DB role resolver.';
+  'Returns the CALLER''s own active-membership role key, is_system flag, and (permission_key, record_scope) grants for p_org_id, resolved from auth.uid(). SECURITY DEFINER (owner postgres) with pinned empty search_path; authorization metadata only (no PII). Zero rows when the caller has no active same-org role; a single NULL-permission row is the zero-permission sentinel. Non-authoritative input for the shadow DB role resolver.';
 
 -- Execute surface: only the authenticated role. PUBLIC/anon cannot execute.
 revoke all on function public.resolve_my_role_permissions(uuid) from public;
@@ -90,30 +119,31 @@ notify pgrst, 'reload schema';
 -- ============================================================
 -- VERIFICATION (run AFTER applying; read-only). Do not run now.
 -- ============================================================
--- -- (a) Function exists, SECURITY DEFINER, STABLE, search_path pinned empty.
+-- -- (a) Exactly one function (no overload), SECURITY DEFINER, STABLE,
+-- --     search_path pinned empty, owner postgres.
 -- select p.proname, p.prosecdef, p.provolatile, p.proconfig,
 --        pg_get_function_identity_arguments(p.oid) as args,
---        pg_get_function_result(p.oid) as result
--- from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+--        pg_get_function_result(p.oid) as result, o.rolname as owner
+-- from pg_proc p
+-- join pg_namespace n on n.oid = p.pronamespace
+-- join pg_roles o on o.oid = p.proowner
 -- where n.nspname = 'public' and p.proname = 'resolve_my_role_permissions';
--- -- expect: prosecdef=t, provolatile='s', proconfig contains 'search_path=',
--- --         args='p_org_id uuid'.
+-- -- expect exactly 1 row: prosecdef=t, provolatile='s', proconfig has
+-- --   'search_path=' (empty), args='p_org_id uuid', owner='postgres'.
 --
--- -- (b) Exactly one function (no unsafe overload).
--- select count(*) from pg_proc p join pg_namespace n on n.oid=p.pronamespace
--- where n.nspname='public' and p.proname='resolve_my_role_permissions';  -- expect 1
---
--- -- (c) Execute privileges: authenticated yes; anon no.
+-- -- (b) Execute privileges: authenticated yes; anon no; PUBLIC no.
 -- select has_function_privilege('authenticated','public.resolve_my_role_permissions(uuid)','EXECUTE') as authn,
 --        has_function_privilege('anon','public.resolve_my_role_permissions(uuid)','EXECUTE') as anon;
--- -- expect: authn=t, anon=f.
+-- -- expect: authn=t, anon=f. (PUBLIC: no grantee=0 EXECUTE entry in proacl.)
 --
--- -- (d) Underlying tables remain closed (no new grants/policies).
+-- -- (c) Underlying tables remain closed; RLS enabled; no policies.
 -- select has_table_privilege('authenticated','public.roles','SELECT') as roles_authn,
 --        has_table_privilege('authenticated','public.role_permissions','SELECT') as perms_authn;
 -- -- expect both f.
--- select count(*) from pg_policies where schemaname='public' and tablename in ('roles','role_permissions');
--- -- expect 0.
+-- select c.relname, c.relrowsecurity from pg_class c
+-- join pg_namespace n on n.oid=c.relnamespace
+-- where n.nspname='public' and c.relname in ('roles','role_permissions');  -- expect t,t
+-- select count(*) from pg_policies where schemaname='public' and tablename in ('roles','role_permissions');  -- expect 0
 
 -- ============================================================
 -- ROLLBACK (run only to revert; removes only the function + its grant):
