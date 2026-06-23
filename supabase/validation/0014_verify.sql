@@ -28,7 +28,11 @@ begin
   where n.nspname = 'public' and p.proname = 'resolve_my_role_permissions';
   if not r.prosecdef then raise exception 'D2 FAIL: not SECURITY DEFINER'; end if;
   if r.provolatile <> 's' then raise exception 'D2 FAIL: volatility=% (want s/STABLE)', r.provolatile; end if;
-  if r.proconfig is null or not ('search_path=' = any(r.proconfig)) then
+  -- A pinned empty search_path is stored as `search_path=` or `search_path=""`.
+  if r.proconfig is null or not exists (
+    select 1 from unnest(r.proconfig) e
+    where e like 'search_path=%' and btrim(split_part(e, '=', 2), '"') = ''
+  ) then
     raise exception 'D2 FAIL: search_path not pinned empty: %', r.proconfig; end if;
   if r.args <> 'p_org_id uuid' then raise exception 'D2 FAIL: args=%', r.args; end if;
   if r.result !~* 'TABLE\(role_key text, is_system boolean, permission_key text, record_scope text\)' then
