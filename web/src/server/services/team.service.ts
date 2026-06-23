@@ -11,7 +11,7 @@ import {
 import type {
   Invitation,
   UserRole,
-} from "@/server/db/database.types";
+} from "@/server/db/domain.types";
 import { env } from "@/server/env";
 import {
   AppError,

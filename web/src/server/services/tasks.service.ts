@@ -13,12 +13,12 @@ import * as membershipsRepo from "@/server/repositories/memberships.repository";
 import { env } from "@/server/env";
 import { sendTaskAssignmentEmail } from "@/server/services/emails.service";
 import { toSafeErrorMeta } from "@/server/email/email-errors";
+import type { Database } from "@/server/db/database.types";
 import type {
-  Database,
   Task,
   TaskPriority,
   TaskStatus,
-} from "@/server/db/database.types";
+} from "@/server/db/domain.types";
 import { NotFoundError, ValidationError } from "@/server/errors/app-error";
 import type {
   CreateTaskPayload,

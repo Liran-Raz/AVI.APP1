@@ -2,7 +2,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { EmailDeliveryError } from "@/server/email/email-errors";
 import type { FullSession } from "@/server/auth/session";
-import type { Invitation, UserRole } from "@/server/db/database.types";
+import type { Invitation } from "@/server/db/domain.types";
+import type { UserRole } from "@/server/db/domain.types";
 
 // Mock all of team.service's heavy dependencies so importing it does not
 // boot env validation or the Supabase client, and so we can drive the

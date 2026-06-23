@@ -2,7 +2,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { EmailDeliveryError } from "@/server/email/email-errors";
 import type { FullSession } from "@/server/auth/session";
-import type { Task, UserRole } from "@/server/db/database.types";
+import type { Task } from "@/server/db/domain.types";
+import type { UserRole } from "@/server/db/domain.types";
 import { NotFoundError, ValidationError } from "@/server/errors/app-error";
 
 // Mock all of tasks.service's heavy dependencies so importing it does not

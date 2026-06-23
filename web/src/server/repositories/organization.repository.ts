@@ -1,7 +1,7 @@
 import "server-only";
 
 import { createSupabaseServerClient } from "@/server/db/supabase";
-import type { Organization } from "@/server/db/database.types";
+import type { Organization } from "@/server/db/domain.types";
 
 // Organization repository — only place that talks to `organizations`.
 

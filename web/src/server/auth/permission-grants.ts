@@ -18,7 +18,7 @@
 // Framework-free data; the authoritative resolver in authorization.ts
 // (server-only) consumes it.
 
-import type { UserRole } from "@/server/db/database.types";
+import type { UserRole } from "@/server/db/domain.types";
 import type { Permission, RecordScope } from "./permissions";
 
 export type Grant = RecordScope | true;

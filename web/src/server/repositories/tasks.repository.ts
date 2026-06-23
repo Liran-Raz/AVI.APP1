@@ -1,12 +1,12 @@
 import "server-only";
 
 import { createSupabaseServerClient } from "@/server/db/supabase";
+import type { Database } from "@/server/db/database.types";
 import type {
-  Database,
   Task,
   TaskPriority,
   TaskStatus,
-} from "@/server/db/database.types";
+} from "@/server/db/domain.types";
 import type { LifecycleFilter } from "@/server/validators/tasks.schema";
 
 // Tasks repository — the only place outside the Supabase client factory

@@ -5,7 +5,7 @@ import type {
   Client,
   ClientContact,
   UserRole,
-} from "@/server/db/database.types";
+} from "@/server/db/domain.types";
 import { ForbiddenError, NotFoundError } from "@/server/errors/app-error";
 
 vi.mock("@/server/repositories/clients.repository", () => ({

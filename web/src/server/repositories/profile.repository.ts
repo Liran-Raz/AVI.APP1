@@ -1,7 +1,7 @@
 import "server-only";
 
 import { createSupabaseServerClient } from "@/server/db/supabase";
-import type { Profile } from "@/server/db/database.types";
+import type { Profile } from "@/server/db/domain.types";
 
 // Profile repository — the only place outside the supabase client
 // factory that knows how `profiles` rows are read or written.

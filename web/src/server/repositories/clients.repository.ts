@@ -1,11 +1,11 @@
 import "server-only";
 
 import { createSupabaseServerClient } from "@/server/db/supabase";
+import type { Database } from "@/server/db/database.types";
 import type {
   BusinessType,
   Client,
-  Database,
-} from "@/server/db/database.types";
+} from "@/server/db/domain.types";
 
 // Clients repository — the only place outside the supabase client factory
 // that knows how `clients` rows are read or written. Every query filters

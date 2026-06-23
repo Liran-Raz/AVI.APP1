@@ -8,7 +8,8 @@ import {
 import { PERMISSIONS } from "@/server/auth/permissions";
 import * as clientsRepo from "@/server/repositories/clients.repository";
 import * as contactsRepo from "@/server/repositories/client-contacts.repository";
-import type { Client, ClientContact, Database } from "@/server/db/database.types";
+import type { Database } from "@/server/db/database.types";
+import type { Client, ClientContact } from "@/server/db/domain.types";
 import { NotFoundError } from "@/server/errors/app-error";
 import type {
   CreateContactPayload,

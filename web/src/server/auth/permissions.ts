@@ -16,7 +16,7 @@
 //   - `ownership.transfer` is a PROTECTED system action — NOT a grantable
 //     permission (see PROTECTED_ACTIONS) and never appears in any role grant.
 
-import type { UserRole } from "@/server/db/database.types";
+import type { UserRole } from "@/server/db/domain.types";
 
 // ============================================================
 // Permission catalog

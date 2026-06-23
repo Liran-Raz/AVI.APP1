@@ -11,7 +11,7 @@ import type {
   Organization,
   Profile,
   UserRole,
-} from "@/server/db/database.types";
+} from "@/server/db/domain.types";
 
 // One membership the session exposes. Org name/code are denormalized for
 // the office switcher UI. Only ACTIVE, visible memberships appear here.
