@@ -15,7 +15,7 @@ import "server-only";
 // PHASE 1 IS INERT: nothing here is wired into routes/services/UI yet.
 
 import type { FullSession } from "@/server/auth/session";
-import type { UserRole } from "@/server/db/database.types";
+import type { UserRole } from "@/server/db/domain.types";
 import { ForbiddenError } from "@/server/errors/app-error";
 import {
   PERMISSION_META,

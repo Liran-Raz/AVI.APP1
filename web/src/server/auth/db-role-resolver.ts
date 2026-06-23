@@ -1,14 +1,11 @@
 import "server-only";
 
-// SHADOW-MODE DB role resolver (Phase 8H) — NON-AUTHORITATIVE, DISABLED BY DEFAULT.
+// SHADOW-MODE DB role resolver (Phase 8H) - NON-AUTHORITATIVE, DISABLED BY DEFAULT.
 //
-// AWAITING OPERATOR DB CONFIRMATION: the `roles` / `role_permissions` tables and
-// `organization_memberships.role_id` are created by migrations 0011/0012/0013,
-// which are NOT yet applied to any database. This module therefore NEVER queries
-// those tables itself — it receives rows through a dependency-injected loader.
-// The concrete Supabase loader is deferred until the migrations are applied AND
-// `database.types.ts` is regenerated (the typed Supabase client cannot reference
-// the new tables before then, so writing one now would not type-check).
+// The `roles` / `role_permissions` tables and
+// `organization_memberships.role_id` are live-schema inputs for parity only.
+// The legacy membership `role` and code-defined `ROLE_GRANTS` map stay
+// authoritative; this module must never change an authorization decision.
 //
 // Guarantees (all unit-tested):
 //   * Disabled by default. Missing/any-other env value => disabled.
@@ -20,7 +17,8 @@ import "server-only";
 //     dropped; `ownership.transfer` is never admitted as a grant.
 
 import type { FullSession } from "@/server/auth/session";
-import type { UserRole } from "@/server/db/database.types";
+import { createSupabaseServerClient } from "@/server/db/supabase";
+import type { UserRole } from "@/server/db/domain.types";
 import { ROLE_GRANTS, type Grant, type GrantMap } from "./permission-grants";
 import {
   PERMISSIONS,
@@ -30,18 +28,48 @@ import {
   type RecordScope,
 } from "./permissions";
 
-// One role_permissions row as the resolver consumes it. Loader-shaped (plain
-// fields, no Supabase types) so this compiles before the tables/types exist.
 export type RolePermissionRow = {
   permission_key: string;
   record_scope: string | null;
 };
 
-// Loader contract (dependency-injected). The concrete Supabase implementation
-// is deferred (AWAITING OPERATOR DB CONFIRMATION); tests inject a fake.
+type MembershipRoleRow = {
+  role_id: string | null;
+  org_id: string;
+  is_active: boolean;
+};
+
+type RoleOwnershipRow = {
+  id: string;
+  org_id: string;
+};
+
 export type RoleGrantLoader = (
   session: FullSession,
 ) => Promise<RolePermissionRow[]>;
+
+export type DbRoleResolveFailureReason =
+  | "membership_query_error"
+  | "missing_membership"
+  | "inactive_membership"
+  | "missing_role_id"
+  | "role_query_error"
+  | "missing_role"
+  | "role_org_mismatch"
+  | "permissions_query_error"
+  | "malformed_permission_row"
+  | "ambiguous_permission_rows";
+
+export type DbRoleResolveResult =
+  | {
+      ok: true;
+      rows: RolePermissionRow[];
+      grantMap: GrantMap;
+    }
+  | {
+      ok: false;
+      reason: DbRoleResolveFailureReason;
+    };
 
 const PERMISSION_KEYS = new Set<string>(Object.values(PERMISSIONS));
 const VALID_SCOPES = new Set<string>(RECORD_SCOPES);
@@ -72,10 +100,105 @@ export function buildGrantMapFromRows(rows: RolePermissionRow[]): GrantMap {
   return map;
 }
 
+function isRolePermissionRow(value: unknown): value is RolePermissionRow {
+  if (typeof value !== "object" || value === null) return false;
+  const row = value as Partial<RolePermissionRow>;
+  return (
+    typeof row.permission_key === "string" &&
+    (row.record_scope === null || typeof row.record_scope === "string")
+  );
+}
+
+function validatePermissionRows(
+  rows: unknown[] | null,
+): RolePermissionRow[] | DbRoleResolveFailureReason {
+  if (!rows) return [];
+
+  const seen = new Set<string>();
+  const validRows: RolePermissionRow[] = [];
+
+  for (const row of rows) {
+    if (!isRolePermissionRow(row)) return "malformed_permission_row";
+    const ambiguityKey = `${row.permission_key}\u0000${row.record_scope ?? ""}`;
+    if (seen.has(ambiguityKey)) return "ambiguous_permission_rows";
+    seen.add(ambiguityKey);
+    validRows.push(row);
+  }
+
+  return validRows;
+}
+
+export async function resolveDbRoleGrants(
+  session: FullSession,
+): Promise<DbRoleResolveResult> {
+  const supabase = await createSupabaseServerClient();
+
+  const { data: membership, error: membershipError } = await supabase
+    .from("organization_memberships")
+    .select("role_id, org_id, is_active")
+    .eq("user_id", session.user.id)
+    .eq("org_id", session.activeOrg.id)
+    .eq("is_active", true)
+    .maybeSingle();
+
+  if (membershipError) return { ok: false, reason: "membership_query_error" };
+  if (!membership) return { ok: false, reason: "missing_membership" };
+
+  const membershipRow = membership as MembershipRoleRow;
+  if (!membershipRow.is_active) {
+    return { ok: false, reason: "inactive_membership" };
+  }
+  if (membershipRow.org_id !== session.activeOrg.id) {
+    return { ok: false, reason: "missing_membership" };
+  }
+  if (!membershipRow.role_id) return { ok: false, reason: "missing_role_id" };
+
+  const { data: role, error: roleError } = await supabase
+    .from("roles")
+    .select("id, org_id")
+    .eq("id", membershipRow.role_id)
+    .maybeSingle();
+
+  if (roleError) return { ok: false, reason: "role_query_error" };
+  if (!role) return { ok: false, reason: "missing_role" };
+
+  const roleRow = role as RoleOwnershipRow;
+  if (roleRow.org_id !== session.activeOrg.id) {
+    return { ok: false, reason: "role_org_mismatch" };
+  }
+
+  const { data: permissionRows, error: permissionError } = await supabase
+    .from("role_permissions")
+    .select("permission_key, record_scope")
+    .eq("role_id", roleRow.id);
+
+  if (permissionError) {
+    return { ok: false, reason: "permissions_query_error" };
+  }
+
+  const rowsOrFailure = validatePermissionRows(permissionRows);
+  if (typeof rowsOrFailure === "string") {
+    return { ok: false, reason: rowsOrFailure };
+  }
+
+  return {
+    ok: true,
+    rows: rowsOrFailure,
+    grantMap: buildGrantMapFromRows(rowsOrFailure),
+  };
+}
+
+export async function loadDbRoleGrantRows(
+  session: FullSession,
+): Promise<RolePermissionRow[]> {
+  const result = await resolveDbRoleGrants(session);
+  return result.ok ? result.rows : [];
+}
+
 export type ParityCategory =
   | "match"
   | "code_allow_db_deny" // code grants, DB does not
-  | "code_deny_db_allow" // DB grants, code does not  <-- privilege-escalation signal
+  | "code_deny_db_allow" // DB grants, code does not
   | "scope_mismatch"; // both grant, scopes differ
 
 export type ParityResult = {
@@ -156,7 +279,7 @@ export async function runShadowParity(
   return { enabled: true, parity };
 }
 
-// Safe telemetry — categories + counts only (no PII, no tokens, no record
+// Safe telemetry - categories + counts only (no PII, no tokens, no record
 // contents). Mirrors the safety posture of authzLogMeta.
 export type ShadowParityLogMeta = {
   category: "authz_shadow_parity";

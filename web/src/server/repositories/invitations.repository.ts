@@ -5,7 +5,7 @@ import type {
   Invitation,
   InvitationStatus,
   UserRole,
-} from "@/server/db/database.types";
+} from "@/server/db/domain.types";
 
 // Invitations repository — only place that talks to `invitations`.
 

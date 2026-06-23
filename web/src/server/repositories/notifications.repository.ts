@@ -1,7 +1,7 @@
 import "server-only";
 
 import { createSupabaseServerClient } from "@/server/db/supabase";
-import type { Notification } from "@/server/db/database.types";
+import type { Notification } from "@/server/db/domain.types";
 
 // Notifications repository. RLS isolates by user_id automatically, but
 // every method still filters explicitly — defense in depth and

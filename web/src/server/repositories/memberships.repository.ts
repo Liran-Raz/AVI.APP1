@@ -4,7 +4,7 @@ import { createSupabaseServerClient } from "@/server/db/supabase";
 import type {
   OrganizationMembership,
   UserRole,
-} from "@/server/db/database.types";
+} from "@/server/db/domain.types";
 
 // Memberships repository — the only place that talks to
 // `organization_memberships`. This table is the AUTHORITATIVE source of

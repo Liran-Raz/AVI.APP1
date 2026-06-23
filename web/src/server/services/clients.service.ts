@@ -8,7 +8,8 @@ import {
 } from "@/server/auth/authorization";
 import { PERMISSIONS } from "@/server/auth/permissions";
 import * as clientsRepo from "@/server/repositories/clients.repository";
-import type { Client, Database } from "@/server/db/database.types";
+import type { Database } from "@/server/db/database.types";
+import type { Client } from "@/server/db/domain.types";
 
 type ClientUpdate = Database["public"]["Tables"]["clients"]["Update"];
 import { NotFoundError } from "@/server/errors/app-error";

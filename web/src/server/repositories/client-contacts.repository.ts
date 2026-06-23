@@ -1,7 +1,8 @@
 import "server-only";
 
 import { createSupabaseServerClient } from "@/server/db/supabase";
-import type { ClientContact, Database } from "@/server/db/database.types";
+import type { Database } from "@/server/db/database.types";
+import type { ClientContact } from "@/server/db/domain.types";
 
 // Client contacts repository — talks to public.client_contacts.
 //

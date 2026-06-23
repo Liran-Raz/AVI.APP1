@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { FullSession } from "@/server/auth/session";
-import type { Client, UserRole } from "@/server/db/database.types";
+import type { Client } from "@/server/db/domain.types";
+import type { UserRole } from "@/server/db/domain.types";
 import { ForbiddenError, NotFoundError } from "@/server/errors/app-error";
 
 // Mock only the repository — its (mocked) module never loads supabase/env.

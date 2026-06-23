@@ -1,7 +1,7 @@
 import "server-only";
 
 import { createSupabaseServerClient } from "@/server/db/supabase";
-import type { UserRole } from "@/server/db/database.types";
+import type { UserRole } from "@/server/db/domain.types";
 
 // Team repository — reads the team roster for an org from the AUTHORITATIVE
 // organization_memberships table, joined to `profiles` for identity

@@ -2,7 +2,8 @@ import "server-only";
 
 import type { FullSession } from "@/server/auth/session";
 import * as notificationsRepo from "@/server/repositories/notifications.repository";
-import type { Notification, NotificationType } from "@/server/db/database.types";
+import type { Notification } from "@/server/db/domain.types";
+import type { NotificationType } from "@/server/db/domain.types";
 import type { ListNotificationsQuery } from "@/server/validators/notifications.schema";
 
 // ============================================================

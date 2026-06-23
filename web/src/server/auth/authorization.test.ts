@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { FullSession } from "@/server/auth/session";
-import type { UserRole } from "@/server/db/database.types";
+import type { UserRole } from "@/server/db/domain.types";
 import { ForbiddenError } from "@/server/errors/app-error";
 import { PERMISSIONS, PROTECTED_ACTIONS } from "./permissions";
 import { ROLE_GRANTS, type GrantMap } from "./permission-grants";
