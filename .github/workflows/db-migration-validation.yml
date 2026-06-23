@@ -106,5 +106,37 @@ jobs:
       - name: Verify 0013 backfill (B1-B7)
         run: psql -v ON_ERROR_STOP=1 -f supabase/validation/0013_verify.sql
 
+      - name: Build 0014 RPC harness (auth.uid stub + fixtures)
+        run: psql -v ON_ERROR_STOP=1 -f supabase/validation/0014_harness.sql
+
+      - name: Apply migration 0014 (secure role-read RPC)
+        run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/0014_resolve_my_role_permissions_rpc.sql
+
+      - name: Reject duplicate 0014 (create function must not clobber)
+        run: |
+          if psql -v ON_ERROR_STOP=1 -f supabase/migrations/0014_resolve_my_role_permissions_rpc.sql >/dev/null 2>&1; then
+            echo "FAIL: re-applying 0014 did not error on the existing function"; exit 1
+          fi
+          echo "PASS: duplicate 0014 cleanly rejected"
+
+      - name: Verify 0014 RPC (definition, privileges, isolation, zero-perm)
+        run: psql -v ON_ERROR_STOP=1 -f supabase/validation/0014_verify.sql
+
+      - name: RPC execute-privilege checks (anon denied, authenticated scoped)
+        run: |
+          if psql -q -c "set role anon; select public.resolve_my_role_permissions('aaaaaaaa-0000-0000-0000-000000000001');" >/dev/null 2>&1; then
+            echo "FAIL: anon can execute the RPC"; exit 1
+          fi
+          echo "PASS: anon denied execute"
+          N=$(psql -At -c "set role authenticated; select set_config('request.jwt.claim.sub','11111111-0000-0000-0000-0000000000a1',false); select count(*) from public.resolve_my_role_permissions('aaaaaaaa-0000-0000-0000-000000000001');" | tail -1)
+          if [ "$N" != "2" ]; then echo "FAIL: authenticated owner expected 2 rows, got $N"; exit 1; fi
+          echo "PASS: authenticated executes; owner sees 2 permission rows"
+          M=$(psql -At -c "set role authenticated; select set_config('request.jwt.claim.sub','11111111-0000-0000-0000-0000000000a1',false); select count(*) from public.resolve_my_role_permissions('bbbbbbbb-0000-0000-0000-000000000001');" | tail -1)
+          if [ "$M" != "0" ]; then echo "FAIL: authenticated cross-org expected 0 rows, got $M"; exit 1; fi
+          echo "PASS: authenticated cross-org isolation (0 rows)"
+
+      - name: Roll back 0014 RPC
+        run: psql -v ON_ERROR_STOP=1 -f supabase/validation/0014_rollback.sql
+
       - name: Rollback rehearsal (R1-R2)
         run: psql -v ON_ERROR_STOP=1 -f supabase/validation/0011_rollback.sql

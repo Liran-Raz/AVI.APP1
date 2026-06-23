@@ -1,0 +1,125 @@
+-- Secure DB role-read RPC (Phase 8I) - resolve_my_role_permissions
+-- 2026-06-23
+--
+-- ADDITIVE. Introduces ONE narrowly scoped SECURITY DEFINER function that lets
+-- an authenticated user read ONLY their own active-membership role and that
+-- role's permission grants, for an organization in which they are an active
+-- member. It is the single new authenticated read surface for the (still
+-- non-authoritative, disabled) DB role resolver.
+--
+-- WHY AN RPC (not table grants / policies / service-role):
+--   * `roles` and `role_permissions` are intentionally locked down (RLS
+--     enabled, zero policies, REVOKE ALL from anon + authenticated). The
+--     user-scoped app client (anon key -> `authenticated` role) cannot read
+--     them, and that posture is preserved.
+--   * A SECURITY DEFINER function with a pinned empty search_path is the
+--     minimal surface: it returns only the CALLER's own role metadata for one
+--     org, determined server-side from auth.uid() -- never from client input.
+--   * No direct table SELECT grant, no broad read policy, no service-role key,
+--     and no new environment variable are introduced (see threat model doc).
+--
+-- WHAT THIS MIGRATION DOES NOT DO:
+--   * No data mutation (no INSERT/UPDATE/DELETE); no change to existing
+--     memberships, roles, grants, RLS, policies, or table privileges.
+--   * No change to migrations 0011-0013. No authorization cutover. The legacy
+--     `organization_memberships.role` enum and code `ROLE_GRANTS` stay
+--     authoritative; this function is non-authoritative input only.
+--
+-- SAFETY:
+--   * `create function` (not `create or replace`): a pre-existing function of
+--     the same signature causes a clean failure (transaction rolls back).
+--   * Apply MANUALLY in the Supabase Dashboard SQL Editor (no auto-apply).
+--     NOT applied in this PR. Run the VERIFICATION block after applying.
+--
+-- OUTPUT CONTRACT (typed rowset; authorization metadata only, never PII):
+--   role_key       text     - the caller's role key in the org (e.g. owner)
+--   is_system      boolean  - whether that role is a system role
+--   permission_key text     - a granted permission key, or NULL for the
+--                             zero-permission sentinel row
+--   record_scope   text     - the grant's record scope, or NULL
+--   Interpretation:
+--     0 rows                       => no active same-org role (no access)
+--     1 row, permission_key IS NULL => valid role with ZERO permissions
+--     >=1 row, permission_key set   => valid role with those permissions
+--   (A LEFT JOIN yields the single sentinel row so "zero permissions" is
+--    distinguishable from "no membership".)
+
+begin;
+
+create function public.resolve_my_role_permissions(p_org_id uuid)
+returns table (
+  role_key text,
+  is_system boolean,
+  permission_key text,
+  record_scope text
+)
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select r.key, r.is_system, rp.permission_key, rp.record_scope
+  from public.organization_memberships m
+  join public.roles r
+    on r.id = m.role_id
+   and r.org_id = m.org_id
+  left join public.role_permissions rp
+    on rp.role_id = r.id
+  where auth.uid() is not null
+    and p_org_id is not null
+    and m.user_id = auth.uid()
+    and m.org_id = p_org_id
+    and m.is_active = true
+    and m.role_id is not null
+    and r.org_id = p_org_id
+$$;
+
+comment on function public.resolve_my_role_permissions(uuid) is
+  'Returns the CALLER''s own active-membership role key, is_system flag, and (permission_key, record_scope) grants for p_org_id, resolved from auth.uid(). SECURITY DEFINER with pinned empty search_path; authorization metadata only (no PII). Zero rows when the caller has no active same-org role; a single NULL-permission row is the zero-permission sentinel. Non-authoritative input for the shadow DB role resolver.';
+
+-- Execute surface: only the authenticated role. PUBLIC/anon cannot execute.
+revoke all on function public.resolve_my_role_permissions(uuid) from public;
+revoke all on function public.resolve_my_role_permissions(uuid) from anon;
+grant execute on function public.resolve_my_role_permissions(uuid) to authenticated;
+
+commit;
+
+-- Refresh PostgREST so the RPC is callable via supabase.rpc(...).
+notify pgrst, 'reload schema';
+
+-- ============================================================
+-- VERIFICATION (run AFTER applying; read-only). Do not run now.
+-- ============================================================
+-- -- (a) Function exists, SECURITY DEFINER, STABLE, search_path pinned empty.
+-- select p.proname, p.prosecdef, p.provolatile, p.proconfig,
+--        pg_get_function_identity_arguments(p.oid) as args,
+--        pg_get_function_result(p.oid) as result
+-- from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+-- where n.nspname = 'public' and p.proname = 'resolve_my_role_permissions';
+-- -- expect: prosecdef=t, provolatile='s', proconfig contains 'search_path=',
+-- --         args='p_org_id uuid'.
+--
+-- -- (b) Exactly one function (no unsafe overload).
+-- select count(*) from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+-- where n.nspname='public' and p.proname='resolve_my_role_permissions';  -- expect 1
+--
+-- -- (c) Execute privileges: authenticated yes; anon no.
+-- select has_function_privilege('authenticated','public.resolve_my_role_permissions(uuid)','EXECUTE') as authn,
+--        has_function_privilege('anon','public.resolve_my_role_permissions(uuid)','EXECUTE') as anon;
+-- -- expect: authn=t, anon=f.
+--
+-- -- (d) Underlying tables remain closed (no new grants/policies).
+-- select has_table_privilege('authenticated','public.roles','SELECT') as roles_authn,
+--        has_table_privilege('authenticated','public.role_permissions','SELECT') as perms_authn;
+-- -- expect both f.
+-- select count(*) from pg_policies where schemaname='public' and tablename in ('roles','role_permissions');
+-- -- expect 0.
+
+-- ============================================================
+-- ROLLBACK (run only to revert; removes only the function + its grant):
+--   begin;
+--     revoke all on function public.resolve_my_role_permissions(uuid) from authenticated;
+--     drop function if exists public.resolve_my_role_permissions(uuid);
+--   commit;
+--   notify pgrst, 'reload schema';
+-- ============================================================
