@@ -151,8 +151,10 @@ jobs:
           if [ "$M" != "0" ]; then echo "FAIL: authenticated cross-org expected 0 rows, got $M"; exit 1; fi
           echo "PASS: authenticated cross-org isolation (0 rows)"
 
-      - name: Roll back 0014 RPC
-        run: psql -v ON_ERROR_STOP=1 -f supabase/validation/0014_rollback.sql
+      - name: Roll back 0014 RPC (idempotent - run twice, both must pass)
+        run: |
+          psql -v ON_ERROR_STOP=1 -f supabase/validation/0014_rollback.sql
+          psql -v ON_ERROR_STOP=1 -f supabase/validation/0014_rollback.sql
 
       - name: Rollback rehearsal (R1-R2)
         run: psql -v ON_ERROR_STOP=1 -f supabase/validation/0011_rollback.sql

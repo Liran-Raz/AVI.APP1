@@ -111,10 +111,11 @@ revoke all on function public.resolve_my_role_permissions(uuid) from public;
 revoke all on function public.resolve_my_role_permissions(uuid) from anon;
 grant execute on function public.resolve_my_role_permissions(uuid) to authenticated;
 
-commit;
-
--- Refresh PostgREST so the RPC is callable via supabase.rpc(...).
+-- Refresh PostgREST inside the transaction: any failure before COMMIT rolls
+-- back the entire migration (nothing is left half-applied).
 notify pgrst, 'reload schema';
+
+commit;
 
 -- ============================================================
 -- VERIFICATION (run AFTER applying; read-only). Do not run now.
@@ -146,10 +147,10 @@ notify pgrst, 'reload schema';
 -- select count(*) from pg_policies where schemaname='public' and tablename in ('roles','role_permissions');  -- expect 0
 
 -- ============================================================
--- ROLLBACK (run only to revert; removes only the function + its grant):
+-- ROLLBACK (idempotent; removes only the function. DROP also removes its
+-- execution ACL, so no separate REVOKE is needed; re-running is a no-op):
 --   begin;
---     revoke all on function public.resolve_my_role_permissions(uuid) from authenticated;
 --     drop function if exists public.resolve_my_role_permissions(uuid);
+--     notify pgrst, 'reload schema';
 --   commit;
---   notify pgrst, 'reload schema';
 -- ============================================================
