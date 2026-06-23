@@ -1,10 +1,10 @@
 # Phase 8I — Secure DB Role-Read RPC (`0014`)
 
-> Status: **MIGRATION + TESTS + DOCS — NOT APPLIED, NOT MERGED.** Migration
+> Status: **MIGRATION + TESTS + DOCS.** Migration
 > `0014_resolve_my_role_permissions_rpc.sql` adds one `SECURITY DEFINER`
-> function and nothing else. It is **not applied** to any database and the PR is
-> **not merged** — both require an explicit Decision Gate. Baseline: `main` @
-> `8b18db8`.
+> function and nothing else. **Migration 0014 has not been applied to any
+> database. Repository merge and Production application are separate Decision
+> Gates.** Baseline: `main` @ `8b18db8`.
 >
 > This RPC resolves the access gate identified in the PR #35 review: the
 > user-scoped client cannot read `roles`/`role_permissions` (RLS-enabled, zero
@@ -112,12 +112,12 @@ impact (it reads only). Rollback SQL in §6.
 |---|---|
 | Path | `supabase/migrations/0014_resolve_my_role_permissions_rpc.sql` |
 | Commit | branch `security/db-role-read-rpc` (PR #36) |
-| Git blob id (canonical) | `90d86a6d0f998ff4e2a6ff44e8dc36d0e1512eb4` |
-| SHA-256 (committed LF content) | `31e34d15b8d5190cc61f721c366fe6d1aa749df34251d6caf503a016c77bbb78` |
-| Lines / bytes | 155 / 7496 |
-| Active SQL statements | `begin` · `do`(owner guard) · `do`(no-overload guard) · `create function` · `comment` · `revoke`(×2) · `grant` · `commit` · `notify` — no INSERT/UPDATE/DELETE |
+| Git blob id (canonical) | `7bdae0ecbdcbb200d72fb907bf349d11a2041e72` |
+| SHA-256 (committed LF content) | `2bbb64f994d74c40311eb9c925167ec4d5fe88a72ae6ba438d49a9e43c479426` |
+| Lines / bytes | 156 / 7554 |
+| Active SQL statements | `begin` · `do`(owner guard) · `do`(no-overload guard) · `create function` · `comment` · `revoke`(×2) · `grant` · `notify` · `commit` — no INSERT/UPDATE/DELETE; `notify` is **inside** the transaction |
 
-Verify before applying: `git rev-parse HEAD:supabase/migrations/0014_resolve_my_role_permissions_rpc.sql` → must equal `90d86a6d…` (a Windows working-copy `sha256sum` may differ only by line endings — trust the blob id).
+Verify before applying: `git rev-parse HEAD:supabase/migrations/0014_resolve_my_role_permissions_rpc.sql` → must equal `7bdae0ec…` (a Windows working-copy `sha256sum` may differ only by line endings — trust the blob id).
 
 ### Apply as role `postgres`
 - In the Supabase SQL Editor, **select Role: `postgres`** before running.
@@ -157,10 +157,10 @@ select current_user;
 Proceed only if: counts are 6/8/18/528/8/0; `existing_fn = 0`; all `has_table_privilege` false; policies 0; RLS t/t; `current_user = postgres`. Otherwise STOP.
 
 ### Execution
-- The file **contains its own `BEGIN`/`COMMIT`** — paste the entire unedited file and Run once (do not add an outer transaction, do not split). `notify pgrst` runs after commit.
+- The file **contains its own `BEGIN`/`COMMIT`** — paste the entire unedited file and Run once (do not add an outer transaction, do not split). `notify pgrst` is **inside** the transaction, so it commits atomically with the function.
 - Expected output: `Success. No rows returned`.
-- On timeout: trivial DDL; if it happens, re-run preflight `existing_fn` — if 0, safe to retry; if 1, the function was created (do not re-run, the guard would abort).
-- On any error (including the owner or no-overload guard): the transaction rolls back; copy the exact error and STOP.
+- **Errors before `COMMIT` roll back the entire migration** (the guards, the function, and the `NOTIFY`) — nothing is left half-applied.
+- **On an uncertain timeout, do not assume rollback.** First run the read-only function-existence preflight (`existing_fn`): if it is `1`, the apply succeeded — **do not rerun** (the no-overload guard would abort); if it is `0`, the apply rolled back and it is safe to retry.
 - Do not run twice before postflight.
 
 ### Postflight (read-only)
@@ -202,13 +202,13 @@ sentinel) is proven on real PostgreSQL by the CI validation harness; in
 Production the SQL Editor runs without an end-user JWT (`auth.uid()` null → 0
 rows), so behavioral spot-checks belong to the later resolver-integration step.
 
-### Rollback (safe anytime; removes only the function + its grant; no data impact)
+### Rollback (idempotent; removes only the function; no data impact)
+`DROP … IF EXISTS` also removes the execution ACL, so no separate `REVOKE` is needed; re-running is a no-op. The CI harness runs this rollback **twice** and both runs pass (each asserts the function is gone).
 ```sql
 begin;
-  revoke all on function public.resolve_my_role_permissions(uuid) from authenticated;
   drop function if exists public.resolve_my_role_permissions(uuid);
+  notify pgrst, 'reload schema';
 commit;
-notify pgrst, 'reload schema';
 ```
 
 ## 7. What this is NOT (boundary)
