@@ -1,10 +1,10 @@
 # Production Migration Apply Record — `0014_resolve_my_role_permissions_rpc`
 
-> **COMPLETED APPLY RECORD — UNCOMMITTED. AWAITING FINAL APPROVAL TO COMMIT.**
-> Completed from the operator's verified Production evidence plus operator-
-> confirmed apply metadata (operator and execution timestamp). Committing this
-> record is a separate post-apply gate. Migration `0014` itself was applied and
-> verified; this file changes no database, code, or configuration.
+> **COMPLETED PRODUCTION APPLY RECORD.**
+> Completed from verified Production evidence and operator-confirmed apply
+> metadata. Migration `0014` was applied and independently verified; this
+> record documents the completed operation and changes no database, code, or
+> configuration.
 
 ---
 
@@ -116,8 +116,7 @@ closed with RLS on and zero policies.
 **ACCEPTED & RETAINED** — Migration `0014` applied once and fully verified in
 Supabase Production / AVI.APP1 on 2026-06-23 22:39 Asia/Jerusalem (UTC+03:00)
 by operator LIRAN. Approval recorded by operator LIRAN after independent ChatGPT
-review. This apply-record file is **uncommitted and AWAITING FINAL APPROVAL TO
-COMMIT**.
+review.
 
 ## K. Post-apply posture & scope (boundary)
 
