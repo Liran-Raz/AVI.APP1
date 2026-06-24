@@ -14,6 +14,47 @@ export type Database = {
   }
   public: {
     Tables: {
+      audit_events: {
+        Row: {
+          action: string
+          actor_user_id: string
+          created_at: string
+          id: string
+          metadata: Json
+          org_id: string
+          target_id: string | null
+          target_type: string
+        }
+        Insert: {
+          action: string
+          actor_user_id: string
+          created_at?: string
+          id?: string
+          metadata?: Json
+          org_id: string
+          target_id?: string | null
+          target_type: string
+        }
+        Update: {
+          action?: string
+          actor_user_id?: string
+          created_at?: string
+          id?: string
+          metadata?: Json
+          org_id?: string
+          target_id?: string | null
+          target_type?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "audit_events_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       client_contacts: {
         Row: {
           client_id: string
@@ -396,6 +437,7 @@ export type Database = {
       roles: {
         Row: {
           created_at: string
+          description: string | null
           id: string
           is_system: boolean
           key: string
@@ -405,6 +447,7 @@ export type Database = {
         }
         Insert: {
           created_at?: string
+          description?: string | null
           id?: string
           is_system?: boolean
           key: string
@@ -414,6 +457,7 @@ export type Database = {
         }
         Update: {
           created_at?: string
+          description?: string | null
           id?: string
           is_system?: boolean
           key?: string
@@ -531,6 +575,48 @@ export type Database = {
         Returns: {
           role_key: string
           is_system: boolean
+          permission_key: string | null
+          record_scope: string | null
+        }[]
+      }
+      create_org_role: {
+        Args: {
+          p_org_id: string
+          p_name: string
+          p_description: string | null
+          p_permissions: Json
+        }
+        Returns: string
+      }
+      update_org_role: {
+        Args: {
+          p_org_id: string
+          p_role_id: string
+          p_name: string
+          p_description: string | null
+          p_permissions: Json
+          p_expected_updated_at: string
+        }
+        Returns: string
+      }
+      delete_org_role: {
+        Args: { p_org_id: string; p_role_id: string }
+        Returns: undefined
+      }
+      duplicate_org_role: {
+        Args: { p_org_id: string; p_source_role_id: string; p_new_name: string }
+        Returns: string
+      }
+      list_org_roles: {
+        Args: { p_org_id: string }
+        Returns: {
+          role_id: string
+          key: string
+          name: string
+          description: string | null
+          is_system: boolean
+          created_at: string
+          updated_at: string
           permission_key: string | null
           record_scope: string | null
         }[]

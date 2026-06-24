@@ -7,6 +7,7 @@ import {
   ListChecks,
   LogOut,
   Settings,
+  ShieldCheck,
   Users,
   UserSquare2,
 } from "lucide-react";
@@ -44,6 +45,7 @@ export function AppShell({
   organization,
   memberships = [],
   activeOrgId,
+  showRolesNav = false,
   children,
 }: {
   profile: Profile;
@@ -53,10 +55,23 @@ export function AppShell({
   // [] so single-office rendering is byte-for-byte unchanged.
   memberships?: SwitcherOffice[];
   activeOrgId?: string;
+  // Reveal the "תפקידים" (roles management) nav entry. Gated server-side by the
+  // ROLES_MANAGEMENT_UI flag AND the viewer's roles.view capability. Default
+  // false => nav is byte-for-byte unchanged.
+  showRolesNav?: boolean;
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
   const router = useRouter();
+
+  // Insert the roles entry between "צוות" (team) and "הגדרות" (settings).
+  const navItems = showRolesNav
+    ? [
+        ...NAV_ITEMS.slice(0, 4),
+        { href: "/roles", label: "תפקידים", icon: ShieldCheck },
+        ...NAV_ITEMS.slice(4),
+      ]
+    : NAV_ITEMS;
 
   async function handleLogout() {
     try {
@@ -95,7 +110,7 @@ export function AppShell({
           </div>
         </div>
         <nav className="flex-1 px-3 py-4 space-y-1">
-          {NAV_ITEMS.map((item) => {
+          {navItems.map((item) => {
             const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
             return (
               <Link
@@ -173,8 +188,13 @@ export function AppShell({
         </header>
 
         {/* Mobile bottom nav */}
-        <nav className="md:hidden order-last border-t border-border bg-background grid grid-cols-5 sticky bottom-0">
-          {NAV_ITEMS.map((item) => {
+        <nav
+          className="md:hidden order-last border-t border-border bg-background grid sticky bottom-0"
+          style={{
+            gridTemplateColumns: `repeat(${navItems.length}, minmax(0, 1fr))`,
+          }}
+        >
+          {navItems.map((item) => {
             const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
             return (
               <Link

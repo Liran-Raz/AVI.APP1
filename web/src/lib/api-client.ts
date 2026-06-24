@@ -43,6 +43,12 @@ import type {
   InvitePayload,
   InviteSignupPayload,
 } from "@/server/validators/team.schema";
+import type { RoleDTO } from "@/server/services/roles.service";
+import type {
+  CreateRolePayload,
+  DuplicateRolePayload,
+  UpdateRolePayload,
+} from "@/server/validators/roles.schema";
 
 // Re-export DTOs so client components have one stable import path.
 export type { ClientDTO } from "@/server/services/clients.service";
@@ -89,6 +95,14 @@ export type {
   InviteSignupPayload,
   AssignableRole,
 } from "@/server/validators/team.schema";
+
+export type { RoleDTO, RoleGrantDTO } from "@/server/services/roles.service";
+export type {
+  CreateRolePayload,
+  UpdateRolePayload,
+  DuplicateRolePayload,
+  RoleGrantInput,
+} from "@/server/validators/roles.schema";
 
 // ============================================================
 // Response payloads — match what each /api route actually returns
@@ -371,6 +385,16 @@ export const apiClient = {
       ),
     deactivate: (memberId: string) =>
       postJson<MemberDTO>(`/api/team/members/${memberId}/deactivate`),
+  },
+  roles: {
+    list: () => getJson<{ items: RoleDTO[] }>("/api/roles"),
+    create: (input: CreateRolePayload) =>
+      postJson<RoleDTO>("/api/roles", input),
+    update: (id: string, input: UpdateRolePayload) =>
+      patchJson<RoleDTO>(`/api/roles/${id}`, input),
+    delete: (id: string) => deleteJson<{ id: string }>(`/api/roles/${id}`),
+    duplicate: (sourceId: string, input: DuplicateRolePayload) =>
+      postJson<RoleDTO>(`/api/roles/${sourceId}/duplicate`, input),
   },
   invite: {
     // Accept a pending invitation. The caller must have an active
