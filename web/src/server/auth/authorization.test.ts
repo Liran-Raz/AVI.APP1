@@ -398,3 +398,53 @@ describe("contacts inherit parent-client scope (unsupported scope denies)", () =
     ).toBe(false);
   });
 });
+
+describe("cutover seam — session.grantMap overrides the code map", () => {
+  it("with no grantMap, decisions come from ROLE_GRANTS (today's behavior)", () => {
+    expect(can(employee, PERMISSIONS.ROLES_MANAGE)).toBe(false);
+    expect(can(owner, PERMISSIONS.ROLES_MANAGE)).toBe(true);
+  });
+
+  it("a grantMap can ALLOW a permission the role's code map denies", () => {
+    const s = {
+      ...session("employee"),
+      grantMap: { "roles.manage": true } as GrantMap,
+    };
+    expect(can(s, PERMISSIONS.ROLES_MANAGE)).toBe(true);
+    expect(() => requireCapability(s, PERMISSIONS.ROLES_MANAGE)).not.toThrow();
+    expect(
+      resolveCapabilities(s).some((c) => c.permission === "roles.manage"),
+    ).toBe(true);
+  });
+
+  it("a grantMap can DENY a permission the role's code map allows", () => {
+    const s = { ...session("owner"), grantMap: {} as GrantMap };
+    expect(can(s, PERMISSIONS.ORGANIZATION_SETTINGS)).toBe(false);
+    expect(() =>
+      requireCapability(s, PERMISSIONS.ORGANIZATION_SETTINGS),
+    ).toThrow(ForbiddenError);
+    expect(resolveCapabilities(s)).toEqual([]);
+  });
+
+  it("a scoped grant in the grantMap drives resolveListScope", () => {
+    const s = {
+      ...session("employee"),
+      grantMap: { "clients.view": "own" } as GrantMap,
+    };
+    expect(resolveListScope(s, PERMISSIONS.CLIENTS_VIEW)).toBe("own");
+  });
+
+  it("ownership.transfer stays enum-bound, not grantable via grantMap", () => {
+    const s = {
+      ...session("employee"),
+      grantMap: { "ownership.transfer": true } as unknown as GrantMap,
+    };
+    expect(
+      canPerformProtectedAction(s, PROTECTED_ACTIONS.OWNERSHIP_TRANSFER),
+    ).toBe(false);
+    const o = { ...session("owner"), grantMap: {} as GrantMap };
+    expect(
+      canPerformProtectedAction(o, PROTECTED_ACTIONS.OWNERSHIP_TRANSFER),
+    ).toBe(true);
+  });
+});

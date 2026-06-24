@@ -526,6 +526,15 @@ export type Database = {
       }
       is_admin_or_owner: { Args: never; Returns: boolean }
       preview_invitation: { Args: { p_token: string }; Returns: Json }
+      resolve_my_role_permissions: {
+        Args: { p_org_id: string }
+        Returns: {
+          role_key: string
+          is_system: boolean
+          permission_key: string | null
+          record_scope: string | null
+        }[]
+      }
       show_limit: { Args: never; Returns: number }
       show_trgm: { Args: { "": string }; Returns: string[] }
       user_is_active_member_of: { Args: { p_org_id: string }; Returns: boolean }

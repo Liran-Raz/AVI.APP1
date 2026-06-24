@@ -150,7 +150,11 @@ function evaluate(
   permission: Permission,
   context: unknown,
 ): boolean {
-  const roleGrants = grants[session.activeRole];
+  // CUTOVER seam: when the session carries a DB-resolved grant map (cutover
+  // flag ON), it is authoritative; otherwise fall back to the in-code map keyed
+  // by the active role — byte-for-byte today's behavior. See db-role-resolver
+  // DB_ROLE_AUTHORITATIVE.
+  const roleGrants = session.grantMap ?? grants[session.activeRole];
   if (!roleGrants) return false;
   const grant: Grant | undefined = roleGrants[permission];
   if (grant === undefined) return false; // no grant = deny
@@ -225,7 +229,7 @@ export function makeAuthorizer(grants: Record<UserRole, GrantMap>): Authorizer {
     session: FullSession,
     permission: Permission,
   ): void {
-    const grant = grants[session.activeRole]?.[permission];
+    const grant = (session.grantMap ?? grants[session.activeRole])?.[permission];
     if (grant === undefined) throw new ForbiddenError();
   }
 
@@ -233,7 +237,7 @@ export function makeAuthorizer(grants: Record<UserRole, GrantMap>): Authorizer {
     session: FullSession,
     permission: Permission,
   ): RecordScope {
-    const grant = grants[session.activeRole]?.[permission];
+    const grant = (session.grantMap ?? grants[session.activeRole])?.[permission];
     if (grant === undefined) throw new ForbiddenError(); // no grant = deny
     const scope: RecordScope = grant === true ? "all" : grant;
     if (!SUPPORTED_RECORD_SCOPES.includes(scope)) {
@@ -243,7 +247,7 @@ export function makeAuthorizer(grants: Record<UserRole, GrantMap>): Authorizer {
   }
 
   function resolveCapabilities(session: FullSession): Capability[] {
-    const roleGrants = grants[session.activeRole] ?? {};
+    const roleGrants = session.grantMap ?? grants[session.activeRole] ?? {};
     const caps: Capability[] = [];
     for (const key of Object.keys(roleGrants) as Permission[]) {
       const grant = roleGrants[key];

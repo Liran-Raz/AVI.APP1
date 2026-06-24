@@ -12,6 +12,12 @@ import type {
   Profile,
   UserRole,
 } from "@/server/db/domain.types";
+import type { GrantMap } from "@/server/auth/permission-grants";
+import {
+  fireShadowParity,
+  isDbRoleAuthoritativeEnabled,
+  resolveDbRoleGrants,
+} from "@/server/auth/db-role-resolver";
 
 // One membership the session exposes. Org name/code are denormalized for
 // the office switcher UI. Only ACTIVE, visible memberships appear here.
@@ -46,6 +52,10 @@ export type Session = {
   memberships: Membership[];
   activeOrg: Organization | null;
   activeRole: UserRole | null;
+  // CUTOVER (Phase 8J): DB-resolved grant map, present ONLY when the
+  // DB_ROLE_AUTHORITATIVE flag is on and resolution succeeded. The authorization
+  // engine reads it when set, else falls back to the in-code ROLE_GRANTS map.
+  grantMap?: GrantMap;
 };
 
 export type FullSession = Session & {
@@ -133,7 +143,7 @@ export async function getCurrentSession(): Promise<Session | null> {
     is_active: true,
   };
 
-  return {
+  const fullSession: Session = {
     user,
     profile: overlaidProfile,
     organization: activeOrg,
@@ -141,6 +151,22 @@ export async function getCurrentSession(): Promise<Session | null> {
     activeOrg,
     activeRole,
   };
+
+  // CUTOVER (Phase 8J; flag-gated, OFF by default). When DB_ROLE_AUTHORITATIVE
+  // is on, resolve the DB-backed grant map and attach it so the authorization
+  // engine reads grants from the DB. On any resolver failure we leave grantMap
+  // undefined => the engine falls back to the in-code map (no lockout). When the
+  // flag is off, no RPC is issued and behavior is identical to today.
+  if (isDbRoleAuthoritativeEnabled()) {
+    const resolved = await resolveDbRoleGrants(fullSession as FullSession);
+    if (resolved.ok) fullSession.grantMap = resolved.grantMap;
+  }
+
+  // SHADOW parity (Phase 8H; flag-gated, OFF by default). Fire-and-forget: zero
+  // RPC when off, a single PII-free telemetry line when on. Never blocks.
+  void fireShadowParity(fullSession as FullSession);
+
+  return fullSession;
 }
 
 // ============================================================

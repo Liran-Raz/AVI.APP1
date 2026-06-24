@@ -23,91 +23,35 @@ vi.mock("@/server/db/supabase", () => ({
 
 const createSupabaseServerClientMock = vi.mocked(createSupabaseServerClient);
 
-type QueryError = { message: string };
-type QueryResult<T> = { data: T | null; error: QueryError | null };
-type FakeTable = "organization_memberships" | "roles" | "role_permissions";
-type FakeScenario = {
-  membership?: unknown;
-  membershipError?: QueryError;
-  membershipReject?: boolean;
-  role?: unknown;
-  roleError?: QueryError;
-  roleReject?: boolean;
-  permissions?: unknown[] | null;
-  permissionsError?: QueryError;
-  permissionsReject?: boolean;
+// ---- Fake of the secure read RPC (migration 0014) --------------------------
+// The resolver's ONLY DB call is supabase.rpc("resolve_my_role_permissions",
+// { p_org_id }). We fake that single surface and capture the call.
+type RpcRow = {
+  role_key: string;
+  is_system: boolean;
+  permission_key: string | null;
+  record_scope: string | null;
 };
+type RpcResult = { data: RpcRow[] | null; error: { message: string } | null };
 
-class FakeQuery {
-  readonly filters: Array<{ column: string; value: string | boolean }> = [];
+let lastRpc: { fn: string; args: unknown } | null = null;
 
-  constructor(
-    private readonly table: FakeTable,
-    private readonly scenario: FakeScenario,
-  ) {}
-
-  select(): this {
-    return this;
-  }
-
-  eq(column: string, value: string | boolean): this {
-    this.filters.push({ column, value });
-    return this;
-  }
-
-  maybeSingle(): Promise<QueryResult<unknown>> {
-    if (this.table === "organization_memberships") {
-      if (this.scenario.membershipReject) {
-        return Promise.reject(new Error("rejected"));
-      }
-      return Promise.resolve({
-        data: this.scenario.membership ?? null,
-        error: this.scenario.membershipError ?? null,
-      });
-    }
-    if (this.table === "roles") {
-      if (this.scenario.roleReject) {
-        return Promise.reject(new Error("rejected"));
-      }
-      return Promise.resolve({
-        data: this.scenario.role ?? null,
-        error: this.scenario.roleError ?? null,
-      });
-    }
-    return Promise.resolve({ data: null, error: null });
-  }
-
-  then<TResult1 = QueryResult<unknown[]>, TResult2 = never>(
-    onfulfilled?:
-      | ((value: QueryResult<unknown[]>) => TResult1 | PromiseLike<TResult1>)
-      | null,
-    onrejected?: ((reason: unknown) => TResult2 | PromiseLike<TResult2>) | null,
-  ): Promise<TResult1 | TResult2> {
-    if (this.table === "role_permissions" && this.scenario.permissionsReject) {
-      return Promise.reject(new Error("rejected")).then(onfulfilled, onrejected);
-    }
-    return Promise.resolve(this.many()).then(onfulfilled, onrejected);
-  }
-
-  private many(): QueryResult<unknown[]> {
-    if (this.table !== "role_permissions") return { data: [], error: null };
-    return {
-      data: this.scenario.permissions ?? [],
-      error: this.scenario.permissionsError ?? null,
-    };
-  }
-}
-
-function useFakeSupabase(scenario: FakeScenario): FakeQuery[] {
-  const queries: FakeQuery[] = [];
+function useFakeRpc(opts: {
+  data?: RpcRow[] | null;
+  error?: { message: string } | null;
+  reject?: boolean;
+}) {
+  lastRpc = null;
   createSupabaseServerClientMock.mockResolvedValue({
-    from(table: FakeTable) {
-      const query = new FakeQuery(table, scenario);
-      queries.push(query);
-      return query;
+    rpc(fn: string, args: unknown): Promise<RpcResult> {
+      lastRpc = { fn, args };
+      if (opts.reject) return Promise.reject(new Error("rejected"));
+      return Promise.resolve({
+        data: opts.data ?? null,
+        error: opts.error ?? null,
+      });
     },
   } as never);
-  return queries;
 }
 
 function fakeSession(role: UserRole): FullSession {
@@ -126,8 +70,28 @@ function rowsFromGrantMap(map: GrantMap): RolePermissionRow[] {
   }));
 }
 
-const validMembership = { role_id: "role-1", org_id: "org-1", is_active: true };
-const validRole = { id: "role-1", org_id: "org-1" };
+// Build full RPC rows (role_key/is_system + grant) from a grant map.
+function rpcRowsFromGrantMap(role: string, map: GrantMap): RpcRow[] {
+  return Object.entries(map).map(([permission_key, v]) => ({
+    role_key: role,
+    is_system: true,
+    permission_key,
+    record_scope: v === true ? null : (v as string),
+  }));
+}
+
+// One grant row with explicit fields (for validation cases).
+function grantRow(
+  permission_key: string,
+  record_scope: string | null,
+): RpcRow {
+  return { role_key: "owner", is_system: true, permission_key, record_scope };
+}
+
+// The zero-permission sentinel the RPC emits for a valid role with no grants.
+const sentinelRows: RpcRow[] = [
+  { role_key: "employee", is_system: true, permission_key: null, record_scope: null },
+];
 
 // Each test starts with the flag unset; restore the original afterward.
 let saved: string | undefined;
@@ -135,6 +99,7 @@ beforeEach(() => {
   saved = process.env[DB_ROLE_SHADOW_ENV];
   delete process.env[DB_ROLE_SHADOW_ENV];
   createSupabaseServerClientMock.mockReset();
+  lastRpc = null;
 });
 afterEach(() => {
   if (saved === undefined) delete process.env[DB_ROLE_SHADOW_ENV];
@@ -166,7 +131,7 @@ describe("runShadowParity", () => {
     };
     const out = await runShadowParity(fakeSession("owner"), resolve);
     expect(out).toEqual({ enabled: false });
-    expect(called).toBe(false); // zero new-table queries when disabled
+    expect(called).toBe(false); // zero RPC calls when disabled
   });
 
   it("reports parity when enabled and resolution succeeds", async () => {
@@ -186,13 +151,13 @@ describe("runShadowParity", () => {
     process.env[DB_ROLE_SHADOW_ENV] = "1";
     const resolve: DbRoleResolver = async () => ({
       ok: false,
-      reason: "permissions_query_error",
+      reason: "rpc_error",
     });
     const out = await runShadowParity(fakeSession("owner"), resolve);
     expect(out).toEqual({
       enabled: true,
       ok: false,
-      reason: "permissions_query_error",
+      reason: "rpc_error",
     });
   });
 
@@ -239,15 +204,13 @@ describe("buildGrantMapFromRows is fail-closed", () => {
   });
 });
 
-describe("resolveDbRoleGrants", () => {
-  it("scopes by user, active-org membership, and role_id+org_id on the role", async () => {
-    const queries = useFakeSupabase({
-      membership: validMembership,
-      role: validRole,
-      permissions: [
-        { permission_key: "team.view", record_scope: null },
-        { permission_key: "clients.view", record_scope: "all" },
-      ],
+describe("resolveDbRoleGrants (via the 0014 RPC)", () => {
+  it("calls the RPC with the active org id and maps the returned grants", async () => {
+    useFakeRpc({
+      data: rpcRowsFromGrantMap("owner", {
+        "team.view": true,
+        "clients.view": "all",
+      }),
     });
 
     const result = await resolveDbRoleGrants(fakeSession("owner"));
@@ -260,35 +223,53 @@ describe("resolveDbRoleGrants", () => {
       ],
       grantMap: { "team.view": true, "clients.view": "all" },
     });
-    expect(queries[0]?.filters).toEqual([
-      { column: "user_id", value: "user-1" },
-      { column: "org_id", value: "org-1" },
-      { column: "is_active", value: true },
-    ]);
-    // role query is filtered by BOTH id and active org_id (cross-org safety).
-    expect(queries[1]?.filters).toEqual([
-      { column: "id", value: "role-1" },
-      { column: "org_id", value: "org-1" },
-    ]);
-    expect(queries[2]?.filters).toEqual([
-      { column: "role_id", value: "role-1" },
-    ]);
+    // server-side scoping: only p_org_id is passed; identity comes from auth.uid()
+    expect(lastRpc?.fn).toBe("resolve_my_role_permissions");
+    expect(lastRpc?.args).toEqual({ p_org_id: "org-1" });
   });
 
-  it("treats a valid role with zero permissions as success (empty grants)", async () => {
-    useFakeSupabase({
-      membership: validMembership,
-      role: validRole,
-      permissions: [],
-    });
-    await expect(resolveDbRoleGrants(fakeSession("owner"))).resolves.toEqual({
+  it("treats the zero-permission sentinel (single null row) as success with empty grants", async () => {
+    useFakeRpc({ data: sentinelRows });
+    await expect(resolveDbRoleGrants(fakeSession("employee"))).resolves.toEqual({
       ok: true,
       rows: [],
       grantMap: {},
     });
   });
 
-  it("fails closed when client creation throws", async () => {
+  it("fails closed (missing_membership) when the RPC returns zero rows", async () => {
+    useFakeRpc({ data: [] });
+    await expect(resolveDbRoleGrants(fakeSession("owner"))).resolves.toEqual({
+      ok: false,
+      reason: "missing_membership",
+    });
+  });
+
+  it("fails closed (missing_membership) when the RPC returns null data", async () => {
+    useFakeRpc({ data: null });
+    await expect(resolveDbRoleGrants(fakeSession("owner"))).resolves.toEqual({
+      ok: false,
+      reason: "missing_membership",
+    });
+  });
+
+  it("fails closed (rpc_error) when the RPC returns an error", async () => {
+    useFakeRpc({ error: { message: "permission denied" } });
+    await expect(resolveDbRoleGrants(fakeSession("owner"))).resolves.toEqual({
+      ok: false,
+      reason: "rpc_error",
+    });
+  });
+
+  it("fails closed (unexpected_error) when the RPC call rejects", async () => {
+    useFakeRpc({ reject: true });
+    await expect(resolveDbRoleGrants(fakeSession("owner"))).resolves.toEqual({
+      ok: false,
+      reason: "unexpected_error",
+    });
+  });
+
+  it("fails closed (unexpected_error) when client creation throws", async () => {
     createSupabaseServerClientMock.mockRejectedValue(new Error("boom"));
     await expect(resolveDbRoleGrants(fakeSession("owner"))).resolves.toEqual({
       ok: false,
@@ -296,117 +277,9 @@ describe("resolveDbRoleGrants", () => {
     });
   });
 
-  it("fails closed when the membership query rejects", async () => {
-    useFakeSupabase({ membershipReject: true });
-    await expect(resolveDbRoleGrants(fakeSession("owner"))).resolves.toEqual({
-      ok: false,
-      reason: "unexpected_error",
-    });
-  });
-
-  it("fails closed when the role query rejects", async () => {
-    useFakeSupabase({ membership: validMembership, roleReject: true });
-    await expect(resolveDbRoleGrants(fakeSession("owner"))).resolves.toEqual({
-      ok: false,
-      reason: "unexpected_error",
-    });
-  });
-
-  it("fails closed when the permission query rejects", async () => {
-    useFakeSupabase({
-      membership: validMembership,
-      role: validRole,
-      permissionsReject: true,
-    });
-    await expect(resolveDbRoleGrants(fakeSession("owner"))).resolves.toEqual({
-      ok: false,
-      reason: "unexpected_error",
-    });
-  });
-
-  it("fails closed when membership lookup errors", async () => {
-    useFakeSupabase({ membershipError: { message: "query failed" } });
-    await expect(resolveDbRoleGrants(fakeSession("owner"))).resolves.toEqual({
-      ok: false,
-      reason: "membership_query_error",
-    });
-  });
-
-  it("fails closed when membership is missing", async () => {
-    useFakeSupabase({ membership: null });
-    await expect(resolveDbRoleGrants(fakeSession("owner"))).resolves.toEqual({
-      ok: false,
-      reason: "missing_membership",
-    });
-  });
-
-  it("fails closed when membership is inactive", async () => {
-    useFakeSupabase({
-      membership: { role_id: "role-1", org_id: "org-1", is_active: false },
-    });
-    await expect(resolveDbRoleGrants(fakeSession("owner"))).resolves.toEqual({
-      ok: false,
-      reason: "inactive_membership",
-    });
-  });
-
-  it("fails closed when role_id is missing", async () => {
-    useFakeSupabase({
-      membership: { role_id: null, org_id: "org-1", is_active: true },
-    });
-    await expect(resolveDbRoleGrants(fakeSession("owner"))).resolves.toEqual({
-      ok: false,
-      reason: "missing_role_id",
-    });
-  });
-
-  it("fails closed when role lookup errors", async () => {
-    useFakeSupabase({
-      membership: validMembership,
-      roleError: { message: "query failed" },
-    });
-    await expect(resolveDbRoleGrants(fakeSession("owner"))).resolves.toEqual({
-      ok: false,
-      reason: "role_query_error",
-    });
-  });
-
-  it("fails closed when role is missing", async () => {
-    useFakeSupabase({ membership: validMembership, role: null });
-    await expect(resolveDbRoleGrants(fakeSession("owner"))).resolves.toEqual({
-      ok: false,
-      reason: "missing_role",
-    });
-  });
-
-  it("fails closed when role belongs to another org", async () => {
-    useFakeSupabase({
-      membership: validMembership,
-      role: { id: "role-1", org_id: "org-2" },
-    });
-    await expect(resolveDbRoleGrants(fakeSession("owner"))).resolves.toEqual({
-      ok: false,
-      reason: "role_org_mismatch",
-    });
-  });
-
-  it("fails closed when permission lookup errors", async () => {
-    useFakeSupabase({
-      membership: validMembership,
-      role: validRole,
-      permissionsError: { message: "query failed" },
-    });
-    await expect(resolveDbRoleGrants(fakeSession("owner"))).resolves.toEqual({
-      ok: false,
-      reason: "permissions_query_error",
-    });
-  });
-
-  it("fails closed when a permission row is malformed", async () => {
-    useFakeSupabase({
-      membership: validMembership,
-      role: validRole,
-      permissions: [{ permission_key: "team.view", record_scope: 123 }],
+  it("rejects a malformed permission row (no silent drop)", async () => {
+    useFakeRpc({
+      data: [grantRow("team.view", 123 as unknown as string)],
     });
     await expect(resolveDbRoleGrants(fakeSession("owner"))).resolves.toEqual({
       ok: false,
@@ -414,12 +287,8 @@ describe("resolveDbRoleGrants", () => {
     });
   });
 
-  it("rejects an unknown permission key (no silent drop)", async () => {
-    useFakeSupabase({
-      membership: validMembership,
-      role: validRole,
-      permissions: [{ permission_key: "bogus.permission", record_scope: null }],
-    });
+  it("rejects an unknown permission key", async () => {
+    useFakeRpc({ data: [grantRow("bogus.permission", null)] });
     await expect(resolveDbRoleGrants(fakeSession("owner"))).resolves.toEqual({
       ok: false,
       reason: "unknown_permission_key",
@@ -427,13 +296,7 @@ describe("resolveDbRoleGrants", () => {
   });
 
   it("rejects an ownership.transfer grant", async () => {
-    useFakeSupabase({
-      membership: validMembership,
-      role: validRole,
-      permissions: [
-        { permission_key: "ownership.transfer", record_scope: null },
-      ],
-    });
+    useFakeRpc({ data: [grantRow("ownership.transfer", null)] });
     await expect(resolveDbRoleGrants(fakeSession("owner"))).resolves.toEqual({
       ok: false,
       reason: "ownership_permission",
@@ -441,11 +304,7 @@ describe("resolveDbRoleGrants", () => {
   });
 
   it("rejects a scoped permission with no scope", async () => {
-    useFakeSupabase({
-      membership: validMembership,
-      role: validRole,
-      permissions: [{ permission_key: "clients.view", record_scope: null }],
-    });
+    useFakeRpc({ data: [grantRow("clients.view", null)] });
     await expect(resolveDbRoleGrants(fakeSession("owner"))).resolves.toEqual({
       ok: false,
       reason: "missing_scope",
@@ -453,11 +312,7 @@ describe("resolveDbRoleGrants", () => {
   });
 
   it("rejects an unsupported record scope", async () => {
-    useFakeSupabase({
-      membership: validMembership,
-      role: validRole,
-      permissions: [{ permission_key: "clients.view", record_scope: "bogus" }],
-    });
+    useFakeRpc({ data: [grantRow("clients.view", "bogus")] });
     await expect(resolveDbRoleGrants(fakeSession("owner"))).resolves.toEqual({
       ok: false,
       reason: "invalid_scope",
@@ -465,11 +320,7 @@ describe("resolveDbRoleGrants", () => {
   });
 
   it("rejects a scope on a contextless permission", async () => {
-    useFakeSupabase({
-      membership: validMembership,
-      role: validRole,
-      permissions: [{ permission_key: "team.view", record_scope: "all" }],
-    });
+    useFakeRpc({ data: [grantRow("team.view", "all")] });
     await expect(resolveDbRoleGrants(fakeSession("owner"))).resolves.toEqual({
       ok: false,
       reason: "unexpected_scope",
@@ -477,13 +328,8 @@ describe("resolveDbRoleGrants", () => {
   });
 
   it("rejects duplicate permission keys, even with differing scopes", async () => {
-    useFakeSupabase({
-      membership: validMembership,
-      role: validRole,
-      permissions: [
-        { permission_key: "clients.view", record_scope: "all" },
-        { permission_key: "clients.view", record_scope: "own" },
-      ],
+    useFakeRpc({
+      data: [grantRow("clients.view", "all"), grantRow("clients.view", "own")],
     });
     await expect(resolveDbRoleGrants(fakeSession("owner"))).resolves.toEqual({
       ok: false,
