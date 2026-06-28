@@ -221,6 +221,38 @@ jobs:
       - name: Verify 0015/0016 (definition, privileges, behavior)
         run: psql -v ON_ERROR_STOP=1 -f supabase/validation/0015_0016_verify.sql
 
+      # Review #6: prove the normalized role-name uniqueness is CONCURRENCY-safe
+      # (the unique index is the sole arbiter; create_org_role has no read-modify-
+      # write TOCTOU). Two SEPARATE backends create the same normalized name at the
+      # same time -> exactly one commits, the other gets unique_violation (23505).
+      - name: Concurrency-safe role name (two parallel creates -> exactly one wins)
+        run: |
+          SUB='a0000000-0000-0000-0000-0000000000a1'   # active owner of org ...aa
+          ORG='11111111-0000-0000-0000-0000000000aa'
+          run_create() {
+            # ON_ERROR_STOP=1 so a SQL error makes psql exit non-zero (the loser).
+            psql -At -v ON_ERROR_STOP=1 \
+              -c "set role authenticated; select set_config('request.jwt.claim.sub','$SUB',false); select public.create_org_role('$ORG', '$1', null, '[]'::jsonb);" \
+              >"$2" 2>&1
+            echo $? >"$2.rc"
+          }
+          # Same NORMALIZED name (lower(btrim(name))) via case/whitespace variants.
+          run_create "ZZ Concurrency Race"         /tmp/race_a &
+          run_create "   zz concurrency race   "   /tmp/race_b &
+          wait
+          RC1=$(cat /tmp/race_a.rc); RC2=$(cat /tmp/race_b.rc)
+          SUCC=$(( (RC1==0?1:0) + (RC2==0?1:0) ))
+          echo "rc_a=$RC1 rc_b=$RC2"
+          echo "--- race_a ---"; cat /tmp/race_a
+          echo "--- race_b ---"; cat /tmp/race_b
+          if [ "$SUCC" -ne 1 ]; then
+            echo "FAIL: expected exactly one concurrent create to succeed (got $SUCC)"; exit 1
+          fi
+          if ! grep -Eq 'already exists|unique_violation|23505' /tmp/race_a /tmp/race_b; then
+            echo "FAIL: the losing create did not report a unique-name conflict"; exit 1
+          fi
+          echo "PASS: concurrent identical-normalized-name creates -> exactly one wins; loser 23505"
+
       - name: Roll back 0015/0016 (run twice - idempotent, both must pass)
         run: |
           psql -v ON_ERROR_STOP=1 -f supabase/validation/0015_0016_rollback.sql

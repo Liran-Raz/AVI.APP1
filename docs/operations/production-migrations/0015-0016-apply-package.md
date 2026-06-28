@@ -72,11 +72,12 @@ commit;
 | Field | Value |
 |---|---|
 | Path | `supabase/migrations/0016_role_management_rpcs.sql` |
-| Git blob | `7c5cc0a51622f2d3e0ed1db19d14495974091484` |
-| SHA-256 | `cd2351147e3ef127d1306f3a1f1585f8320b766112c5da8695d5c6845c3de323` |
-| Bytes / lines | 17481 / 449 |
-| Functions | `create_org_role · update_org_role · delete_org_role · duplicate_org_role · list_org_roles` (all SECURITY DEFINER, owner postgres, `search_path=''`) |
-| Also | `alter table public.roles add column if not exists description` |
+| Git blob | `ad1e7fda3048d3e0f4b532f176b5ebe9ce21053f` |
+| SHA-256 | `f6de1705057019c64e5ba69f1382396391aeac85e261b87b4716aed19d4154a7` |
+| Bytes / lines | 20018 / 481 |
+| Functions | 5 RPCs (`create_org_role · update_org_role · delete_org_role · duplicate_org_role · list_org_roles`, all SECURITY DEFINER, owner postgres, `search_path=''`) + 2 immutable helpers (`custom_role_grant_check · validate_custom_role_payload`, non-SECURITY-DEFINER, REVOKEd from public/anon/authenticated) |
+| Also | `alter table public.roles add column if not exists description` + a UNIQUE expression index `roles_org_name_norm_uniq` on `(org_id, lower(btrim(name)))` |
+| Guards | `CREATE FUNCTION` (no `OR REPLACE`) + absence/shape guards — a second apply is **REJECTED**, it cannot silently clobber a security function |
 
 ### Preflight (read-only; expect all `pass=true`). **Apply 0015 first.**
 ```sql
@@ -84,17 +85,26 @@ select check_name, pass, detail from (
   select 'role_postgres' as check_name, current_user='postgres' as pass, current_user as detail
   union all select 'audit_events_present',
     to_regclass('public.audit_events') is not null, ''   -- 0015 applied
-  union all select 'rpcs_absent',
+  union all select 'audit_events_shape_ok',
+    (select count(*) from information_schema.columns
+     where table_schema='public' and table_name='audit_events'
+       and column_name in ('org_id','actor_user_id','action','target_type','target_id','metadata','created_at'))=7, ''
+  union all select 'functions_absent',   -- the migration self-guards; this is the human pre-check
     (select count(*) from pg_proc p join pg_namespace n on n.oid=p.pronamespace
      where n.nspname='public' and p.proname in
-       ('create_org_role','update_org_role','delete_org_role','duplicate_org_role','list_org_roles'))=0, ''
+       ('custom_role_grant_check','validate_custom_role_payload',
+        'create_org_role','update_org_role','delete_org_role','duplicate_org_role','list_org_roles'))=0, ''
+  union all select 'name_index_absent',
+    to_regclass('public.roles_org_name_norm_uniq') is null, ''
+  union all select 'no_dup_normalized_names',
+    not exists (select 1 from public.roles group by org_id, lower(btrim(name)) having count(*)>1), ''
   union all select 'roles_rls_still_closed',
     (select count(*) from pg_policies where schemaname='public' and tablename in ('roles','role_permissions'))=0, ''
 ) t order by check_name;
 ```
 
 ### Apply
-Paste the entire unedited `0016_role_management_rpcs.sql`; Run once. Expected: `Success. No rows returned`. (Uses `CREATE OR REPLACE` + `ADD COLUMN IF NOT EXISTS` — re-runnable.)
+Paste the entire unedited `0016_role_management_rpcs.sql`; Run once. Expected: `Success. No rows returned`. It uses `CREATE FUNCTION` (NOT `OR REPLACE`) behind absence guards, so it is **single-apply**: a second run is intentionally **REJECTED** (it will not silently replace a security function). To legitimately re-apply, run the **PRE-DATA rollback** below first.
 
 ### Postflight (read-only; machine-readable; expect `all_checks_passed=true`)
 ```sql
@@ -122,6 +132,21 @@ checks as (
   union all select 'tables_still_closed',
     (select count(*) from pg_policies where schemaname='public'
        and tablename in ('roles','role_permissions','audit_events'))=0
+  union all select 'helpers_present',
+    (select count(*) from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+       where n.nspname='public' and p.proname in
+         ('custom_role_grant_check','validate_custom_role_payload'))=2
+  union all select 'name_index_unique_nonpartial',
+    coalesce((select i.indisunique and i.indpred is null
+              from pg_class c join pg_index i on i.indexrelid=c.oid
+              where c.relname='roles_org_name_norm_uniq'), false)
+  union all select 'no_public_execute_on_rpcs',
+    coalesce((select bool_and(
+        not exists (select 1 from aclexplode(coalesce(p.proacl, acldefault('f'::"char", p.proowner))) a
+                    where a.grantee=0 and a.privilege_type='EXECUTE'))
+      from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+      where n.nspname='public' and p.proname in
+        ('create_org_role','update_org_role','delete_org_role','duplicate_org_role','list_org_roles')), false)
 )
 select check_name, pass from checks order by check_name;
 
@@ -139,6 +164,18 @@ select
   and coalesce((select bool_and(not has_function_privilege('anon', oid,'EXECUTE')) from f),false)
   and (select count(*) from pg_policies where schemaname='public'
          and tablename in ('roles','role_permissions','audit_events'))=0
+  and coalesce((select i.indisunique and i.indpred is null
+                from pg_class c join pg_index i on i.indexrelid=c.oid
+                where c.relname='roles_org_name_norm_uniq'), false)
+  and (select count(*) from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+         where n.nspname='public' and p.proname in
+           ('custom_role_grant_check','validate_custom_role_payload'))=2
+  and coalesce((select bool_and(
+        not exists (select 1 from aclexplode(coalesce(p.proacl, acldefault('f'::"char", p.proowner))) a
+                    where a.grantee=0 and a.privilege_type='EXECUTE'))
+      from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+      where n.nspname='public' and p.proname in
+        ('create_org_role','update_org_role','delete_org_role','duplicate_org_role','list_org_roles')), false)
   as all_checks_passed;
 ```
 
@@ -151,21 +188,55 @@ Production SQL Editor there is no end-user JWT (`auth.uid()` null), so the RPCs
 return forbidden/0-rows — behavioral spot-checks belong to the (separately
 gated) UI-enablement step.
 
-### Rollback (idempotent; functions + the added column + audit table)
+### Rollback — two phases (both idempotent)
+
+The 0016 surface drops in two ways depending on whether any org has already
+created custom roles. Run the 0016 rollback **before** the 0015 rollback.
+
+**A. PRE-DATA rollback** — no org has created a custom role yet (before
+`ROLES_MANAGEMENT_WRITE` is ever enabled). Fully reverts 0016 with **no data
+loss**, because there is no custom-role data and no `description` value yet:
 ```sql
 begin;
+  -- 5 RPCs + 2 helper functions (drop the dependent RPCs first)
   drop function if exists public.create_org_role(uuid, text, text, jsonb);
   drop function if exists public.update_org_role(uuid, uuid, text, text, jsonb, timestamptz);
   drop function if exists public.delete_org_role(uuid, uuid);
   drop function if exists public.duplicate_org_role(uuid, uuid, text);
   drop function if exists public.list_org_roles(uuid);
+  drop function if exists public.validate_custom_role_payload(jsonb);
+  drop function if exists public.custom_role_grant_check(text, text);
+  -- objects added by 0016
+  drop index if exists public.roles_org_name_norm_uniq;
   alter table public.roles drop column if exists description;
   notify pgrst, 'reload schema';
 commit;
 ```
-Custom-role data created via these RPCs lives in `roles`/`role_permissions`; drop
-it deliberately if a full revert is intended (the `description` column is dropped
-here regardless). `audit_events` is dropped by the 0015 rollback.
+(`audit_events` is then removed by the **0015** rollback above.)
+
+**B. POST-DATA operational rollback** — orgs have already created custom roles
+and/or `audit_events` history exists, and you want to **disable** the surface
+**without destroying data**. Drops ONLY the callable RPC surface; **preserves**
+`roles`/`role_permissions` rows, the `description` values, the unique index, and
+the `audit_events` history:
+```sql
+begin;
+  -- Disable the write/read RPCs (feature off) — data untouched.
+  drop function if exists public.create_org_role(uuid, text, text, jsonb);
+  drop function if exists public.update_org_role(uuid, uuid, text, text, jsonb, timestamptz);
+  drop function if exists public.delete_org_role(uuid, uuid);
+  drop function if exists public.duplicate_org_role(uuid, uuid, text);
+  drop function if exists public.list_org_roles(uuid);
+  -- KEEP (data / integrity): validate_custom_role_payload + custom_role_grant_check
+  --   (harmless immutable helpers), roles_org_name_norm_uniq (still guards integrity),
+  --   roles.description + its values, role_permissions rows, audit_events history.
+  notify pgrst, 'reload schema';
+commit;
+```
+A fully destructive revert that ALSO removes custom-role data (delete
+`role_permissions`/`roles` rows where `is_system=false`, then the PRE-DATA drops)
+is a deliberate, separately-authorized action and is intentionally NOT scripted
+here.
 
 ---
 
