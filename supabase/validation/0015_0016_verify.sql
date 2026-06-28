@@ -92,7 +92,7 @@ begin
   exception when sqlstate '23505' then null; end;
 end $$;
 
--- B3: ownership.transfer can never be granted (CHECK -> 23514); no orphan role.
+-- B3: ownership.transfer can never be granted (validation -> 22023); no orphan role.
 do $$
 declare n int;
 begin
@@ -101,7 +101,7 @@ begin
     perform public.create_org_role('11111111-0000-0000-0000-0000000000aa','Evil',null,
       '[{"permission_key":"ownership.transfer"}]'::jsonb);
     raise exception 'B3 FAIL: ownership.transfer grant accepted';
-  exception when sqlstate '23514' then null; end;
+  exception when sqlstate '22023' then null; end;
   select count(*) into n from public.roles where org_id='11111111-0000-0000-0000-0000000000aa' and name='Evil';
   if n <> 0 then raise exception 'B3 FAIL: orphan role left after rejected grant'; end if;
 end $$;
@@ -250,4 +250,60 @@ begin
   if n <> 0 then raise exception 'B14 FAIL: cross-org list expected 0 rows, got %', n; end if;
 end $$;
 
-select 'ALL 0015/0016 ROLE-MANAGEMENT CHECKS PASSED (D1-D3, B1-B14)' as result;
+-- D4: relacl/proacl-based ACL (acldefault-aware). No anon/authenticated direct
+-- table privilege on roles/role_permissions/audit_events; PUBLIC cannot execute
+-- the 5 RPCs.
+do $$
+declare bad_tbl int; bad_pub int;
+begin
+  select count(*) into bad_tbl
+  from pg_class c join pg_namespace n on n.oid=c.relnamespace
+  cross join lateral aclexplode(coalesce(c.relacl, acldefault('r'::"char", c.relowner))) a
+  join pg_roles g on g.oid=a.grantee
+  where n.nspname='public' and c.relname in ('roles','role_permissions','audit_events')
+    and g.rolname in ('anon','authenticated');
+  if bad_tbl <> 0 then raise exception 'D4 FAIL: % unexpected anon/authenticated table ACLs', bad_tbl; end if;
+
+  select count(*) into bad_pub
+  from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+  cross join lateral aclexplode(coalesce(p.proacl, acldefault('f'::"char", p.proowner))) a
+  where n.nspname='public'
+    and p.proname in ('create_org_role','update_org_role','delete_org_role','duplicate_org_role','list_org_roles')
+    and a.grantee = 0 and a.privilege_type = 'EXECUTE';
+  if bad_pub <> 0 then raise exception 'D4 FAIL: PUBLIC can execute a management RPC'; end if;
+end $$;
+
+-- B15: duplicating a SYSTEM role copies ONLY grantable grants (non-grantable
+-- roles.view is dropped; grantable clients.view is kept).
+do $$
+declare new_id uuid; n_grant int; n_nongrant int;
+begin
+  perform set_config('request.jwt.claim.sub','a0000000-0000-0000-0000-0000000000a1', false);
+  new_id := public.duplicate_org_role('11111111-0000-0000-0000-0000000000aa',
+    '33333333-0000-0000-0000-000000000001','Clone Of System');
+  select count(*) into n_grant from public.role_permissions where role_id=new_id and permission_key='clients.view';
+  select count(*) into n_nongrant from public.role_permissions where role_id=new_id and permission_key='roles.view';
+  if n_grant <> 1 then raise exception 'B15 FAIL: grantable clients.view not copied'; end if;
+  if n_nongrant <> 0 then raise exception 'B15 FAIL: non-grantable roles.view copied into custom role'; end if;
+end $$;
+
+-- B16-B21: DB-side payload validation rejects (22023) — a direct-RPC owner cannot
+-- bypass the app validator.
+do $$
+begin
+  perform set_config('request.jwt.claim.sub','a0000000-0000-0000-0000-0000000000a1', false);
+  begin perform public.create_org_role('11111111-0000-0000-0000-0000000000aa','V16',null,'[{"permission_key":"roles.manage"}]'::jsonb);
+    raise exception 'B16 FAIL: non-grantable permission accepted'; exception when sqlstate '22023' then null; end;
+  begin perform public.create_org_role('11111111-0000-0000-0000-0000000000aa','V17',null,'[{"permission_key":"clients.view","record_scope":"assigned"}]'::jsonb);
+    raise exception 'B17 FAIL: unsupported scope accepted'; exception when sqlstate '22023' then null; end;
+  begin perform public.create_org_role('11111111-0000-0000-0000-0000000000aa','V18',null,'[{"permission_key":"clients.view"}]'::jsonb);
+    raise exception 'B18 FAIL: missing scope accepted'; exception when sqlstate '22023' then null; end;
+  begin perform public.create_org_role('11111111-0000-0000-0000-0000000000aa','V19',null,'[{"permission_key":"team.view","record_scope":"all"}]'::jsonb);
+    raise exception 'B19 FAIL: scope on contextless accepted'; exception when sqlstate '22023' then null; end;
+  begin perform public.create_org_role('11111111-0000-0000-0000-0000000000aa','V20',null,'[{"permission_key":"team.view"},{"permission_key":"team.view"}]'::jsonb);
+    raise exception 'B20 FAIL: duplicate key accepted'; exception when sqlstate '22023' then null; end;
+  begin perform public.create_org_role('11111111-0000-0000-0000-0000000000aa','V21',null,'{"permission_key":"team.view"}'::jsonb);
+    raise exception 'B21 FAIL: non-array payload accepted'; exception when sqlstate '22023' then null; end;
+end $$;
+
+select 'ALL 0015/0016 ROLE-MANAGEMENT CHECKS PASSED (D1-D4, B1-B21)' as result;

@@ -59,6 +59,7 @@ function mapRoleRpcError(err: unknown): AppError {
       );
     case "22000": // data_exception (invalid name)
       return new ValidationError("Invalid role name");
+    case "22023": // invalid_parameter_value (DB-side payload validation)
     case "23514": // check_violation (bad scope / ownership.transfer)
     case "23502": // not_null_violation (missing permission key)
       return new ValidationError("Invalid permission grant");

@@ -1,62 +1,169 @@
--- Role-management RPCs (Phase 8K, custom-roles CRUD)
--- 2026-06-25
+-- Role-management RPCs (Phase 8K, custom-roles CRUD) — HARDENED
+-- 2026-06-26
 --
--- ADDITIVE, NOT-YET-APPLIED. Introduces the WRITE/READ surface for managing
--- custom roles. The `roles`/`role_permissions` tables are locked down (RLS on,
--- zero policies, revoked from anon+authenticated); these SECURITY DEFINER RPCs
--- are the ONLY way the app mutates/lists them — there are NO direct table
--- grants and NO RLS policies added.
+-- ADDITIVE, NOT-YET-APPLIED. The WRITE/READ surface for custom roles. The
+-- roles/role_permissions tables are locked down (RLS, zero policies, revoked);
+-- these SECURITY DEFINER RPCs are the ONLY way the app mutates/lists them — no
+-- direct table grants, no RLS policies. DEPENDS ON 0015 (audit_events) — each
+-- mutation writes an audit row IN THE SAME TRANSACTION.
 --
--- DEPENDS ON migration 0015 (public.audit_events) — apply 0015 FIRST. Each
--- mutation records an audit_events row IN THE SAME TRANSACTION.
+-- HARDENING (review #4/#5/#6/#7/#10):
+--   * CREATE FUNCTION (never CREATE OR REPLACE) + no-overload guards: a duplicate
+--     apply FAILS cleanly rather than silently replacing a security function.
+--   * Apply-as-postgres asserted; owners are postgres; search_path '' pinned;
+--     objects fully qualified; no dynamic SQL; REVOKE PUBLIC/anon; GRANT only
+--     authenticated; no direct table grants.
+--   * Absence/shape guards: audit_events must exist (0015) with the expected
+--     columns; the functions + unique index must be absent; roles.description, if
+--     present, must be text — else STOP.
+--   * DB-SIDE payload validation (not just the app validator): custom-role grants
+--     are checked against the GRANTABLE allowlist + scope rules
+--     (custom_role_grant_check) — array shape, <=200, object elements, key in
+--     allowlist, scoped->scope / contextless->NULL, no duplicates. A direct-RPC
+--     call by an owner cannot bypass it.
+--   * Concurrency-safe role-name uniqueness: a UNIQUE expression index on
+--     (org_id, lower(btrim(name))); a normalized-duplicate preflight STOPs.
+--   * Duplication copies ONLY grantable permissions (a system role's
+--     non-grantable grants are not copied into a custom role).
+--   * Audit metadata carries the grant SNAPSHOT (create/delete/duplicate) or the
+--     old+new snapshots (update) — materially complete, atomic with the mutation.
 --
--- SECURITY MODEL (Decision B: Owner-only writes; system roles read-only):
---   * AuthN: caller resolved server-side from auth.uid() (never from input).
---   * AuthZ enforced IN THE DATABASE (not just the app): every WRITE asserts the
---     caller is an ACTIVE OWNER of p_org_id via organization_memberships; the
---     READ (list) allows owner OR manager(admin). A non-owner cannot mutate even
---     by calling the RPC directly.
---   * Org isolation: every statement is scoped to p_org_id; cross-org ids match
---     nothing. The composite FK already forbids cross-org role assignment.
---   * System roles (is_system=true) are immutable: update/delete refuse them.
---   * ownership.transfer can never be granted — the role_permissions CHECK
---     rejects it (defense in depth on top of the app catalog).
---   * Concurrency: update uses row locking + optimistic concurrency
---     (p_expected_updated_at) to prevent lost updates.
---   * SECURITY DEFINER, owner = postgres, SET search_path = '' (all objects
---     fully qualified), REVOKE EXECUTE from PUBLIC/anon, GRANT only to
---     authenticated. No dynamic SQL.
+-- SQLSTATE contract (mapped to AppError by the service):
+--   42501 -> Forbidden(403) | P0002 -> NotFound(404) | 23505 -> Conflict(409, name)
+--   55006 -> Conflict(409, in-use) | 40001 -> Conflict(409, concurrent)
+--   22000 -> Validation(400, name/desc) | 22023 -> Validation(400, payload)
 --
--- SQLSTATE contract (the app maps these to AppError):
---   42501 insufficient_privilege -> ForbiddenError (403)
---   P0002 no_data_found          -> NotFoundError  (404)  (missing/system/cross-org)
---   23505 unique_violation       -> ConflictError  (409)  (duplicate role name)
---   55006 object_in_use          -> ConflictError  (409)  (role assigned to a member)
---   40001 serialization_failure  -> ConflictError  (409)  (concurrent modification)
---   22000 data_exception         -> ValidationError(400)  (invalid name)
---
--- APPLY AS ROLE postgres in the Supabase SQL Editor, AFTER 0015.
+-- APPLY AS ROLE postgres, AFTER 0015. Re-apply is REJECTED by the guards.
 
 begin;
 
--- Guard: enforce the apply role so every function owner is postgres.
 do $$
 begin
   if current_user <> 'postgres' then
-    raise exception
-      'Migration 0016 must be applied as role postgres (current_user = %). Select Role: postgres in the SQL Editor.',
-      current_user;
+    raise exception 'Migration 0016 must be applied as role postgres (current_user = %).', current_user;
   end if;
 end $$;
 
--- Additive: optional human description for custom roles (system roles may keep
--- it NULL). Nullable, no default => metadata-only change, no table rewrite.
+-- ---- Absence / shape / dependency guards ----
+do $$
+begin
+  if to_regclass('public.audit_events') is null then
+    raise exception 'Refusing to apply 0016: public.audit_events is missing — apply 0015 first.';
+  end if;
+  if (select count(*) from information_schema.columns
+      where table_schema='public' and table_name='audit_events'
+        and column_name in ('org_id','actor_user_id','action','target_type','target_id','metadata','created_at')) <> 7 then
+    raise exception 'Refusing to apply 0016: public.audit_events has an unexpected shape.';
+  end if;
+  if exists (
+    select 1 from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+    where n.nspname='public' and p.proname in
+      ('custom_role_grant_check','validate_custom_role_payload',
+       'create_org_role','update_org_role','delete_org_role','duplicate_org_role','list_org_roles')
+  ) then
+    raise exception 'Refusing to apply 0016: a target function already exists. Drop them first and review.';
+  end if;
+  if to_regclass('public.roles_org_name_norm_uniq') is not null then
+    raise exception 'Refusing to apply 0016: index roles_org_name_norm_uniq already exists.';
+  end if;
+  if exists (
+    select 1 from information_schema.columns
+    where table_schema='public' and table_name='roles' and column_name='description'
+      and data_type <> 'text'
+  ) then
+    raise exception 'Refusing to apply 0016: roles.description exists with an unexpected type.';
+  end if;
+end $$;
+
 alter table public.roles add column if not exists description text;
 
+-- ---- Concurrency-safe normalized role-name uniqueness (review #6) ----
+do $$
+begin
+  if exists (
+    select 1 from public.roles group by org_id, lower(btrim(name)) having count(*) > 1
+  ) then
+    raise exception 'Refusing to apply 0016: existing roles have duplicate normalized names within an org. Resolve before adding the unique index.';
+  end if;
+end $$;
+create unique index roles_org_name_norm_uniq
+  on public.roles (org_id, lower(btrim(name)));
+
 -- ============================================================
--- create_org_role — create a custom (non-system) role + its grants.
+-- custom_role_grant_check(key, scope) — DB-side GRANTABLE allowlist + scope rules.
+-- Mirrors permissions.ts CUSTOM_ROLE_GRANTABLE_PERMISSIONS + PERMISSION_META
+-- (parity-tested). scoped permission => scope in (all,own); contextless => NULL.
 -- ============================================================
-create or replace function public.create_org_role(
+create function public.custom_role_grant_check(p_key text, p_scope text)
+returns boolean
+language sql
+immutable
+as $$
+  select exists (
+    select 1 from (values
+      ('team.view', false),
+      ('clients.view', true), ('clients.create', false), ('clients.edit', true),
+      ('clients.archive', true), ('clients.restore', true),
+      ('contacts.view', true), ('contacts.create', false), ('contacts.edit', true),
+      ('contacts.delete', true),
+      ('tasks.view', true), ('tasks.create', false), ('tasks.edit', true),
+      ('tasks.change_status', true), ('tasks.archive', true), ('tasks.delete', true),
+      ('tasks.assign_self', false), ('tasks.assign_others', false)
+    ) as cat(key, scoped)
+    where cat.key = p_key
+      and (
+        (cat.scoped and p_scope in ('all', 'own'))
+        or (not cat.scoped and p_scope is null)
+      )
+  )
+$$;
+revoke all on function public.custom_role_grant_check(text, text) from public, anon, authenticated;
+
+-- ============================================================
+-- validate_custom_role_payload(jsonb) — full DB-side payload validation. Raises
+-- 22023 on any violation, so a direct-RPC owner cannot bypass the app validator.
+-- ============================================================
+create function public.validate_custom_role_payload(p_permissions jsonb)
+returns void
+language plpgsql
+immutable
+as $$
+declare
+  e jsonb;
+  v_key text;
+  v_scope text;
+  seen text[] := '{}';
+begin
+  if p_permissions is null or jsonb_typeof(p_permissions) <> 'array' then
+    raise exception 'permissions must be a JSON array' using errcode = '22023';
+  end if;
+  if jsonb_array_length(p_permissions) > 200 then
+    raise exception 'too many permissions (max 200)' using errcode = '22023';
+  end if;
+  for e in select * from jsonb_array_elements(p_permissions) loop
+    if jsonb_typeof(e) <> 'object' then
+      raise exception 'each permission must be a JSON object' using errcode = '22023';
+    end if;
+    v_key := e ->> 'permission_key';
+    v_scope := nullif(btrim(coalesce(e ->> 'record_scope', '')), '');
+    if v_key is null or btrim(v_key) = '' then
+      raise exception 'missing permission_key' using errcode = '22023';
+    end if;
+    if not public.custom_role_grant_check(btrim(v_key), v_scope) then
+      raise exception 'permission not grantable to a custom role or invalid scope: %', v_key using errcode = '22023';
+    end if;
+    if btrim(v_key) = any (seen) then
+      raise exception 'duplicate permission_key: %', v_key using errcode = '22023';
+    end if;
+    seen := array_append(seen, btrim(v_key));
+  end loop;
+end $$;
+revoke all on function public.validate_custom_role_payload(jsonb) from public, anon, authenticated;
+
+-- ============================================================
+-- create_org_role — create a custom role + grants (validated). Owner-only.
+-- ============================================================
+create function public.create_org_role(
   p_org_id uuid,
   p_name text,
   p_description text,
@@ -69,6 +176,7 @@ as $$
 declare
   v_uid uuid := auth.uid();
   v_name text := btrim(coalesce(p_name, ''));
+  v_desc text := nullif(btrim(coalesce(p_description, '')), '');
   v_new_id uuid;
   v_key text;
 begin
@@ -85,48 +193,41 @@ begin
   if length(v_name) = 0 or length(v_name) > 100 then
     raise exception 'invalid role name' using errcode = '22000';
   end if;
-  if exists (
-    select 1 from public.roles r
-    where r.org_id = p_org_id and lower(btrim(r.name)) = lower(v_name)
-  ) then
-    raise exception 'role name already exists' using errcode = '23505';
+  if v_desc is not null and length(v_desc) > 500 then
+    raise exception 'description too long' using errcode = '22000';
   end if;
+  perform public.validate_custom_role_payload(p_permissions);
 
-  -- Guaranteed-unique machine key matching roles.key CHECK (^[a-z][a-z0-9_]{1,49}$).
   v_key := 'r_' || replace(gen_random_uuid()::text, '-', '');
 
-  insert into public.roles (org_id, key, name, description, is_system)
-  values (
-    p_org_id, v_key, v_name,
-    nullif(btrim(coalesce(p_description, '')), ''), false
-  )
-  returning id into v_new_id;
+  begin
+    insert into public.roles (org_id, key, name, description, is_system)
+    values (p_org_id, v_key, v_name, v_desc, false)
+    returning id into v_new_id;
+  exception when unique_violation then
+    raise exception 'role name already exists' using errcode = '23505';
+  end;
 
-  -- Replace-set the grants. The role_permissions CHECKs (record_scope domain;
-  -- permission_key <> 'ownership.transfer'; non-empty key) reject anything
-  -- unsafe and roll the whole transaction back.
   insert into public.role_permissions (role_id, permission_key, record_scope)
-  select v_new_id, btrim(e->>'permission_key'),
-         nullif(btrim(coalesce(e->>'record_scope', '')), '')
+  select v_new_id, btrim(e ->> 'permission_key'),
+         nullif(btrim(coalesce(e ->> 'record_scope', '')), '')
   from jsonb_array_elements(coalesce(p_permissions, '[]'::jsonb)) as e;
 
-  insert into public.audit_events
-    (org_id, actor_user_id, action, target_type, target_id, metadata)
-  values (
-    p_org_id, v_uid, 'role.create', 'role', v_new_id,
+  insert into public.audit_events (org_id, actor_user_id, action, target_type, target_id, metadata)
+  values (p_org_id, v_uid, 'role.create', 'role', v_new_id,
     jsonb_build_object(
       'name', v_name,
-      'permission_count', jsonb_array_length(coalesce(p_permissions, '[]'::jsonb))
-    )
-  );
+      'permission_count', jsonb_array_length(coalesce(p_permissions, '[]'::jsonb)),
+      'grants', coalesce(p_permissions, '[]'::jsonb)
+    ));
 
   return v_new_id;
 end $$;
 
 -- ============================================================
--- update_org_role — rename/redescribe + replace grant set (optimistic lock).
+-- update_org_role — rename/redescribe + replace grants (optimistic lock).
 -- ============================================================
-create or replace function public.update_org_role(
+create function public.update_org_role(
   p_org_id uuid,
   p_role_id uuid,
   p_name text,
@@ -141,9 +242,12 @@ as $$
 declare
   v_uid uuid := auth.uid();
   v_name text := btrim(coalesce(p_name, ''));
+  v_desc text := nullif(btrim(coalesce(p_description, '')), '');
   v_is_system boolean;
+  v_old_name text;
   v_updated_at timestamptz;
   v_new_updated_at timestamptz;
+  v_old_grants jsonb;
 begin
   if v_uid is null or p_org_id is null or p_role_id is null then
     raise exception 'forbidden' using errcode = '42501';
@@ -156,69 +260,60 @@ begin
     raise exception 'forbidden' using errcode = '42501';
   end if;
 
-  -- Lock the target role row (prevents concurrent writers racing).
-  select r.is_system, r.updated_at
-    into v_is_system, v_updated_at
+  select r.is_system, r.updated_at, r.name into v_is_system, v_updated_at, v_old_name
   from public.roles r
   where r.id = p_role_id and r.org_id = p_org_id
   for update;
 
-  if not found then
-    raise exception 'role not found' using errcode = 'P0002';
-  end if;
-  if v_is_system then
-    raise exception 'system role is read-only' using errcode = 'P0002';
-  end if;
-
-  -- Optimistic concurrency: caller must hold the latest version.
+  if not found then raise exception 'role not found' using errcode = 'P0002'; end if;
+  if v_is_system then raise exception 'system role is read-only' using errcode = 'P0002'; end if;
   if p_expected_updated_at is null or v_updated_at <> p_expected_updated_at then
     raise exception 'role was modified concurrently' using errcode = '40001';
   end if;
-
   if length(v_name) = 0 or length(v_name) > 100 then
     raise exception 'invalid role name' using errcode = '22000';
   end if;
-  if exists (
-    select 1 from public.roles r
-    where r.org_id = p_org_id and lower(btrim(r.name)) = lower(v_name)
-      and r.id <> p_role_id
-  ) then
-    raise exception 'role name already exists' using errcode = '23505';
+  if v_desc is not null and length(v_desc) > 500 then
+    raise exception 'description too long' using errcode = '22000';
   end if;
+  perform public.validate_custom_role_payload(p_permissions);
 
-  update public.roles
-    set name = v_name,
-        description = nullif(btrim(coalesce(p_description, '')), '')
-  where id = p_role_id and org_id = p_org_id and is_system = false
-  returning updated_at into v_new_updated_at;
+  select coalesce(jsonb_agg(jsonb_build_object('permission_key', permission_key, 'record_scope', record_scope)
+                            order by permission_key), '[]'::jsonb)
+  into v_old_grants
+  from public.role_permissions where role_id = p_role_id;
 
-  -- Replace the grant set atomically.
+  begin
+    update public.roles
+      set name = v_name, description = v_desc
+    where id = p_role_id and org_id = p_org_id and is_system = false
+    returning updated_at into v_new_updated_at;
+  exception when unique_violation then
+    raise exception 'role name already exists' using errcode = '23505';
+  end;
+
   delete from public.role_permissions where role_id = p_role_id;
   insert into public.role_permissions (role_id, permission_key, record_scope)
-  select p_role_id, btrim(e->>'permission_key'),
-         nullif(btrim(coalesce(e->>'record_scope', '')), '')
+  select p_role_id, btrim(e ->> 'permission_key'),
+         nullif(btrim(coalesce(e ->> 'record_scope', '')), '')
   from jsonb_array_elements(coalesce(p_permissions, '[]'::jsonb)) as e;
 
-  insert into public.audit_events
-    (org_id, actor_user_id, action, target_type, target_id, metadata)
-  values (
-    p_org_id, v_uid, 'role.update', 'role', p_role_id,
+  insert into public.audit_events (org_id, actor_user_id, action, target_type, target_id, metadata)
+  values (p_org_id, v_uid, 'role.update', 'role', p_role_id,
     jsonb_build_object(
-      'name', v_name,
-      'permission_count', jsonb_array_length(coalesce(p_permissions, '[]'::jsonb))
-    )
-  );
+      'old_name', v_old_name, 'new_name', v_name,
+      'old_grants', v_old_grants,
+      'new_grants', coalesce(p_permissions, '[]'::jsonb)
+    ));
 
   return v_new_updated_at;
 end $$;
 
 -- ============================================================
--- delete_org_role — delete a custom role (refuses system + in-use roles).
+-- delete_org_role — delete a custom role (refuses system + in-use).
 -- ============================================================
-create or replace function public.delete_org_role(
-  p_org_id uuid,
-  p_role_id uuid
-) returns void
+create function public.delete_org_role(p_org_id uuid, p_role_id uuid)
+returns void
 language plpgsql
 security definer
 set search_path = ''
@@ -227,6 +322,7 @@ declare
   v_uid uuid := auth.uid();
   v_is_system boolean;
   v_name text;
+  v_grants jsonb;
 begin
   if v_uid is null or p_org_id is null or p_role_id is null then
     raise exception 'forbidden' using errcode = '42501';
@@ -240,42 +336,31 @@ begin
   end if;
 
   select r.is_system, r.name into v_is_system, v_name
-  from public.roles r
-  where r.id = p_role_id and r.org_id = p_org_id
-  for update;
+  from public.roles r where r.id = p_role_id and r.org_id = p_org_id for update;
+  if not found then raise exception 'role not found' using errcode = 'P0002'; end if;
+  if v_is_system then raise exception 'system role is read-only' using errcode = 'P0002'; end if;
 
-  if not found then
-    raise exception 'role not found' using errcode = 'P0002';
-  end if;
-  if v_is_system then
-    raise exception 'system role is read-only' using errcode = 'P0002';
-  end if;
-
-  -- Refuse to delete a role assigned to any membership (clean error before the
-  -- composite-FK NO ACTION would raise). Assignment is not yet exposed in the
-  -- UI, but this guard protects the invariant regardless.
-  if exists (
-    select 1 from public.organization_memberships m where m.role_id = p_role_id
-  ) then
+  if exists (select 1 from public.organization_memberships m where m.role_id = p_role_id) then
     raise exception 'role is in use' using errcode = '55006';
   end if;
 
-  delete from public.roles
-  where id = p_role_id and org_id = p_org_id and is_system = false;
-  -- role_permissions rows cascade via their ON DELETE CASCADE FK.
+  select coalesce(jsonb_agg(jsonb_build_object('permission_key', permission_key, 'record_scope', record_scope)
+                            order by permission_key), '[]'::jsonb)
+  into v_grants
+  from public.role_permissions where role_id = p_role_id;
 
-  insert into public.audit_events
-    (org_id, actor_user_id, action, target_type, target_id, metadata)
-  values (
-    p_org_id, v_uid, 'role.delete', 'role', p_role_id,
-    jsonb_build_object('name', v_name)
-  );
+  delete from public.roles where id = p_role_id and org_id = p_org_id and is_system = false;
+
+  insert into public.audit_events (org_id, actor_user_id, action, target_type, target_id, metadata)
+  values (p_org_id, v_uid, 'role.delete', 'role', p_role_id,
+    jsonb_build_object('name', v_name, 'grants', v_grants));
 end $$;
 
 -- ============================================================
--- duplicate_org_role — clone an existing role's grants into a NEW custom role.
+-- duplicate_org_role — clone an existing role's GRANTABLE grants into a NEW
+-- custom role. Non-grantable grants of a system source are NOT copied.
 -- ============================================================
-create or replace function public.duplicate_org_role(
+create function public.duplicate_org_role(
   p_org_id uuid,
   p_source_role_id uuid,
   p_new_name text
@@ -289,6 +374,7 @@ declare
   v_name text := btrim(coalesce(p_new_name, ''));
   v_new_id uuid;
   v_key text;
+  v_grants jsonb;
 begin
   if v_uid is null or p_org_id is null or p_source_role_id is null then
     raise exception 'forbidden' using errcode = '42501';
@@ -301,62 +387,53 @@ begin
     raise exception 'forbidden' using errcode = '42501';
   end if;
   if not exists (
-    select 1 from public.roles r
-    where r.id = p_source_role_id and r.org_id = p_org_id
+    select 1 from public.roles r where r.id = p_source_role_id and r.org_id = p_org_id
   ) then
     raise exception 'source role not found' using errcode = 'P0002';
   end if;
   if length(v_name) = 0 or length(v_name) > 100 then
     raise exception 'invalid role name' using errcode = '22000';
   end if;
-  if exists (
-    select 1 from public.roles r
-    where r.org_id = p_org_id and lower(btrim(r.name)) = lower(v_name)
-  ) then
-    raise exception 'role name already exists' using errcode = '23505';
-  end if;
 
   v_key := 'r_' || replace(gen_random_uuid()::text, '-', '');
 
-  insert into public.roles (org_id, key, name, description, is_system)
-  select p_org_id, v_key, v_name, r.description, false
-  from public.roles r
-  where r.id = p_source_role_id and r.org_id = p_org_id
-  returning id into v_new_id;
+  begin
+    insert into public.roles (org_id, key, name, description, is_system)
+    select p_org_id, v_key, v_name, r.description, false
+    from public.roles r where r.id = p_source_role_id and r.org_id = p_org_id
+    returning id into v_new_id;
+  exception when unique_violation then
+    raise exception 'role name already exists' using errcode = '23505';
+  end;
 
-  -- Copy grants. The source can never contain ownership.transfer (CHECK), so the
-  -- clone is safe by construction.
+  -- Copy ONLY grantable grants (filters out a system role's non-grantable ones).
   insert into public.role_permissions (role_id, permission_key, record_scope)
   select v_new_id, rp.permission_key, rp.record_scope
   from public.role_permissions rp
-  where rp.role_id = p_source_role_id;
+  where rp.role_id = p_source_role_id
+    and public.custom_role_grant_check(rp.permission_key, rp.record_scope);
 
-  insert into public.audit_events
-    (org_id, actor_user_id, action, target_type, target_id, metadata)
-  values (
-    p_org_id, v_uid, 'role.duplicate', 'role', v_new_id,
-    jsonb_build_object('name', v_name, 'source_role_id', p_source_role_id)
-  );
+  select coalesce(jsonb_agg(jsonb_build_object('permission_key', permission_key, 'record_scope', record_scope)
+                            order by permission_key), '[]'::jsonb)
+  into v_grants
+  from public.role_permissions where role_id = v_new_id;
+
+  insert into public.audit_events (org_id, actor_user_id, action, target_type, target_id, metadata)
+  values (p_org_id, v_uid, 'role.duplicate', 'role', v_new_id,
+    jsonb_build_object('name', v_name, 'source_role_id', p_source_role_id, 'grants', v_grants));
 
   return v_new_id;
 end $$;
 
 -- ============================================================
--- list_org_roles — all roles + grants for the org (owner OR manager).
--- Fail-closed: returns 0 rows when the caller is not an active owner/manager of
--- the org (no error signal), mirroring resolve_my_role_permissions.
+-- list_org_roles — all roles + grants for the org (owner OR manager). Fail-closed
+-- (0 rows when not owner/manager — no error signal).
 -- ============================================================
-create or replace function public.list_org_roles(p_org_id uuid)
+create function public.list_org_roles(p_org_id uuid)
 returns table (
-  role_id uuid,
-  key text,
-  name text,
-  description text,
-  is_system boolean,
-  created_at timestamptz,
-  updated_at timestamptz,
-  permission_key text,
-  record_scope text
+  role_id uuid, key text, name text, description text, is_system boolean,
+  created_at timestamptz, updated_at timestamptz,
+  permission_key text, record_scope text
 )
 language plpgsql
 security definer
@@ -365,9 +442,7 @@ as $$
 declare
   v_uid uuid := auth.uid();
 begin
-  if v_uid is null or p_org_id is null then
-    return;
-  end if;
+  if v_uid is null or p_org_id is null then return; end if;
   if not exists (
     select 1 from public.organization_memberships m
     where m.user_id = v_uid and m.org_id = p_org_id
@@ -375,10 +450,8 @@ begin
   ) then
     return;
   end if;
-
   return query
-    select r.id, r.key, r.name, r.description, r.is_system,
-           r.created_at, r.updated_at,
+    select r.id, r.key, r.name, r.description, r.is_system, r.created_at, r.updated_at,
            rp.permission_key, rp.record_scope
     from public.roles r
     left join public.role_permissions rp on rp.role_id = r.id
@@ -386,23 +459,15 @@ begin
     order by r.is_system desc, lower(r.name) asc, rp.permission_key asc;
 end $$;
 
--- ============================================================
--- Execute surface: authenticated only. PUBLIC/anon cannot execute. No direct
--- table grants are added — the definer functions read/write on the caller's
--- behalf within the org/owner scope above.
--- ============================================================
+-- ---- Execute surface: authenticated only on the 5 RPCs. PUBLIC/anon cannot. ----
 revoke all on function public.create_org_role(uuid, text, text, jsonb) from public, anon;
 grant execute on function public.create_org_role(uuid, text, text, jsonb) to authenticated;
-
 revoke all on function public.update_org_role(uuid, uuid, text, text, jsonb, timestamptz) from public, anon;
 grant execute on function public.update_org_role(uuid, uuid, text, text, jsonb, timestamptz) to authenticated;
-
 revoke all on function public.delete_org_role(uuid, uuid) from public, anon;
 grant execute on function public.delete_org_role(uuid, uuid) to authenticated;
-
 revoke all on function public.duplicate_org_role(uuid, uuid, text) from public, anon;
 grant execute on function public.duplicate_org_role(uuid, uuid, text) to authenticated;
-
 revoke all on function public.list_org_roles(uuid) from public, anon;
 grant execute on function public.list_org_roles(uuid) to authenticated;
 
@@ -411,39 +476,6 @@ notify pgrst, 'reload schema';
 commit;
 
 -- ============================================================
--- VERIFICATION (run AFTER applying; read-only). Do not run now.
+-- VERIFICATION + ROLLBACK: see supabase/validation/0015_0016_verify.sql and
+-- 0015_0016_rollback.sql, and docs/operations/production-migrations/.
 -- ============================================================
--- -- All five functions are SECURITY DEFINER, STABLE/VOLATILE as written, owner postgres,
--- -- search_path pinned empty.
--- select p.proname, p.prosecdef, p.provolatile, p.proconfig, o.rolname as owner
--- from pg_proc p join pg_namespace n on n.oid=p.pronamespace join pg_roles o on o.oid=p.proowner
--- where n.nspname='public' and p.proname in
---   ('create_org_role','update_org_role','delete_org_role','duplicate_org_role','list_org_roles')
--- order by p.proname;  -- expect prosecdef=t, proconfig has search_path=, owner=postgres for all
--- -- Execute privileges: authenticated yes, anon no, PUBLIC no.
--- select p.proname,
---   has_function_privilege('authenticated', p.oid, 'EXECUTE') as authn,
---   has_function_privilege('anon', p.oid, 'EXECUTE') as anon
--- from pg_proc p join pg_namespace n on n.oid=p.pronamespace
--- where n.nspname='public' and p.proname in
---   ('create_org_role','update_org_role','delete_org_role','duplicate_org_role','list_org_roles');
--- -- roles.description column exists; tables still closed; no new policies.
--- select column_name from information_schema.columns
--- where table_schema='public' and table_name='roles' and column_name='description';  -- expect 1 row
--- select count(*) from pg_policies where schemaname='public'
---   and tablename in ('roles','role_permissions','audit_events');  -- expect 0
-
--- ============================================================
--- ROLLBACK (only if 0016 must be reverted; safe — drops functions + the added
--- column. role/permission DATA created via these RPCs is custom-role data; drop
--- it deliberately if needed. The added `description` column is dropped here.)
--- ============================================================
--- begin;
---   drop function if exists public.create_org_role(uuid, text, text, jsonb);
---   drop function if exists public.update_org_role(uuid, uuid, text, text, jsonb, timestamptz);
---   drop function if exists public.delete_org_role(uuid, uuid);
---   drop function if exists public.duplicate_org_role(uuid, uuid, text);
---   drop function if exists public.list_org_roles(uuid);
---   alter table public.roles drop column if exists description;
---   notify pgrst, 'reload schema';
--- commit;

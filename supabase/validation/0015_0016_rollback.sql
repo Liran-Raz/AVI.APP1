@@ -8,18 +8,24 @@ begin;
   drop function if exists public.delete_org_role(uuid, uuid);
   drop function if exists public.duplicate_org_role(uuid, uuid, text);
   drop function if exists public.list_org_roles(uuid);
+  drop function if exists public.validate_custom_role_payload(jsonb);
+  drop function if exists public.custom_role_grant_check(text, text);
+  drop index if exists public.roles_org_name_norm_uniq;
   alter table public.roles drop column if exists description;
   drop table if exists public.audit_events;
   notify pgrst, 'reload schema';
 commit;
 
 do $$
-declare fns int; col int; tbl regclass;
+declare fns int; col int; tbl regclass; idx regclass;
 begin
   select count(*) into fns from pg_proc p join pg_namespace n on n.oid = p.pronamespace
   where n.nspname = 'public'
-    and p.proname in ('create_org_role','update_org_role','delete_org_role','duplicate_org_role','list_org_roles');
+    and p.proname in ('create_org_role','update_org_role','delete_org_role','duplicate_org_role','list_org_roles',
+                      'validate_custom_role_payload','custom_role_grant_check');
   if fns <> 0 then raise exception 'RB FAIL: % management functions remain', fns; end if;
+  idx := to_regclass('public.roles_org_name_norm_uniq');
+  if idx is not null then raise exception 'RB FAIL: unique index remains'; end if;
 
   select count(*) into col from information_schema.columns
   where table_schema = 'public' and table_name = 'roles' and column_name = 'description';

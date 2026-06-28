@@ -204,8 +204,12 @@ jobs:
       - name: Apply 0016 (role-management RPCs)
         run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/0016_role_management_rpcs.sql
 
-      - name: Re-apply 0016 (idempotency / CREATE OR REPLACE)
-        run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/0016_role_management_rpcs.sql
+      - name: Reject duplicate 0016 (no-overload guard must fail)
+        run: |
+          if psql -v ON_ERROR_STOP=1 -f supabase/migrations/0016_role_management_rpcs.sql >/dev/null 2>&1; then
+            echo "FAIL: re-applying 0016 did not error on existing functions"; exit 1
+          fi
+          echo "PASS: duplicate 0016 cleanly rejected"
 
       - name: anon cannot execute a management RPC (expect denial)
         run: |

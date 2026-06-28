@@ -89,7 +89,11 @@ insert into public.roles (id, org_id, key, name, is_system) values
   ('33333333-0000-0000-0000-000000000002', '11111111-0000-0000-0000-0000000000aa', 'r_seedcustom0000000000000000000', 'Seed Custom', false)
 on conflict (id) do nothing;
 insert into public.role_permissions (role_id, permission_key, record_scope) values
-  ('33333333-0000-0000-0000-000000000002', 'clients.view', 'all')
+  ('33333333-0000-0000-0000-000000000002', 'clients.view', 'all'),
+  -- sysRole gets a GRANTABLE (clients.view) + a NON-grantable (roles.view) grant,
+  -- so the duplicate-filter test can prove the non-grantable one is NOT copied.
+  ('33333333-0000-0000-0000-000000000001', 'clients.view', 'all'),
+  ('33333333-0000-0000-0000-000000000001', 'roles.view', null)
 on conflict do nothing;
 
 -- Memberships: owner / admin / employee in M, plus an owner of N (cross-org).
