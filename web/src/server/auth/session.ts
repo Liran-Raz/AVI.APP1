@@ -14,8 +14,12 @@ import type {
 } from "@/server/db/domain.types";
 import type { GrantMap } from "@/server/auth/permission-grants";
 import {
+  authoritativeGrantMap,
+  emitShadowParityFromResult,
   fireShadowParity,
   isDbRoleAuthoritativeEnabled,
+  isDbRoleShadowEnabled,
+  logAuthoritativeResolutionFailure,
   resolveDbRoleGrants,
 } from "@/server/auth/db-role-resolver";
 
@@ -152,19 +156,27 @@ export async function getCurrentSession(): Promise<Session | null> {
     activeRole,
   };
 
-  // CUTOVER (Phase 8J; flag-gated, OFF by default). When DB_ROLE_AUTHORITATIVE
-  // is on, resolve the DB-backed grant map and attach it so the authorization
-  // engine reads grants from the DB. On any resolver failure we leave grantMap
-  // undefined => the engine falls back to the in-code map (no lockout). When the
-  // flag is off, no RPC is issued and behavior is identical to today.
+  // CUTOVER (Phase 8J; flag-gated, OFF by default) + SHADOW (Phase 8H).
+  //   * Authoritative ON: resolve the DB grant map and attach it. FAIL-CLOSED —
+  //     on ANY resolver failure the map is DENY-ALL ({}) (see authoritativeGrantMap),
+  //     NEVER the legacy code map. A failure is logged (PII-free). The engine then
+  //     reads grantMap for every decision.
+  //   * Shadow ON: observational only; never authoritative. When BOTH are on, the
+  //     single resolved result is REUSED for parity (no second RPC).
+  //   * Both OFF (default): no RPC; behavior identical to today.
   if (isDbRoleAuthoritativeEnabled()) {
     const resolved = await resolveDbRoleGrants(fullSession as FullSession);
-    if (resolved.ok) fullSession.grantMap = resolved.grantMap;
+    fullSession.grantMap = authoritativeGrantMap(resolved);
+    if (!resolved.ok) {
+      logAuthoritativeResolutionFailure(fullSession as FullSession, resolved.reason);
+    }
+    if (isDbRoleShadowEnabled()) {
+      emitShadowParityFromResult(fullSession as FullSession, resolved);
+    }
+  } else if (isDbRoleShadowEnabled()) {
+    // Fire-and-forget; never blocks the request.
+    void fireShadowParity(fullSession as FullSession);
   }
-
-  // SHADOW parity (Phase 8H; flag-gated, OFF by default). Fire-and-forget: zero
-  // RPC when off, a single PII-free telemetry line when on. Never blocks.
-  void fireShadowParity(fullSession as FullSession);
 
   return fullSession;
 }

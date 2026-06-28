@@ -133,6 +133,9 @@ function assertCanAssignRole(
   if (targetRole === "owner") {
     throw new ForbiddenError("Cannot create or promote to owner");
   }
+  // CUTOVER-SAFE: this reads the ENUM role deliberately. It is an enum-bound
+  // relational invariant (role hierarchy), NOT a grantable capability, so it is
+  // enforced identically whether authorization is code- or DB-authoritative.
   const myRole = session.profile.role;
   if (myRole === "owner") return;
   if (myRole === "admin" && targetRole === "employee") return;
@@ -300,7 +303,9 @@ export async function changeRole(
   });
 
   // Anti-owner-demotion: only the owner can change another owner's role,
-  // AND we forbid demoting the last owner.
+  // AND we forbid demoting the last owner. CUTOVER-SAFE: this owner-protection
+  // reads the ENUM role deliberately (a protected relational invariant) and is
+  // enforced regardless of the DB grant map — never grantable via a custom role.
   if (target.role === "owner") {
     if (session.activeRole !== "owner") {
       throw new ForbiddenError("Only an owner can change an owner's role");
@@ -351,7 +356,8 @@ export async function deactivateMember(
   }
 
   // Owner protection: admins cannot deactivate owners; owners cannot
-  // deactivate the last active owner.
+  // deactivate the last active owner. CUTOVER-SAFE: enum-bound protected
+  // invariant, enforced regardless of the DB grant map (never grantable).
   if (target.role === "owner") {
     if (session.activeRole !== "owner") {
       throw new ForbiddenError("Only an owner can deactivate another owner");
