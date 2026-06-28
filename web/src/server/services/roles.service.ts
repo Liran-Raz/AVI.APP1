@@ -122,23 +122,32 @@ function assertCanWrite(session: FullSession): void {
   requireCapability(session, PERMISSIONS.ROLES_MANAGE);
 }
 
-export async function listRoles(
-  session: FullSession,
-): Promise<{ items: RoleDTO[] }> {
-  // Owner OR Manager (roles.view). The DB RPC re-checks owner/manager.
-  requireCapability(session, PERMISSIONS.ROLES_VIEW);
+// Raw fetch (repo + grouping), NO authorization/flag gate — for internal reuse
+// after an already-authorized write. Public reads go through listRoles.
+async function fetchRolesGrouped(session: FullSession): Promise<RoleDTO[]> {
   const rows = await withRoleErrorMapping(() =>
     rolesRepo.listOrgRoles(session.activeOrg.id),
   );
-  return { items: groupRoles(rows) };
+  return groupRoles(rows);
 }
 
+export async function listRoles(
+  session: FullSession,
+): Promise<{ items: RoleDTO[] }> {
+  // Owner OR Manager (roles.view). The DB RPC re-checks owner/manager. The UI
+  // feature flag is gated at the route + page (the read surface), not here, so
+  // an authorized post-write fetch never depends on the read/UI flag.
+  requireCapability(session, PERMISSIONS.ROLES_VIEW);
+  return { items: await fetchRolesGrouped(session) };
+}
+
+// Internal: re-read a single role after a write (already authorized via
+// assertCanWrite). Does NOT re-gate, so a write never depends on the read flag.
 async function getRoleById(
   session: FullSession,
   id: string,
 ): Promise<RoleDTO> {
-  const { items } = await listRoles(session);
-  const found = items.find((r) => r.id === id);
+  const found = (await fetchRolesGrouped(session)).find((r) => r.id === id);
   if (!found) throw new NotFoundError("Role not found");
   return found;
 }

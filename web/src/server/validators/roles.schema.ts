@@ -112,8 +112,11 @@ export const updateRoleSchema = z.object({
   name: nameField,
   description: descriptionField,
   permissions: permissionsField,
-  // Optimistic-concurrency token — the `updatedAt` the client last loaded.
-  expectedUpdatedAt: z.string().min(1, "expectedUpdatedAt is required"),
+  // Optimistic-concurrency token — the `updatedAt` the client last loaded. Must
+  // be a real ISO-8601 timestamp WITH timezone offset (the DB returns timestamptz).
+  expectedUpdatedAt: z
+    .string()
+    .datetime({ offset: true, message: "expectedUpdatedAt must be an ISO timestamp" }),
 });
 
 export const duplicateRoleSchema = z.object({
