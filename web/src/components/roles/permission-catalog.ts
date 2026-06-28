@@ -4,7 +4,7 @@
 // authoritative.
 
 import {
-  PERMISSIONS,
+  CUSTOM_ROLE_GRANTABLE_PERMISSIONS,
   PERMISSION_META,
   SUPPORTED_RECORD_SCOPES,
   type Permission,
@@ -80,7 +80,9 @@ function entryLabel(key: Permission): string {
 // Build the grouped catalog (stable category order; permissions in catalog order).
 export function buildCatalog(): CatalogGroup[] {
   const byCategory = new Map<string, CatalogEntry[]>();
-  for (const key of Object.values(PERMISSIONS) as Permission[]) {
+  // Only CUSTOM-ROLE-GRANTABLE permissions are offered in the editor — the UI
+  // must never show a permission the validator/DB will reject.
+  for (const key of CUSTOM_ROLE_GRANTABLE_PERMISSIONS) {
     const category = key.slice(0, key.indexOf("."));
     const entry: CatalogEntry = {
       key,

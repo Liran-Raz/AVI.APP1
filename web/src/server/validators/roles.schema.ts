@@ -1,17 +1,18 @@
 import { z } from "zod";
 
 import {
-  PERMISSIONS,
   PERMISSION_META,
   PROTECTED_ACTIONS,
   SUPPORTED_RECORD_SCOPES,
+  isCustomRoleGrantable,
   type Permission,
 } from "@/server/auth/permissions";
 
 // Server-side validation for custom-role management. Mirrors the DB CHECKs and
-// the authorization catalog so an invalid payload is rejected BEFORE the RPC.
+// the custom-role GRANTABLE catalog (CUSTOM_ROLE_GRANTABLE_PERMISSIONS) so an
+// invalid payload is rejected BEFORE the RPC. Only grantable permissions may
+// appear in a custom role.
 
-const PERMISSION_KEY_SET = new Set<string>(Object.values(PERMISSIONS));
 const SUPPORTED_SCOPE_SET = new Set<string>(SUPPORTED_RECORD_SCOPES);
 
 const nameField = z
@@ -52,10 +53,10 @@ const grantSchema = z
       });
       return;
     }
-    if (!PERMISSION_KEY_SET.has(g.permissionKey)) {
+    if (!isCustomRoleGrantable(g.permissionKey)) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: `Unknown permission: ${g.permissionKey}`,
+        message: `Permission is not grantable to a custom role: ${g.permissionKey}`,
         path: ["permissionKey"],
       });
       return;
