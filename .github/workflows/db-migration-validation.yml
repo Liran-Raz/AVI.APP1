@@ -227,6 +227,7 @@ jobs:
       # same time -> exactly one commits, the other gets unique_violation (23505).
       - name: Concurrency-safe role name (two parallel creates -> exactly one wins)
         run: |
+          set +e   # default shell is `bash -e`; the LOSING psql exits non-zero by design
           SUB='a0000000-0000-0000-0000-0000000000a1'   # active owner of org ...aa
           ORG='11111111-0000-0000-0000-0000000000aa'
           run_create() {
@@ -240,7 +241,7 @@ jobs:
           run_create "ZZ Concurrency Race"         /tmp/race_a &
           run_create "   zz concurrency race   "   /tmp/race_b &
           wait
-          RC1=$(cat /tmp/race_a.rc); RC2=$(cat /tmp/race_b.rc)
+          RC1=$(cat /tmp/race_a.rc 2>/dev/null || echo 99); RC2=$(cat /tmp/race_b.rc 2>/dev/null || echo 99)
           SUCC=$(( (RC1==0?1:0) + (RC2==0?1:0) ))
           echo "rc_a=$RC1 rc_b=$RC2"
           echo "--- race_a ---"; cat /tmp/race_a
