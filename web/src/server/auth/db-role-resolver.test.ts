@@ -7,12 +7,14 @@ import { PERMISSIONS } from "./permissions";
 import { ROLE_GRANTS, type GrantMap } from "./permission-grants";
 import {
   DB_ROLE_SHADOW_ENV,
+  authoritativeGrantMap,
   buildGrantMapFromRows,
   compareToCode,
   isDbRoleShadowEnabled,
   resolveDbRoleGrants,
   runShadowParity,
   shadowParityLogMeta,
+  type DbRoleResolveResult,
   type DbRoleResolver,
   type RolePermissionRow,
 } from "./db-role-resolver";
@@ -40,12 +42,15 @@ function useFakeRpc(opts: {
   data?: RpcRow[] | null;
   error?: { message: string } | null;
   reject?: boolean;
+  hang?: boolean;
 }) {
   lastRpc = null;
   createSupabaseServerClientMock.mockResolvedValue({
     rpc(fn: string, args: unknown): Promise<RpcResult> {
       lastRpc = { fn, args };
       if (opts.reject) return Promise.reject(new Error("rejected"));
+      // never resolves — exercises the bounded-timeout path
+      if (opts.hang) return new Promise<RpcResult>(() => {});
       return Promise.resolve({
         data: opts.data ?? null,
         error: opts.error ?? null,
@@ -277,6 +282,13 @@ describe("resolveDbRoleGrants (via the 0014 RPC)", () => {
     });
   });
 
+  it("fails closed (timeout) when the RPC exceeds the bounded timeout", async () => {
+    useFakeRpc({ hang: true });
+    await expect(
+      resolveDbRoleGrants(fakeSession("owner"), { timeoutMs: 5 }),
+    ).resolves.toEqual({ ok: false, reason: "timeout" });
+  });
+
   it("rejects a malformed permission row (no silent drop)", async () => {
     useFakeRpc({
       data: [grantRow("team.view", 123 as unknown as string)],
@@ -427,5 +439,41 @@ describe("DB resolver is non-authoritative", () => {
     }
     // ...but the authoritative decision is unaffected by the DB/shadow result.
     expect(can(fakeSession("employee"), PERMISSIONS.ROLES_MANAGE)).toBe(false);
+  });
+});
+
+describe("authoritativeGrantMap (fail-closed cutover)", () => {
+  it("returns the resolved grants on success", () => {
+    const r: DbRoleResolveResult = {
+      ok: true,
+      rows: [{ permission_key: "team.view", record_scope: null }],
+      grantMap: { "team.view": true },
+    };
+    expect(authoritativeGrantMap(r)).toEqual({ "team.view": true });
+  });
+
+  it("returns an EMPTY map for the zero-permission sentinel (not a fallback)", () => {
+    expect(authoritativeGrantMap({ ok: true, rows: [], grantMap: {} })).toEqual(
+      {},
+    );
+  });
+
+  it("returns DENY-ALL ({}) for EVERY failure reason — never the legacy map", () => {
+    const failureReasons = [
+      "unexpected_error",
+      "timeout",
+      "rpc_error",
+      "missing_membership",
+      "malformed_permission_row",
+      "ambiguous_permission_rows",
+      "unknown_permission_key",
+      "ownership_permission",
+      "missing_scope",
+      "invalid_scope",
+      "unexpected_scope",
+    ] as const;
+    for (const reason of failureReasons) {
+      expect(authoritativeGrantMap({ ok: false, reason })).toEqual({});
+    }
   });
 });
