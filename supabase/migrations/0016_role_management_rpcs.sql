@@ -179,6 +179,7 @@ declare
   v_desc text := nullif(btrim(coalesce(p_description, '')), '');
   v_new_id uuid;
   v_key text;
+  v_grants jsonb;
 begin
   if v_uid is null or p_org_id is null then
     raise exception 'forbidden' using errcode = '42501';
@@ -213,12 +214,19 @@ begin
          nullif(btrim(coalesce(e ->> 'record_scope', '')), '')
   from jsonb_array_elements(coalesce(p_permissions, '[]'::jsonb)) as e;
 
+  -- Canonical audit snapshot: read the PERSISTED, normalized grants (ordered by
+  -- permission_key), NOT the raw input payload (review v3 #8).
+  select coalesce(jsonb_agg(jsonb_build_object('permission_key', permission_key, 'record_scope', record_scope)
+                            order by permission_key), '[]'::jsonb)
+  into v_grants
+  from public.role_permissions where role_id = v_new_id;
+
   insert into public.audit_events (org_id, actor_user_id, action, target_type, target_id, metadata)
   values (p_org_id, v_uid, 'role.create', 'role', v_new_id,
     jsonb_build_object(
       'name', v_name,
-      'permission_count', jsonb_array_length(coalesce(p_permissions, '[]'::jsonb)),
-      'grants', coalesce(p_permissions, '[]'::jsonb)
+      'permission_count', jsonb_array_length(v_grants),
+      'grants', v_grants
     ));
 
   return v_new_id;
@@ -245,9 +253,11 @@ declare
   v_desc text := nullif(btrim(coalesce(p_description, '')), '');
   v_is_system boolean;
   v_old_name text;
+  v_old_desc text;
   v_updated_at timestamptz;
   v_new_updated_at timestamptz;
   v_old_grants jsonb;
+  v_new_grants jsonb;
 begin
   if v_uid is null or p_org_id is null or p_role_id is null then
     raise exception 'forbidden' using errcode = '42501';
@@ -260,7 +270,8 @@ begin
     raise exception 'forbidden' using errcode = '42501';
   end if;
 
-  select r.is_system, r.updated_at, r.name into v_is_system, v_updated_at, v_old_name
+  select r.is_system, r.updated_at, r.name, r.description
+    into v_is_system, v_updated_at, v_old_name, v_old_desc
   from public.roles r
   where r.id = p_role_id and r.org_id = p_org_id
   for update;
@@ -298,12 +309,20 @@ begin
          nullif(btrim(coalesce(e ->> 'record_scope', '')), '')
   from jsonb_array_elements(coalesce(p_permissions, '[]'::jsonb)) as e;
 
+  -- Canonical audit snapshot: the PERSISTED, normalized grants after the replace
+  -- (review v3 #8), plus whether the description actually changed.
+  select coalesce(jsonb_agg(jsonb_build_object('permission_key', permission_key, 'record_scope', record_scope)
+                            order by permission_key), '[]'::jsonb)
+  into v_new_grants
+  from public.role_permissions where role_id = p_role_id;
+
   insert into public.audit_events (org_id, actor_user_id, action, target_type, target_id, metadata)
   values (p_org_id, v_uid, 'role.update', 'role', p_role_id,
     jsonb_build_object(
       'old_name', v_old_name, 'new_name', v_name,
+      'description_changed', (v_old_desc is distinct from v_desc),
       'old_grants', v_old_grants,
-      'new_grants', coalesce(p_permissions, '[]'::jsonb)
+      'new_grants', v_new_grants
     ));
 
   return v_new_updated_at;

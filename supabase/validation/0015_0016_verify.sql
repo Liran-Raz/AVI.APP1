@@ -45,18 +45,32 @@ begin
   if bad <> 0 then raise exception 'D2 FAIL: % functions with wrong execute privileges', bad; end if;
 end $$;
 
--- D3: audit_events fail-closed (RLS on, 0 policies, no anon/authenticated grants); roles.description added.
+-- D3: audit_events fail-closed (RLS on, 0 policies, NO PUBLIC/anon/authenticated
+-- direct ACL via pg_class.relacl + acldefault, with has_table_privilege as an
+-- INDEPENDENT effective check); roles.description added. (review v3 #4 — no
+-- information_schema.role_table_grants, which silently hides default-PUBLIC.)
 do $$
-declare rls boolean; pol int; grnt int; col int;
+declare rls boolean; pol int; acl int; eff int; col int;
 begin
   select c.relrowsecurity into rls from pg_class c join pg_namespace n on n.oid = c.relnamespace
   where n.nspname = 'public' and c.relname = 'audit_events';
   if rls is distinct from true then raise exception 'D3 FAIL: audit_events RLS not enabled'; end if;
   select count(*) into pol from pg_policies where schemaname = 'public' and tablename = 'audit_events';
   if pol <> 0 then raise exception 'D3 FAIL: audit_events has % policies', pol; end if;
-  select count(*) into grnt from information_schema.role_table_grants
-  where table_schema = 'public' and table_name = 'audit_events' and grantee in ('anon','authenticated');
-  if grnt <> 0 then raise exception 'D3 FAIL: audit_events has % direct grants', grnt; end if;
+  -- Catalog ACL: no grant to PUBLIC (grantee 0), anon, or authenticated.
+  select count(*) into acl
+  from pg_class c
+  cross join lateral aclexplode(coalesce(c.relacl, acldefault('r'::"char", c.relowner))) a
+  where c.oid = 'public.audit_events'::regclass
+    and (a.grantee = 0 or a.grantee = 'anon'::regrole or a.grantee = 'authenticated'::regrole);
+  if acl <> 0 then raise exception 'D3 FAIL: audit_events has % PUBLIC/anon/authenticated ACL entries', acl; end if;
+  -- Independent EFFECTIVE check (also catches privileges inherited from PUBLIC).
+  select count(*) into eff from (values ('anon'),('authenticated')) r(role)
+  where has_table_privilege(r.role, 'public.audit_events', 'SELECT')
+     or has_table_privilege(r.role, 'public.audit_events', 'INSERT')
+     or has_table_privilege(r.role, 'public.audit_events', 'UPDATE')
+     or has_table_privilege(r.role, 'public.audit_events', 'DELETE');
+  if eff <> 0 then raise exception 'D3 FAIL: anon/authenticated have effective audit_events privilege'; end if;
   select count(*) into col from information_schema.columns
   where table_schema = 'public' and table_name = 'roles' and column_name = 'description';
   if col <> 1 then raise exception 'D3 FAIL: roles.description missing'; end if;
@@ -169,6 +183,9 @@ begin
     '33333333-0000-0000-0000-000000000002','Seed Custom Renamed','newdesc',
     '[{"permission_key":"tasks.view","record_scope":"own"}]'::jsonb, cur);
   if newts is null then raise exception 'B9 FAIL: no new updated_at returned'; end if;
+  if newts is not distinct from cur then
+    raise exception 'B9 FAIL: updated_at did not actually change (% -> %)', cur, newts;
+  end if;
   select count(*) into n from public.role_permissions where role_id = '33333333-0000-0000-0000-000000000002';
   if n <> 1 then raise exception 'B9 FAIL: grants not replaced (got %)', n; end if;
   select count(*) into n from public.role_permissions
@@ -256,13 +273,14 @@ end $$;
 do $$
 declare bad_tbl int; bad_pub int;
 begin
+  -- Do NOT join pg_roles (that would drop PUBLIC = grantee 0). Detect PUBLIC by
+  -- OID 0 and the API roles by their regrole OID directly (review v3 #4).
   select count(*) into bad_tbl
   from pg_class c join pg_namespace n on n.oid=c.relnamespace
   cross join lateral aclexplode(coalesce(c.relacl, acldefault('r'::"char", c.relowner))) a
-  join pg_roles g on g.oid=a.grantee
   where n.nspname='public' and c.relname in ('roles','role_permissions','audit_events')
-    and g.rolname in ('anon','authenticated');
-  if bad_tbl <> 0 then raise exception 'D4 FAIL: % unexpected anon/authenticated table ACLs', bad_tbl; end if;
+    and (a.grantee = 0 or a.grantee = 'anon'::regrole or a.grantee = 'authenticated'::regrole);
+  if bad_tbl <> 0 then raise exception 'D4 FAIL: % unexpected PUBLIC/anon/authenticated table ACLs', bad_tbl; end if;
 
   select count(*) into bad_pub
   from pg_proc p join pg_namespace n on n.oid=p.pronamespace
@@ -306,4 +324,69 @@ begin
     raise exception 'B21 FAIL: non-array payload accepted'; exception when sqlstate '22023' then null; end;
 end $$;
 
-select 'ALL 0015/0016 ROLE-MANAGEMENT CHECKS PASSED (D1-D4, B1-B21)' as result;
+-- B22: the create audit snapshot is the PERSISTED, normalized, ORDERED grants — a
+-- whitespace-padded direct-RPC payload is normalized before it is recorded (#8).
+do $$
+declare nid uuid; meta jsonb;
+begin
+  perform set_config('request.jwt.claim.sub','a0000000-0000-0000-0000-0000000000a1', false);
+  nid := public.create_org_role('11111111-0000-0000-0000-0000000000aa','Audit Snap',null,
+    '[{"permission_key":"  tasks.view  ","record_scope":"  own  "},{"permission_key":" clients.view ","record_scope":"all"}]'::jsonb);
+  select metadata into meta from public.audit_events where action='role.create' and target_id=nid;
+  if meta->'grants'->0->>'permission_key' <> 'clients.view' then
+    raise exception 'B22 FAIL: snapshot not ordered/normalized (0=%)', meta->'grants'->0->>'permission_key'; end if;
+  if meta->'grants'->1->>'permission_key' <> 'tasks.view' then
+    raise exception 'B22 FAIL: snapshot key not normalized (1=%)', meta->'grants'->1->>'permission_key'; end if;
+  if meta->'grants'->1->>'record_scope' <> 'own' then
+    raise exception 'B22 FAIL: record_scope not normalized (%)', meta->'grants'->1->>'record_scope'; end if;
+  if (meta->>'permission_count')::int <> 2 then
+    raise exception 'B22 FAIL: permission_count wrong (%)', meta->>'permission_count'; end if;
+end $$;
+
+-- B23: the update audit records description_changed + the old/new PERSISTED grant
+-- snapshots (#8). Operates on the 'Audit Snap' role created by B22.
+do $$
+declare rid uuid; cur timestamptz; meta jsonb;
+begin
+  perform set_config('request.jwt.claim.sub','a0000000-0000-0000-0000-0000000000a1', false);
+  select id, updated_at into rid, cur from public.roles
+  where org_id='11111111-0000-0000-0000-0000000000aa' and name='Audit Snap';
+  perform public.update_org_role('11111111-0000-0000-0000-0000000000aa', rid, 'Audit Snap',
+    'a new description', '[{"permission_key":"team.view"}]'::jsonb, cur);
+  select metadata into meta from public.audit_events
+  where action='role.update' and target_id=rid order by created_at desc limit 1;
+  if (meta->>'description_changed') <> 'true' then
+    raise exception 'B23 FAIL: description_changed not true (%)', meta->>'description_changed'; end if;
+  if meta->'new_grants'->0->>'permission_key' <> 'team.view' then
+    raise exception 'B23 FAIL: new_grants wrong (%)', meta->'new_grants'; end if;
+  if not (meta->'old_grants' @> '[{"permission_key":"tasks.view"}]'::jsonb) then
+    raise exception 'B23 FAIL: old_grants missing the prior grant (%)', meta->'old_grants'; end if;
+end $$;
+
+-- B24: an audit-insert failure ROLLS BACK the whole role mutation (atomicity, #8).
+do $$
+declare before_roles int; after_roles int; v_ok boolean := false;
+begin
+  create or replace function public._block_audit() returns trigger language plpgsql as $f$
+  begin raise exception 'blocked audit'; end $f$;
+  create trigger _block_audit_trg before insert on public.audit_events
+    for each row execute function public._block_audit();
+
+  select count(*) into before_roles from public.roles where org_id='11111111-0000-0000-0000-0000000000aa';
+  perform set_config('request.jwt.claim.sub','a0000000-0000-0000-0000-0000000000a1', false);
+  begin
+    perform public.create_org_role('11111111-0000-0000-0000-0000000000aa','Atomic Fail',null,
+      '[{"permission_key":"team.view"}]'::jsonb);
+    v_ok := true;  -- must NOT be reached: the audit insert is blocked
+  exception when others then null;  -- expected: the audit failure aborts the function
+  end;
+  if v_ok then raise exception 'B24 FAIL: create succeeded despite audit failure'; end if;
+  select count(*) into after_roles from public.roles where org_id='11111111-0000-0000-0000-0000000000aa';
+  if after_roles <> before_roles then
+    raise exception 'B24 FAIL: role mutation NOT rolled back (% -> %)', before_roles, after_roles; end if;
+
+  drop trigger _block_audit_trg on public.audit_events;
+  drop function public._block_audit();
+end $$;
+
+select 'ALL 0015/0016 ROLE-MANAGEMENT CHECKS PASSED (D1-D4, B1-B24)' as result;

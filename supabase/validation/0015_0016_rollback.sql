@@ -1,6 +1,12 @@
--- Rollback rehearsal for 0015 + 0016 (throwaway DB). Idempotent: drops the five
--- management functions, the roles.description column, and the audit_events table.
--- Re-running is a safe no-op. Asserts everything is gone afterward.
+-- Rollback rehearsal for 0015 + 0016 — THROWAWAY / PRE-DATA ONLY (review v3 #9).
+-- This is the DESTRUCTIVE, full-teardown rollback: it drops the seven functions,
+-- the unique index, the roles.description column, AND the audit_events TABLE
+-- (losing all audit history). It is valid ONLY on the throwaway CI database, or
+-- in Production strictly BEFORE any custom-role / audit DATA exists. For a
+-- Production revert AFTER data exists, use the POST-DATA operational rollback in
+-- docs/operations/production-migrations/0015-0016-apply-package.md (disable the
+-- flags, drop only the callable RPCs, PRESERVE roles/role_permissions/audit data).
+-- Idempotent: re-running is a safe no-op. Asserts everything is gone afterward.
 
 begin;
   drop function if exists public.create_org_role(uuid, text, text, jsonb);
