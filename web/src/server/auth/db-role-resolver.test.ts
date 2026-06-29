@@ -350,6 +350,114 @@ describe("resolveDbRoleGrants (via the 0014 RPC)", () => {
   });
 });
 
+describe("resolveDbRoleGrants — full envelope validation (role identity + sentinel)", () => {
+  const row = (over: Partial<RpcRow>): RpcRow => ({
+    role_key: "owner",
+    is_system: true,
+    permission_key: "team.view",
+    record_scope: null,
+    ...over,
+  });
+
+  it("rejects a missing/empty role_key", async () => {
+    useFakeRpc({ data: [row({ role_key: "" })] });
+    await expect(resolveDbRoleGrants(fakeSession("owner"))).resolves.toEqual({
+      ok: false,
+      reason: "missing_role_key",
+    });
+  });
+
+  it("rejects a non-boolean is_system", async () => {
+    useFakeRpc({ data: [row({ is_system: "yes" as unknown as boolean })] });
+    await expect(resolveDbRoleGrants(fakeSession("owner"))).resolves.toEqual({
+      ok: false,
+      reason: "invalid_is_system",
+    });
+  });
+
+  it("rejects rows with more than one distinct role_key", async () => {
+    useFakeRpc({
+      data: [
+        row({ permission_key: "team.view" }),
+        row({ role_key: "admin", permission_key: "clients.view", record_scope: "all" }),
+      ],
+    });
+    await expect(resolveDbRoleGrants(fakeSession("owner"))).resolves.toEqual({
+      ok: false,
+      reason: "multiple_role_keys",
+    });
+  });
+
+  it("rejects inconsistent is_system across rows", async () => {
+    useFakeRpc({
+      data: [
+        row({ permission_key: "team.view" }),
+        row({ is_system: false, permission_key: "clients.view", record_scope: "all" }),
+      ],
+    });
+    await expect(resolveDbRoleGrants(fakeSession("owner"))).resolves.toEqual({
+      ok: false,
+      reason: "inconsistent_is_system",
+    });
+  });
+
+  it("rejects a custom (is_system=false) role — Decision A", async () => {
+    useFakeRpc({ data: [row({ role_key: "r_custom", is_system: false })] });
+    await expect(resolveDbRoleGrants(fakeSession("owner"))).resolves.toEqual({
+      ok: false,
+      reason: "custom_role_assignment_disabled",
+    });
+  });
+
+  it("rejects a system role whose role_key != the membership enum", async () => {
+    useFakeRpc({ data: [row({ role_key: "admin" })] });
+    await expect(resolveDbRoleGrants(fakeSession("owner"))).resolves.toEqual({
+      ok: false,
+      reason: "role_identity_mismatch",
+    });
+  });
+
+  it("rejects more than one sentinel row", async () => {
+    useFakeRpc({
+      data: [
+        row({ permission_key: null }),
+        row({ permission_key: null }),
+      ],
+    });
+    await expect(resolveDbRoleGrants(fakeSession("owner"))).resolves.toEqual({
+      ok: false,
+      reason: "multiple_sentinel_rows",
+    });
+  });
+
+  it("rejects a sentinel mixed with permission rows", async () => {
+    useFakeRpc({
+      data: [row({ permission_key: null }), row({ permission_key: "team.view" })],
+    });
+    await expect(resolveDbRoleGrants(fakeSession("owner"))).resolves.toEqual({
+      ok: false,
+      reason: "sentinel_with_permissions",
+    });
+  });
+
+  it("rejects a sentinel carrying a non-null record_scope", async () => {
+    useFakeRpc({ data: [row({ permission_key: null, record_scope: "all" })] });
+    await expect(resolveDbRoleGrants(fakeSession("owner"))).resolves.toEqual({
+      ok: false,
+      reason: "sentinel_has_scope",
+    });
+  });
+
+  it("accepts a valid same-identity sentinel as zero grants", async () => {
+    useFakeRpc({ data: [row({ permission_key: null, record_scope: null })] });
+    await expect(resolveDbRoleGrants(fakeSession("owner"))).resolves.toEqual({
+      ok: true,
+      rows: [],
+      grantMap: {},
+    });
+  });
+});
+
 describe("compareToCode", () => {
   it("reports perfect parity when DB mirrors the code grants", () => {
     for (const role of ["owner", "admin", "employee"] as UserRole[]) {
@@ -471,6 +579,15 @@ describe("authoritativeGrantMap (fail-closed cutover)", () => {
       "missing_scope",
       "invalid_scope",
       "unexpected_scope",
+      "missing_role_key",
+      "invalid_is_system",
+      "multiple_role_keys",
+      "inconsistent_is_system",
+      "custom_role_assignment_disabled",
+      "role_identity_mismatch",
+      "multiple_sentinel_rows",
+      "sentinel_with_permissions",
+      "sentinel_has_scope",
     ] as const;
     for (const reason of failureReasons) {
       expect(authoritativeGrantMap({ ok: false, reason })).toEqual({});

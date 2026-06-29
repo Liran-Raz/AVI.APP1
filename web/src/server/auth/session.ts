@@ -56,9 +56,11 @@ export type Session = {
   memberships: Membership[];
   activeOrg: Organization | null;
   activeRole: UserRole | null;
-  // CUTOVER (Phase 8J): DB-resolved grant map, present ONLY when the
-  // DB_ROLE_AUTHORITATIVE flag is on and resolution succeeded. The authorization
-  // engine reads it when set, else falls back to the in-code ROLE_GRANTS map.
+  // CUTOVER (Phase 8J): DB-resolved grant map. Present whenever the
+  // DB_ROLE_AUTHORITATIVE flag is ON — set to the resolved grants on success, and
+  // to {} (DENY-ALL) on ANY resolution failure (fail-closed; NEVER the legacy
+  // map). When the flag is OFF it stays undefined and the engine falls back to
+  // the in-code ROLE_GRANTS map.
   grantMap?: GrantMap;
 };
 

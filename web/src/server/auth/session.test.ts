@@ -151,7 +151,29 @@ describe("getCurrentSession — DB-authoritative cutover wiring (fail-closed)", 
     process.env[DB_ROLE_AUTHORITATIVE_ENV] = "1";
     setRpc({
       data: [
-        { role_key: "employee", is_system: true, permission_key: null, record_scope: null },
+        { role_key: "owner", is_system: true, permission_key: null, record_scope: null },
+      ],
+    });
+    const s = await getCurrentSession();
+    expect(s?.grantMap).toEqual({});
+  });
+
+  it("authoritative ON + role identity mismatch (role_key != enum): grantMap = {} (DENY-ALL)", async () => {
+    process.env[DB_ROLE_AUTHORITATIVE_ENV] = "1";
+    setRpc({
+      data: [
+        { role_key: "admin", is_system: true, permission_key: "team.view", record_scope: null },
+      ],
+    });
+    const s = await getCurrentSession();
+    expect(s?.grantMap).toEqual({}); // owner session, admin role_key => fail-closed
+  });
+
+  it("authoritative ON + custom role (is_system=false): grantMap = {} (Decision A, DENY-ALL)", async () => {
+    process.env[DB_ROLE_AUTHORITATIVE_ENV] = "1";
+    setRpc({
+      data: [
+        { role_key: "r_custom", is_system: false, permission_key: "team.view", record_scope: null },
       ],
     });
     const s = await getCurrentSession();

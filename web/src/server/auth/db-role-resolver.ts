@@ -23,12 +23,15 @@ import "server-only";
 //     a structured reason and never escapes into a request.
 //   * Authoritative ON + failure => deny-all grant map + safe structured log;
 //     it NEVER grants legacy permissions silently.
-//   * Strict validation: unknown keys, ownership.transfer, scope-invalid rows,
-//     and duplicates yield a structured failure, not a silently narrowed set.
+//   * Strict ENVELOPE validation: role identity (role_key / is_system), the
+//     zero-permission sentinel, unknown keys, ownership.transfer, scope-invalid
+//     rows, and duplicates each yield a structured failure (fail-closed), never a
+//     silently narrowed set. is_system=false is rejected under Decision A, and a
+//     system role whose key != the membership enum is rejected.
 
 import type { FullSession } from "@/server/auth/session";
 import { createSupabaseServerClient } from "@/server/db/supabase";
-import type { Tables } from "@/server/db/database.types";
+import type { Database } from "@/server/db/database.types";
 import type { UserRole } from "@/server/db/domain.types";
 import { ROLE_GRANTS, type Grant, type GrantMap } from "./permission-grants";
 import {
@@ -40,11 +43,19 @@ import {
   type RecordScope,
 } from "./permissions";
 
-// Row shape derived from the generated schema types (never hand-duplicated).
-export type RolePermissionRow = Pick<
-  Tables<"role_permissions">,
-  "permission_key" | "record_scope"
->;
+// The RAW envelope row returned by the 0014 RPC, taken from the GENERATED RPC
+// return type (never hand-duplicated): { role_key, is_system, permission_key,
+// record_scope }. The resolver validates this WHOLE envelope (role identity +
+// sentinel + grants), not just the grant projection.
+export type ResolveRpcRow =
+  Database["public"]["Functions"]["resolve_my_role_permissions"]["Returns"][number];
+
+// A validated (permission_key, record_scope) projection used downstream. Derived
+// from the RPC return type, not the role_permissions table.
+export type RolePermissionRow = {
+  permission_key: NonNullable<ResolveRpcRow["permission_key"]>;
+  record_scope: ResolveRpcRow["record_scope"];
+};
 
 export type DbRoleResolveFailureReason =
   | "unexpected_error"
@@ -57,7 +68,17 @@ export type DbRoleResolveFailureReason =
   | "ownership_permission"
   | "missing_scope"
   | "invalid_scope"
-  | "unexpected_scope";
+  | "unexpected_scope"
+  // ---- envelope-level failures (role identity + sentinel) ----
+  | "missing_role_key"
+  | "invalid_is_system"
+  | "multiple_role_keys"
+  | "inconsistent_is_system"
+  | "custom_role_assignment_disabled"
+  | "role_identity_mismatch"
+  | "multiple_sentinel_rows"
+  | "sentinel_with_permissions"
+  | "sentinel_has_scope";
 
 export type DbRoleResolveResult =
   | { ok: true; rows: RolePermissionRow[]; grantMap: GrantMap }
@@ -172,8 +193,87 @@ function validatePermissionRows(
   return validRows;
 }
 
+// Strictly validate the COMPLETE RPC envelope — role identity (role_key,
+// is_system), the zero-permission sentinel, AND the grant rows — not just the
+// grant projection. Every inconsistency fails closed with a structured reason.
+// The only valid zero-permission state is EXACTLY one row with permission_key
+// NULL and record_scope NULL, under a single consistent role identity.
+function validateResolveEnvelope(
+  rawRows: unknown[],
+  activeRole: UserRole,
+): RolePermissionRow[] | DbRoleResolveFailureReason {
+  let roleKey: string | null = null;
+  let isSystem: boolean | null = null;
+  let sentinelCount = 0;
+  let sentinelHasScope = false;
+  const permissionRows: RolePermissionRow[] = [];
+
+  for (const raw of rawRows) {
+    if (typeof raw !== "object" || raw === null) {
+      return "malformed_permission_row";
+    }
+    const r = raw as {
+      role_key?: unknown;
+      is_system?: unknown;
+      permission_key?: unknown;
+      record_scope?: unknown;
+    };
+
+    // Envelope identity fields.
+    if (typeof r.role_key !== "string" || r.role_key.trim() === "") {
+      return "missing_role_key";
+    }
+    if (typeof r.is_system !== "boolean") return "invalid_is_system";
+
+    // Grant shape.
+    if (!(r.permission_key === null || typeof r.permission_key === "string")) {
+      return "malformed_permission_row";
+    }
+    if (!(r.record_scope === null || typeof r.record_scope === "string")) {
+      return "malformed_permission_row";
+    }
+
+    // Exactly ONE consistent role identity across all rows.
+    if (roleKey === null) {
+      roleKey = r.role_key;
+      isSystem = r.is_system;
+    } else {
+      if (r.role_key !== roleKey) return "multiple_role_keys";
+      if (r.is_system !== isSystem) return "inconsistent_is_system";
+    }
+
+    if (r.permission_key === null) {
+      sentinelCount += 1;
+      if (r.record_scope !== null) sentinelHasScope = true;
+    } else {
+      permissionRows.push({
+        permission_key: r.permission_key,
+        record_scope: r.record_scope,
+      });
+    }
+  }
+
+  // Decision A: custom roles are NOT assignable to members. A membership that
+  // resolves to a non-system role is invalid until that decision is reversed.
+  if (isSystem === false) return "custom_role_assignment_disabled";
+  // A system role's key MUST equal the membership enum role.
+  if (roleKey !== activeRole) return "role_identity_mismatch";
+
+  // Sentinel rules: the valid zero-permission state is EXACTLY one row.
+  if (sentinelCount > 0) {
+    if (sentinelCount > 1) return "multiple_sentinel_rows";
+    if (permissionRows.length > 0) return "sentinel_with_permissions";
+    if (sentinelHasScope) return "sentinel_has_scope";
+    return [];
+  }
+
+  // No sentinel: validate the permission rows (ownership/unknown/scope/dupes).
+  return validatePermissionRows(permissionRows);
+}
+
 // Resolve the active membership's DB-backed grants via the secure read RPC
 // (migration 0014), with a bounded timeout. NON-AUTHORITATIVE and exception-safe.
+// The FULL envelope (role identity + sentinel + grants) is strictly validated.
 //   * 0 rows                        => missing_membership (fail-closed).
 //   * 1 row, permission_key = null  => valid role with ZERO grants (sentinel).
 //   * >=1 rows, permission_key set  => the role's grants.
@@ -199,17 +299,7 @@ export async function resolveDbRoleGrants(
       return { ok: false, reason: "missing_membership" };
     }
 
-    const permissionRows = rows
-      .filter(
-        (r): r is typeof r & { permission_key: string } =>
-          r.permission_key !== null,
-      )
-      .map((r) => ({
-        permission_key: r.permission_key,
-        record_scope: r.record_scope,
-      }));
-
-    const rowsOrFailure = validatePermissionRows(permissionRows);
+    const rowsOrFailure = validateResolveEnvelope(rows, session.activeRole);
     if (typeof rowsOrFailure === "string") {
       return { ok: false, reason: rowsOrFailure };
     }
