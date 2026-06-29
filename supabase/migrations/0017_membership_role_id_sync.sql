@@ -25,19 +25,21 @@
 --      so it works for user-scoped writers (roles/role_permissions are RLS-locked).
 --   3. Seed every EXISTING org (idempotent) + backfill any NULL role_id.
 --
--- SYNC RULES (explicit):
---   * INSERT, role_id NULL          -> map to the same-org system role for the enum.
---   * INSERT, role_id explicit      -> honored as-is; composite FK rejects
---                                      cross-org / dangling (no overwrite).
---   * UPDATE, role_id explicitly changed (NEW.role_id <> OLD.role_id)
---                                   -> honored verbatim (the unambiguous path to
---                                      assign/clear a custom role); FK validates.
---   * UPDATE, role_id unchanged, OLD points at NULL or a SYSTEM role
---                                   -> re-sync to the (possibly changed) enum's
---                                      system role.
---   * UPDATE, role_id unchanged, OLD points at a CUSTOM role
---                                   -> left untouched (never clobbered).
---   * cross-org / dangling role_id  -> fails (composite FK 0011).
+-- SYNC RULES (STRICT; every missing mapping RAISES — never a silent NULL):
+--   * Provision the org's system roles if the SPECIFIC enum role is missing (not
+--     only when the org has ZERO system roles). The same-org system role for the
+--     enum MUST exist afterward; otherwise RAISE (23503).
+--   * INSERT, role_id NULL            -> the same-org system role for the enum.
+--   * INSERT/UPDATE, explicit role_id of ANOTHER org / dangling -> RAISE (23503).
+--   * INSERT/UPDATE, explicit SYSTEM role_id whose key <> enum   -> RAISE (23514).
+--   * INSERT/UPDATE, explicit same-org CUSTOM role_id            -> honored.
+--   * UPDATE, role_id explicitly set to NULL -> mapped to the enum system role
+--                                               (return-to-system; never left NULL).
+--   * UPDATE, role_id unchanged, OLD = NULL/SYSTEM/dangling -> re-sync to the enum
+--                                               system role.
+--   * UPDATE, role_id unchanged, OLD = CUSTOM  -> left untouched (never clobbered).
+--   * Defense in depth: the composite FK (role_id, org_id) (0011) also rejects
+--     cross-org / dangling assignments.
 --
 -- APPLY AS ROLE postgres in the SQL Editor, AFTER 0011-0016. Re-apply is
 -- REJECTED by the no-overload guards (functions already exist); the data steps
@@ -212,47 +214,84 @@ security definer
 set search_path = ''
 as $$
 declare
-  v_old_is_custom boolean := false;
+  v_sys_id uuid;       -- the same-org SYSTEM role whose key = NEW.role
+  v_org uuid;          -- org of an explicitly-supplied NEW.role_id
+  v_is_system boolean; -- is_system of an explicitly-supplied / OLD role
+  v_key text;          -- key of an explicitly-supplied role
 begin
-  -- Ensure the org's system roles + grants exist (cheap when present; seeds a
-  -- brand-new org exactly once). Makes new-org provisioning DB-backed, not
-  -- dependent on application code.
+  -- Provision the org's system roles + grants when the SPECIFIC role for the
+  -- enum is missing (NOT only when the org has ZERO system roles). Idempotent.
   if not exists (
-    select 1 from public.roles r where r.org_id = NEW.org_id and r.is_system = true
+    select 1 from public.roles r
+    where r.org_id = NEW.org_id and r.is_system = true and r.key = NEW.role::text
   ) then
     perform public.ensure_org_system_roles(NEW.org_id);
   end if;
 
+  -- The canonical same-org system role for the enum MUST exist now.
+  select r.id into v_sys_id
+  from public.roles r
+  where r.org_id = NEW.org_id and r.is_system = true and r.key = NEW.role::text;
+  if v_sys_id is null then
+    raise exception
+      'sync_membership_role_id: no system role for enum % in org %', NEW.role, NEW.org_id
+      using errcode = '23503';
+  end if;
+
   if TG_OP = 'INSERT' then
+    -- NULL role_id -> the same-org system role for the enum (never left NULL).
     if NEW.role_id is null then
-      select r.id into NEW.role_id
-      from public.roles r
-      where r.org_id = NEW.org_id and r.is_system = true and r.key = NEW.role::text;
+      NEW.role_id := v_sys_id;
+      return NEW;
     end if;
-    -- Explicit role_id honored as-is; composite FK rejects cross-org/dangling.
-    return NEW;
+    -- Explicit role_id: must belong to this org; a SYSTEM role's key must == enum.
+    select r.org_id, r.is_system, r.key into v_org, v_is_system, v_key
+    from public.roles r where r.id = NEW.role_id;
+    if v_org is null or v_org <> NEW.org_id then
+      raise exception
+        'sync_membership_role_id: role_id % is not a role of org %', NEW.role_id, NEW.org_id
+        using errcode = '23503';
+    end if;
+    if v_is_system and v_key <> NEW.role::text then
+      raise exception
+        'sync_membership_role_id: system role_id % (key %) does not match enum %',
+        NEW.role_id, v_key, NEW.role using errcode = '23514';
+    end if;
+    return NEW;  -- valid: a key-matched system role, or a same-org custom role
   end if;
 
   -- TG_OP = 'UPDATE'
-  -- An explicit role_id change is the unambiguous, validated path (assign or
-  -- clear a custom role). Honor it verbatim; the composite FK validates it.
   if NEW.role_id is distinct from OLD.role_id then
-    return NEW;
+    -- Explicit change. NULL means "return to the enum system role" — never NULL.
+    if NEW.role_id is null then
+      NEW.role_id := v_sys_id;
+      return NEW;
+    end if;
+    select r.org_id, r.is_system, r.key into v_org, v_is_system, v_key
+    from public.roles r where r.id = NEW.role_id;
+    if v_org is null or v_org <> NEW.org_id then
+      raise exception
+        'sync_membership_role_id: role_id % is not a role of org %', NEW.role_id, NEW.org_id
+        using errcode = '23503';
+    end if;
+    if v_is_system and v_key <> NEW.role::text then
+      raise exception
+        'sync_membership_role_id: system role_id % (key %) does not match enum %',
+        NEW.role_id, v_key, NEW.role using errcode = '23514';
+    end if;
+    return NEW;  -- valid: a key-matched system role, or a same-org custom role
   end if;
 
-  -- role_id unchanged by this UPDATE: re-sync the SYSTEM pointer to the enum
-  -- role, but NEVER overwrite a CUSTOM pointer.
+  -- role_id unchanged by this UPDATE: preserve a CUSTOM pointer; otherwise
+  -- (SYSTEM / NULL / dangling) re-sync to the same-org system role for the enum.
   if OLD.role_id is not null then
-    select (r.is_system = false) into v_old_is_custom
+    select r.is_system into v_is_system
     from public.roles r where r.id = OLD.role_id;
+    if v_is_system is not null and v_is_system = false then
+      return NEW;  -- custom: never clobbered
+    end if;
   end if;
-
-  if not coalesce(v_old_is_custom, false) then
-    select r.id into NEW.role_id
-    from public.roles r
-    where r.org_id = NEW.org_id and r.is_system = true and r.key = NEW.role::text;
-  end if;
-
+  NEW.role_id := v_sys_id;
   return NEW;
 end $$;
 
