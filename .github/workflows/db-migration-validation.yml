@@ -226,6 +226,13 @@ jobs:
           fi
           echo "PASS: duplicate 0015 cleanly rejected"
 
+      - name: 0016 refuses a non-postgres role
+        run: |
+          if psql -v ON_ERROR_STOP=1 -c "set role authenticated;" -f supabase/migrations/0016_role_management_rpcs.sql >/dev/null 2>&1; then
+            echo "FAIL: 0016 applied as a non-postgres role"; exit 1
+          fi
+          echo "PASS: 0016 refused a non-postgres role"
+
       - name: Apply 0016 (role-management RPCs)
         run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/0016_role_management_rpcs.sql
 
@@ -353,6 +360,13 @@ jobs:
 
       - name: Build membership-sync harness (prereqs + fixtures)
         run: psql -v ON_ERROR_STOP=1 -f supabase/validation/0017_harness.sql
+
+      - name: 0017 refuses a non-postgres role
+        run: |
+          if psql -v ON_ERROR_STOP=1 -c "set role authenticated;" -f supabase/migrations/0017_membership_role_id_sync.sql >/dev/null 2>&1; then
+            echo "FAIL: 0017 applied as a non-postgres role"; exit 1
+          fi
+          echo "PASS: 0017 refused a non-postgres role"
 
       - name: Apply 0017 (system-role provisioning + role_id sync)
         run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/0017_membership_role_id_sync.sql

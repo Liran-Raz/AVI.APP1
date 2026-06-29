@@ -46,7 +46,7 @@ begin
     end if;
     -- missing (expected \ actual)
     if exists (
-      select 1 from _expected_sys_grants e
+      select e.role_key, e.permission_key, e.record_scope from _expected_sys_grants e
       except
       select r.key, rp.permission_key, rp.record_scope
       from public.roles r join public.role_permissions rp on rp.role_id=r.id

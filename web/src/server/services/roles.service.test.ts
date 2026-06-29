@@ -153,6 +153,7 @@ describe("RPC SQLSTATE -> AppError mapping", () => {
     ["55006", ConflictError],
     ["40001", ConflictError],
     ["22000", ValidationError],
+    ["22023", ValidationError], // DB-side payload validation (validate_custom_role_payload)
     ["23514", ValidationError],
     ["23502", ValidationError],
   ];
