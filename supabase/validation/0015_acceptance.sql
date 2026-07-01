@@ -41,23 +41,23 @@ select coalesce((
        from pg_constraint c, t where c.conrelid = t.oid and c.contype = 'p'), false)
   -- ---- FOREIGN KEY: EXACTLY one FK on the table AND it matches
   -- audit_events.org_id -> public.organizations.id ON DELETE CASCADE, single-col (v6 #3) ----
-  and coalesce((select count(*) from pg_constraint c, t
-       where c.conrelid = t.oid and c.contype = 'f') = 1, false)
+  and coalesce((select count(*) from pg_constraint c
+       where c.conrelid = (select oid from t) and c.contype = 'f') = 1, false)
   and coalesce((select cardinality(c.conkey) = 1 and cardinality(c.confkey) = 1
-       from pg_constraint c, t where c.conrelid = t.oid and c.contype = 'f'), false)
+       from pg_constraint c where c.conrelid = (select oid from t) and c.contype = 'f'), false)
   and coalesce((select (select a.attname from pg_attribute a
                           where a.attrelid = c.conrelid and a.attnum = c.conkey[1]) = 'org_id'
-       from pg_constraint c, t where c.conrelid = t.oid and c.contype = 'f'), false)
+       from pg_constraint c where c.conrelid = (select oid from t) and c.contype = 'f'), false)
   and coalesce((select rn.nspname = 'public' and rc.relname = 'organizations'
-       from pg_constraint c, t
+       from pg_constraint c
        join pg_class rc on rc.oid = c.confrelid
        join pg_namespace rn on rn.oid = rc.relnamespace
-       where c.conrelid = t.oid and c.contype = 'f'), false)
+       where c.conrelid = (select oid from t) and c.contype = 'f'), false)
   and coalesce((select (select a.attname from pg_attribute a
                           where a.attrelid = c.confrelid and a.attnum = c.confkey[1]) = 'id'
-       from pg_constraint c, t where c.conrelid = t.oid and c.contype = 'f'), false)
+       from pg_constraint c where c.conrelid = (select oid from t) and c.contype = 'f'), false)
   and coalesce((select c.confdeltype = 'c'
-       from pg_constraint c, t where c.conrelid = t.oid and c.contype = 'f'), false)
+       from pg_constraint c where c.conrelid = (select oid from t) and c.contype = 'f'), false)
   -- ---- CHECK CONSTRAINTS: EXACTLY 2, anchored to the exact normalized form (v6 #3).
   -- Rejects weak variants that merely reference btrim / mention 'action'. ----
   and coalesce((select count(*) from pg_constraint c, t
