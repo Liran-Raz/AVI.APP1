@@ -12,6 +12,16 @@ import type {
   Profile,
   UserRole,
 } from "@/server/db/domain.types";
+import type { GrantMap } from "@/server/auth/permission-grants";
+import {
+  authoritativeGrantMap,
+  emitShadowParityFromResult,
+  fireShadowParity,
+  isDbRoleAuthoritativeEnabled,
+  isDbRoleShadowEnabled,
+  logAuthoritativeResolutionFailure,
+  resolveDbRoleGrants,
+} from "@/server/auth/db-role-resolver";
 
 // One membership the session exposes. Org name/code are denormalized for
 // the office switcher UI. Only ACTIVE, visible memberships appear here.
@@ -46,6 +56,12 @@ export type Session = {
   memberships: Membership[];
   activeOrg: Organization | null;
   activeRole: UserRole | null;
+  // CUTOVER (Phase 8J): DB-resolved grant map. Present whenever the
+  // DB_ROLE_AUTHORITATIVE flag is ON — set to the resolved grants on success, and
+  // to {} (DENY-ALL) on ANY resolution failure (fail-closed; NEVER the legacy
+  // map). When the flag is OFF it stays undefined and the engine falls back to
+  // the in-code ROLE_GRANTS map.
+  grantMap?: GrantMap;
 };
 
 export type FullSession = Session & {
@@ -133,7 +149,7 @@ export async function getCurrentSession(): Promise<Session | null> {
     is_active: true,
   };
 
-  return {
+  const fullSession: Session = {
     user,
     profile: overlaidProfile,
     organization: activeOrg,
@@ -141,6 +157,30 @@ export async function getCurrentSession(): Promise<Session | null> {
     activeOrg,
     activeRole,
   };
+
+  // CUTOVER (Phase 8J; flag-gated, OFF by default) + SHADOW (Phase 8H).
+  //   * Authoritative ON: resolve the DB grant map and attach it. FAIL-CLOSED —
+  //     on ANY resolver failure the map is DENY-ALL ({}) (see authoritativeGrantMap),
+  //     NEVER the legacy code map. A failure is logged (PII-free). The engine then
+  //     reads grantMap for every decision.
+  //   * Shadow ON: observational only; never authoritative. When BOTH are on, the
+  //     single resolved result is REUSED for parity (no second RPC).
+  //   * Both OFF (default): no RPC; behavior identical to today.
+  if (isDbRoleAuthoritativeEnabled()) {
+    const resolved = await resolveDbRoleGrants(fullSession as FullSession);
+    fullSession.grantMap = authoritativeGrantMap(resolved);
+    if (!resolved.ok) {
+      logAuthoritativeResolutionFailure(fullSession as FullSession, resolved.reason);
+    }
+    if (isDbRoleShadowEnabled()) {
+      emitShadowParityFromResult(fullSession as FullSession, resolved);
+    }
+  } else if (isDbRoleShadowEnabled()) {
+    // Fire-and-forget; never blocks the request.
+    void fireShadowParity(fullSession as FullSession);
+  }
+
+  return fullSession;
 }
 
 // ============================================================

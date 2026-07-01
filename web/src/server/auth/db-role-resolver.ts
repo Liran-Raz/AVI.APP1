@@ -1,28 +1,37 @@
 import "server-only";
 
-// SHADOW-MODE DB role resolver (Phase 8H) - NON-AUTHORITATIVE, DISABLED BY DEFAULT.
+// DB role resolver + shadow parity + authoritative cutover plumbing (Phase
+// 8H/8I/8J). NON-AUTHORITATIVE until the cutover flag is on; even then it is
+// FAIL-CLOSED (never silently falls back to the in-code ROLE_GRANTS).
 //
-// The `roles` / `role_permissions` tables and
-// `organization_memberships.role_id` are live-schema inputs for PARITY ONLY.
-// The legacy membership `role` and the code-defined `ROLE_GRANTS` map stay
-// authoritative; this module must never change an authorization decision.
+// READ SURFACE: the locked-down roles/role_permissions tables (RLS on, zero
+// policies, revoked) are read ONLY through the SECURITY DEFINER RPC
+// `public.resolve_my_role_permissions(p_org_id)` (migration 0014), scoped
+// server-side by auth.uid(). This module calls that RPC, with a bounded timeout.
 //
-// Guarantees (all unit-tested):
-//   * Disabled by default. Missing/any-other env value => disabled.
-//   * When disabled, `runShadowParity` returns immediately and NEVER resolves
-//     DB grants => ZERO new-table queries in every environment today.
-//   * Exception-safe: every DB interaction is guarded; a throw/rejection
-//     becomes a structured failure reason and never escapes into a request.
-//   * Operational failures are preserved as distinct reason codes (never
-//     collapsed into an empty permission set), so the parity layer can tell a
-//     DB failure apart from a legitimate result.
-//   * Strict validation: unknown permission keys, `ownership.transfer`,
-//     scope-invalid rows, and duplicate keys yield a structured failure rather
-//     than a silently narrowed grant set.
+// FLAGS (all OFF by default; enabled only for the exact value "1"):
+//   DB_ROLE_RESOLVER_SHADOW  — observational parity probe (never authoritative).
+//   DB_ROLE_AUTHORITATIVE    — cutover: the session carries a DB grant map and
+//                              the engine reads it. On ANY resolution failure the
+//                              authoritative map is DENY-ALL ({}), never the
+//                              legacy code map (fail-closed).
+//
+// Guarantees (unit-tested):
+//   * Disabled by default => zero RPC, byte-for-byte today's behavior.
+//   * Bounded timeout on the RPC; a timeout is a structured failure, not a hang.
+//   * Exception-safe: every DB interaction is guarded; a throw/rejection becomes
+//     a structured reason and never escapes into a request.
+//   * Authoritative ON + failure => deny-all grant map + safe structured log;
+//     it NEVER grants legacy permissions silently.
+//   * Strict ENVELOPE validation: role identity (role_key / is_system), the
+//     zero-permission sentinel, unknown keys, ownership.transfer, scope-invalid
+//     rows, and duplicates each yield a structured failure (fail-closed), never a
+//     silently narrowed set. is_system=false is rejected under Decision A, and a
+//     system role whose key != the membership enum is rejected.
 
 import type { FullSession } from "@/server/auth/session";
 import { createSupabaseServerClient } from "@/server/db/supabase";
-import type { Tables } from "@/server/db/database.types";
+import type { Database } from "@/server/db/database.types";
 import type { UserRole } from "@/server/db/domain.types";
 import { ROLE_GRANTS, type Grant, type GrantMap } from "./permission-grants";
 import {
@@ -34,34 +43,42 @@ import {
   type RecordScope,
 } from "./permissions";
 
-// Row shapes derived from the generated schema types (never hand-duplicated).
-export type RolePermissionRow = Pick<
-  Tables<"role_permissions">,
-  "permission_key" | "record_scope"
->;
-type MembershipRoleRow = Pick<
-  Tables<"organization_memberships">,
-  "role_id" | "org_id" | "is_active"
->;
-type RoleOwnershipRow = Pick<Tables<"roles">, "id" | "org_id">;
+// The RAW envelope row returned by the 0014 RPC, taken from the GENERATED RPC
+// return type (never hand-duplicated): { role_key, is_system, permission_key,
+// record_scope }. The resolver validates this WHOLE envelope (role identity +
+// sentinel + grants), not just the grant projection.
+export type ResolveRpcRow =
+  Database["public"]["Functions"]["resolve_my_role_permissions"]["Returns"][number];
+
+// A validated (permission_key, record_scope) projection used downstream. Derived
+// from the RPC return type, not the role_permissions table.
+export type RolePermissionRow = {
+  permission_key: NonNullable<ResolveRpcRow["permission_key"]>;
+  record_scope: ResolveRpcRow["record_scope"];
+};
 
 export type DbRoleResolveFailureReason =
   | "unexpected_error"
-  | "membership_query_error"
+  | "timeout"
+  | "rpc_error"
   | "missing_membership"
-  | "inactive_membership"
-  | "missing_role_id"
-  | "role_query_error"
-  | "missing_role"
-  | "role_org_mismatch"
-  | "permissions_query_error"
   | "malformed_permission_row"
   | "ambiguous_permission_rows"
   | "unknown_permission_key"
   | "ownership_permission"
   | "missing_scope"
   | "invalid_scope"
-  | "unexpected_scope";
+  | "unexpected_scope"
+  // ---- envelope-level failures (role identity + sentinel) ----
+  | "missing_role_key"
+  | "invalid_is_system"
+  | "multiple_role_keys"
+  | "inconsistent_is_system"
+  | "custom_role_assignment_disabled"
+  | "role_identity_mismatch"
+  | "multiple_sentinel_rows"
+  | "sentinel_with_permissions"
+  | "sentinel_has_scope";
 
 export type DbRoleResolveResult =
   | { ok: true; rows: RolePermissionRow[]; grantMap: GrantMap }
@@ -76,17 +93,51 @@ export type DbRoleResolver = (
 const PERMISSION_KEYS = new Set<string>(Object.values(PERMISSIONS));
 const VALID_SCOPES = new Set<string>(RECORD_SCOPES);
 
-// Feature flag. Disabled unless explicitly "1". Missing/any-other => off.
+// ---- Feature flags (enabled only for exactly "1"; missing/other => off) ----
 export const DB_ROLE_SHADOW_ENV = "DB_ROLE_RESOLVER_SHADOW";
 export function isDbRoleShadowEnabled(): boolean {
   return process.env[DB_ROLE_SHADOW_ENV] === "1";
 }
 
+// CUTOVER flag (Phase 8J). When ON, the engine reads the session's DB grant map
+// (see authoritativeGrantMap — fail-closed on failure). OFF => identical to today.
+export const DB_ROLE_AUTHORITATIVE_ENV = "DB_ROLE_AUTHORITATIVE";
+export function isDbRoleAuthoritativeEnabled(): boolean {
+  return process.env[DB_ROLE_AUTHORITATIVE_ENV] === "1";
+}
+
+// ---- Bounded RPC timeout ----
+// Real, enforced upper bound on how long the authoritative path waits for the
+// RPC. On expiry the wait rejects (RpcTimeoutError) and resolves to reason
+// "timeout" (the underlying request is abandoned). Default 4s; injectable for
+// tests via resolveDbRoleGrants(session, { timeoutMs }).
+export const DB_ROLE_RPC_TIMEOUT_MS = 4000;
+
+class RpcTimeoutError extends Error {
+  constructor() {
+    super("db-role RPC timed out");
+    this.name = "RpcTimeoutError";
+  }
+}
+
+function withTimeout<T>(p: PromiseLike<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new RpcTimeoutError()), ms);
+    Promise.resolve(p).then(
+      (v) => {
+        clearTimeout(timer);
+        resolve(v);
+      },
+      (e) => {
+        clearTimeout(timer);
+        reject(e);
+      },
+    );
+  });
+}
+
 // Build a GrantMap from already-validated rows. Mirrors code semantics
-// (true = contextless grant; a RecordScope string = scoped grant). The resolver
-// validates and rejects invalid rows upstream, so this never silently narrows a
-// resolver result; the residual guards keep it safe when used directly (e.g.
-// for code-side parity input in tests).
+// (true = contextless grant; a RecordScope string = scoped grant).
 export function buildGrantMapFromRows(rows: RolePermissionRow[]): GrantMap {
   const map: GrantMap = {};
   for (const row of rows) {
@@ -112,10 +163,7 @@ function isRolePermissionRow(value: unknown): value is RolePermissionRow {
 }
 
 // Strictly validate raw permission rows. Returns a structured failure reason
-// rather than silently dropping invalid rows. Enforces: well-formed shape;
-// `ownership.transfer` rejected; known catalog key; scope present + valid for
-// scoped permissions and null for contextless ones; no duplicate permission key
-// (even with differing scopes).
+// rather than silently dropping invalid rows.
 function validatePermissionRows(
   rows: unknown[] | null,
 ): RolePermissionRow[] | DbRoleResolveFailureReason {
@@ -145,62 +193,113 @@ function validatePermissionRows(
   return validRows;
 }
 
-// Resolve the active membership's DB-backed grants. NON-AUTHORITATIVE and
-// exception-safe. Reads are scoped to the authenticated user, the active
-// organization, and the membership's role_id; a cross-org role is rejected both
-// by the role query (org_id filter) and by a post-query check (defense in
-// depth).
+// Strictly validate the COMPLETE RPC envelope — role identity (role_key,
+// is_system), the zero-permission sentinel, AND the grant rows — not just the
+// grant projection. Every inconsistency fails closed with a structured reason.
+// The only valid zero-permission state is EXACTLY one row with permission_key
+// NULL and record_scope NULL, under a single consistent role identity.
+function validateResolveEnvelope(
+  rawRows: unknown[],
+  activeRole: UserRole,
+): RolePermissionRow[] | DbRoleResolveFailureReason {
+  let roleKey: string | null = null;
+  let isSystem: boolean | null = null;
+  let sentinelCount = 0;
+  let sentinelHasScope = false;
+  const permissionRows: RolePermissionRow[] = [];
+
+  for (const raw of rawRows) {
+    if (typeof raw !== "object" || raw === null) {
+      return "malformed_permission_row";
+    }
+    const r = raw as {
+      role_key?: unknown;
+      is_system?: unknown;
+      permission_key?: unknown;
+      record_scope?: unknown;
+    };
+
+    // Envelope identity fields.
+    if (typeof r.role_key !== "string" || r.role_key.trim() === "") {
+      return "missing_role_key";
+    }
+    if (typeof r.is_system !== "boolean") return "invalid_is_system";
+
+    // Grant shape.
+    if (!(r.permission_key === null || typeof r.permission_key === "string")) {
+      return "malformed_permission_row";
+    }
+    if (!(r.record_scope === null || typeof r.record_scope === "string")) {
+      return "malformed_permission_row";
+    }
+
+    // Exactly ONE consistent role identity across all rows.
+    if (roleKey === null) {
+      roleKey = r.role_key;
+      isSystem = r.is_system;
+    } else {
+      if (r.role_key !== roleKey) return "multiple_role_keys";
+      if (r.is_system !== isSystem) return "inconsistent_is_system";
+    }
+
+    if (r.permission_key === null) {
+      sentinelCount += 1;
+      if (r.record_scope !== null) sentinelHasScope = true;
+    } else {
+      permissionRows.push({
+        permission_key: r.permission_key,
+        record_scope: r.record_scope,
+      });
+    }
+  }
+
+  // Decision A: custom roles are NOT assignable to members. A membership that
+  // resolves to a non-system role is invalid until that decision is reversed.
+  if (isSystem === false) return "custom_role_assignment_disabled";
+  // A system role's key MUST equal the membership enum role.
+  if (roleKey !== activeRole) return "role_identity_mismatch";
+
+  // Sentinel rules: the valid zero-permission state is EXACTLY one row.
+  if (sentinelCount > 0) {
+    if (sentinelCount > 1) return "multiple_sentinel_rows";
+    if (permissionRows.length > 0) return "sentinel_with_permissions";
+    if (sentinelHasScope) return "sentinel_has_scope";
+    return [];
+  }
+
+  // No sentinel: validate the permission rows (ownership/unknown/scope/dupes).
+  return validatePermissionRows(permissionRows);
+}
+
+// Resolve the active membership's DB-backed grants via the secure read RPC
+// (migration 0014), with a bounded timeout. NON-AUTHORITATIVE and exception-safe.
+// The FULL envelope (role identity + sentinel + grants) is strictly validated.
+//   * 0 rows                        => missing_membership (fail-closed).
+//   * 1 row, permission_key = null  => valid role with ZERO grants (sentinel).
+//   * >=1 rows, permission_key set  => the role's grants.
 export async function resolveDbRoleGrants(
   session: FullSession,
+  opts?: { timeoutMs?: number },
 ): Promise<DbRoleResolveResult> {
+  const timeoutMs = opts?.timeoutMs ?? DB_ROLE_RPC_TIMEOUT_MS;
   try {
     const supabase = await createSupabaseServerClient();
 
-    const { data: membership, error: membershipError } = await supabase
-      .from("organization_memberships")
-      .select("role_id, org_id, is_active")
-      .eq("user_id", session.user.id)
-      .eq("org_id", session.activeOrg.id)
-      .eq("is_active", true)
-      .maybeSingle();
+    const { data, error } = await withTimeout(
+      supabase.rpc("resolve_my_role_permissions", {
+        p_org_id: session.activeOrg.id,
+      }),
+      timeoutMs,
+    );
 
-    if (membershipError) return { ok: false, reason: "membership_query_error" };
-    if (!membership) return { ok: false, reason: "missing_membership" };
+    if (error) return { ok: false, reason: "rpc_error" };
 
-    const membershipRow: MembershipRoleRow = membership;
-    if (!membershipRow.is_active) {
-      return { ok: false, reason: "inactive_membership" };
-    }
-    if (membershipRow.org_id !== session.activeOrg.id) {
+    const rows = data ?? [];
+    if (rows.length === 0) {
       return { ok: false, reason: "missing_membership" };
     }
-    if (!membershipRow.role_id) return { ok: false, reason: "missing_role_id" };
 
-    const { data: role, error: roleError } = await supabase
-      .from("roles")
-      .select("id, org_id")
-      .eq("id", membershipRow.role_id)
-      .eq("org_id", session.activeOrg.id)
-      .maybeSingle();
-
-    if (roleError) return { ok: false, reason: "role_query_error" };
-    if (!role) return { ok: false, reason: "missing_role" };
-
-    const roleRow: RoleOwnershipRow = role;
-    if (roleRow.org_id !== session.activeOrg.id) {
-      return { ok: false, reason: "role_org_mismatch" };
-    }
-
-    const { data: permissionRows, error: permissionError } = await supabase
-      .from("role_permissions")
-      .select("permission_key, record_scope")
-      .eq("role_id", roleRow.id);
-
-    if (permissionError) {
-      return { ok: false, reason: "permissions_query_error" };
-    }
-
-    const rowsOrFailure = validatePermissionRows(permissionRows);
+    const rowsOrFailure = validateResolveEnvelope(rows, session.activeRole);
     if (typeof rowsOrFailure === "string") {
       return { ok: false, reason: rowsOrFailure };
     }
@@ -210,25 +309,54 @@ export async function resolveDbRoleGrants(
       rows: rowsOrFailure,
       grantMap: buildGrantMapFromRows(rowsOrFailure),
     };
-  } catch {
-    // Any unexpected throw/rejection (client creation, network, runtime) fails
-    // closed. The error is intentionally not surfaced/logged here because it may
-    // carry connection or query detail; callers receive only a safe reason.
+  } catch (e) {
+    if (e instanceof RpcTimeoutError) return { ok: false, reason: "timeout" };
+    // Any other unexpected throw/rejection fails closed. Not surfaced/logged
+    // here (may carry connection/query detail); callers get a safe reason.
     return { ok: false, reason: "unexpected_error" };
   }
 }
 
+// FAIL-CLOSED authoritative grant map. Under DB_ROLE_AUTHORITATIVE the engine
+// reads THIS map for every decision:
+//   * ok (incl. the zero-permission sentinel) => the resolved grants (maybe {}).
+//   * ANY failure (rpc_error/timeout/unexpected/missing_membership/malformed/
+//     unknown/scope/duplicate) => DENY-ALL ({}). It NEVER returns the legacy map.
+export function authoritativeGrantMap(result: DbRoleResolveResult): GrantMap {
+  return result.ok ? result.grantMap : {};
+}
+
+// PII-free structured log for an authoritative-resolution failure. No tokens, no
+// PII, no raw DB error text, no query details — only stable codes.
+export function logAuthoritativeResolutionFailure(
+  session: FullSession,
+  reason: DbRoleResolveFailureReason,
+): void {
+  console.error(
+    "[authz.authoritative]",
+    JSON.stringify({
+      category: "authz_authoritative_resolution_failed",
+      role: session.activeRole,
+      orgId: session.activeOrg.id,
+      reason,
+    }),
+  );
+}
+
+// ============================================================
+// Shadow parity (observational; NEVER authoritative)
+// ============================================================
+
 export type ParityCategory =
   | "match"
-  | "code_allow_db_deny" // code grants, DB does not
-  | "code_deny_db_allow" // DB grants, code does not
-  | "scope_mismatch"; // both grant, scopes differ
+  | "code_allow_db_deny"
+  | "code_deny_db_allow"
+  | "scope_mismatch";
 
 export type ParityResult = {
   role: UserRole;
   match: boolean;
   counts: Record<ParityCategory, number>;
-  // permission KEYS per discrepancy (safe to log: keys only, no PII)
   codeAllowDbDeny: Permission[];
   codeDenyDbAllow: Permission[];
   scopeMismatch: Permission[];
@@ -238,7 +366,6 @@ function grantToken(g: Grant | undefined): string {
   return g === undefined ? "DENY" : g === true ? "ALLOW" : `ALLOW:${g}`;
 }
 
-// Compare a DB-derived GrantMap to the authoritative code grants for a role.
 export function compareToCode(role: UserRole, dbMap: GrantMap): ParityResult {
   const codeMap = ROLE_GRANTS[role] ?? {};
   const keys = new Set<Permission>([
@@ -290,31 +417,40 @@ export type ShadowOutcome =
   | { enabled: true; ok: true; parity: ParityResult }
   | { enabled: true; ok: false; reason: DbRoleResolveFailureReason };
 
-// Observational shadow parity. NEVER authoritative. When disabled, returns
-// immediately WITHOUT resolving DB grants (=> zero new-table queries). When
-// enabled, a DB failure is preserved as a reason (not a parity comparison
-// against an empty set), and any thrown/rejected resolver fails closed.
+// Build the shadow outcome from an ALREADY-resolved result (no RPC). Used by the
+// reuse path so that, with both Shadow and Authoritative enabled, only ONE RPC
+// is issued and the same validated result feeds both.
+export function shadowOutcomeFromResult(
+  session: FullSession,
+  result: DbRoleResolveResult,
+): ShadowOutcome {
+  if (result.ok) {
+    return {
+      enabled: true,
+      ok: true,
+      parity: compareToCode(session.activeRole, result.grantMap),
+    };
+  }
+  return { enabled: true, ok: false, reason: result.reason };
+}
+
+// Observational shadow parity. When disabled, returns immediately WITHOUT
+// resolving (zero RPC). When enabled, a DB failure is preserved as a reason and
+// any thrown/rejected resolver fails closed.
 export async function runShadowParity(
   session: FullSession,
   resolve: DbRoleResolver = resolveDbRoleGrants,
 ): Promise<ShadowOutcome> {
   if (!isDbRoleShadowEnabled()) return { enabled: false };
-
   let result: DbRoleResolveResult;
   try {
     result = await resolve(session);
   } catch {
     return { enabled: true, ok: false, reason: "unexpected_error" };
   }
-
-  if (!result.ok) return { enabled: true, ok: false, reason: result.reason };
-
-  const parity = compareToCode(session.activeRole, result.grantMap);
-  return { enabled: true, ok: true, parity };
+  return shadowOutcomeFromResult(session, result);
 }
 
-// Safe telemetry - categories + counts only (no PII, no tokens, no record
-// contents). Mirrors the safety posture of authzLogMeta.
 export type ShadowParityLogMeta = {
   category: "authz_shadow_parity";
   role: UserRole;
@@ -334,4 +470,49 @@ export function shadowParityLogMeta(
     match: parity.match,
     counts: parity.counts,
   };
+}
+
+// Emit ONE PII-free telemetry line for a shadow outcome (never throws).
+function logShadowOutcome(session: FullSession, outcome: ShadowOutcome): void {
+  if (!outcome.enabled) return;
+  if (outcome.ok) {
+    console.info(
+      "[authz.shadow]",
+      JSON.stringify(shadowParityLogMeta(session, outcome.parity)),
+    );
+  } else {
+    console.warn(
+      "[authz.shadow]",
+      JSON.stringify({
+        category: "authz_shadow_parity_error",
+        role: session.activeRole,
+        orgId: session.activeOrg.id,
+        reason: outcome.reason,
+      }),
+    );
+  }
+}
+
+// Fire-and-forget shadow parity (resolves internally). Used when Shadow is on
+// and Authoritative is OFF — non-blocking, zero RPC when the flag is off.
+export async function fireShadowParity(session: FullSession): Promise<void> {
+  if (!isDbRoleShadowEnabled()) return;
+  try {
+    logShadowOutcome(session, await runShadowParity(session));
+  } catch {
+    // never let shadow telemetry affect a request
+  }
+}
+
+// Emit shadow parity from an ALREADY-resolved result (no extra RPC). Used by the
+// reuse path when BOTH flags are on (the authoritative path already resolved).
+export function emitShadowParityFromResult(
+  session: FullSession,
+  result: DbRoleResolveResult,
+): void {
+  try {
+    logShadowOutcome(session, shadowOutcomeFromResult(session, result));
+  } catch {
+    // never let shadow telemetry affect a request
+  }
 }
