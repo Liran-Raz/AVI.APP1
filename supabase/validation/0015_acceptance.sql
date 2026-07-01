@@ -21,7 +21,7 @@ select coalesce((
   and coalesce((select column_default like 'now()%' from information_schema.columns
        where table_schema='public' and table_name='audit_events' and column_name='created_at'), false)
   -- PRIMARY KEY exactly on {id}
-  and coalesce((select array_agg(a.attname order by a.attname) = array['id']
+  and coalesce((select array_agg(a.attname::text order by a.attname::text) = array['id']
        from pg_constraint con
        cross join lateral unnest(con.conkey) k(attnum)
        join pg_attribute a on a.attrelid=con.conrelid and a.attnum=k.attnum
