@@ -233,6 +233,26 @@ jobs:
           fi
           echo "PASS: 0016 refused a non-postgres role"
 
+      # Review v4 #1: roles.description is a strict single-creator — 0016 refuses to
+      # apply if the column already exists, of ANY type.
+      - name: 0016 refuses a pre-existing roles.description (text)
+        run: |
+          psql -v ON_ERROR_STOP=1 -c "alter table public.roles add column description text;"
+          if psql -v ON_ERROR_STOP=1 -f supabase/migrations/0016_role_management_rpcs.sql >/dev/null 2>&1; then
+            echo "FAIL: 0016 applied despite a pre-existing text description"; exit 1
+          fi
+          echo "PASS: 0016 rejected a pre-existing text description"
+          psql -v ON_ERROR_STOP=1 -c "alter table public.roles drop column description;"
+
+      - name: 0016 refuses a pre-existing roles.description (wrong type)
+        run: |
+          psql -v ON_ERROR_STOP=1 -c "alter table public.roles add column description integer;"
+          if psql -v ON_ERROR_STOP=1 -f supabase/migrations/0016_role_management_rpcs.sql >/dev/null 2>&1; then
+            echo "FAIL: 0016 applied despite a wrong-type description"; exit 1
+          fi
+          echo "PASS: 0016 rejected a wrong-type description"
+          psql -v ON_ERROR_STOP=1 -c "alter table public.roles drop column description;"
+
       - name: Apply 0016 (role-management RPCs)
         run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/0016_role_management_rpcs.sql
 
@@ -316,10 +336,60 @@ jobs:
           fi
           echo "PASS: concurrent identical-normalized-name creates -> exactly one wins; loser 23505"
 
+      # Review v4 #3/#4/#5: machine-readable, BOOLEAN-ONLY acceptance (exactly
+      # true/false, never NULL / never an exception). Positive = t after apply.
+      - name: 0015 + 0016 acceptance = true (post-apply)
+        run: |
+          set +e
+          A15=$(psql -At -f supabase/validation/0015_acceptance.sql)
+          A16=$(psql -At -f supabase/validation/0016_acceptance.sql)
+          echo "0015_acceptance=$A15  0016_acceptance=$A16"
+          if [ "$A15" != "t" ]; then echo "FAIL: 0015_acceptance expected t, got '$A15'"; exit 1; fi
+          if [ "$A16" != "t" ]; then echo "FAIL: 0016_acceptance expected t, got '$A16'"; exit 1; fi
+          echo "PASS: both acceptance queries return true"
+
+      - name: acceptance = false (never NULL/exception) on missing index / overload
+        run: |
+          set +e
+          psql -v ON_ERROR_STOP=1 -c "drop index public.roles_org_name_norm_uniq;"
+          V=$(psql -At -f supabase/validation/0016_acceptance.sql); RC=$?
+          if [ "$RC" -ne 0 ] || [ "$V" != "f" ]; then echo "FAIL: missing index expected boolean 'f', got '$V' (rc$RC)"; exit 1; fi
+          echo "PASS: missing index -> 0016 acceptance = f"
+          psql -v ON_ERROR_STOP=1 -c "create unique index roles_org_name_norm_uniq on public.roles (org_id, lower(btrim(name)));"
+          psql -v ON_ERROR_STOP=1 -c "create function public.list_org_roles(text) returns int language sql as \$\$ select 1 \$\$;"
+          V=$(psql -At -f supabase/validation/0016_acceptance.sql); RC=$?
+          if [ "$RC" -ne 0 ] || [ "$V" != "f" ]; then echo "FAIL: overload expected boolean 'f', got '$V' (rc$RC)"; exit 1; fi
+          echo "PASS: function overload -> 0016 acceptance = f"
+          psql -v ON_ERROR_STOP=1 -c "drop function public.list_org_roles(text);"
+
       - name: Roll back 0015/0016 (run twice - idempotent, both must pass)
         run: |
           psql -v ON_ERROR_STOP=1 -f supabase/validation/0015_0016_rollback.sql
           psql -v ON_ERROR_STOP=1 -f supabase/validation/0015_0016_rollback.sql
+
+      # Review v4 #5: after rollback (all objects gone) the acceptance queries must
+      # still return exactly 'f' — never NULL, never an exception.
+      - name: acceptance = false on the fully-rolled-back (empty) schema
+        run: |
+          set +e
+          A15=$(psql -At -f supabase/validation/0015_acceptance.sql); RC15=$?
+          A16=$(psql -At -f supabase/validation/0016_acceptance.sql); RC16=$?
+          echo "0015=$A15(rc$RC15) 0016=$A16(rc$RC16)"
+          if [ "$RC15" -ne 0 ] || [ "$RC16" -ne 0 ]; then echo "FAIL: acceptance threw on missing objects"; exit 1; fi
+          if [ "$A15" != "f" ] || [ "$A16" != "f" ]; then echo "FAIL: acceptance expected 'f' on empty schema (got '$A15'/'$A16')"; exit 1; fi
+          echo "PASS: acceptance is boolean-only 'f' on the empty schema"
+
+      # Review v4 #1: the PRE-DATA rollback must NOT drop a pre-existing (unstamped)
+      # description column (only a 0016-stamped one).
+      - name: rollback preserves a pre-existing (unstamped) roles.description
+        run: |
+          set +e
+          psql -v ON_ERROR_STOP=1 -c "alter table public.roles add column description text;"  # no provenance stamp
+          psql -f supabase/validation/0015_0016_rollback.sql >/dev/null 2>&1                    # its col=0 assertion will trip; ignored
+          PRESENT=$(psql -At -c "select count(*) from information_schema.columns where table_schema='public' and table_name='roles' and column_name='description';")
+          if [ "$PRESENT" != "1" ]; then echo "FAIL: rollback dropped a pre-existing unstamped description (present=$PRESENT)"; exit 1; fi
+          echo "PASS: rollback preserved the pre-existing unstamped description"
+          psql -v ON_ERROR_STOP=1 -c "alter table public.roles drop column description;"
 
   # Membership role_id sync (0017): system-role provisioning for existing AND new
   # orgs + a BEFORE INSERT/UPDATE trigger that keeps the system role_id pointer in
@@ -368,6 +438,43 @@ jobs:
           fi
           echo "PASS: 0017 refused a non-postgres role"
 
+      # Review v4 #2: the in-migration drift guard STOPS (before COMMIT) on every
+      # NON-REPAIRABLE drift category. Each case is injected, 0017 is attempted
+      # (must abort), then the injection is removed so the real apply is on a clean
+      # state. (Cross-org/dangling role_id is enforced by the composite FK, so it
+      # cannot be injected here; the guard covers it defensively.)
+      - name: 0017 drift guard rejects each NON-REPAIRABLE drift category
+        run: |
+          set +e
+          ORG='aaaa1111-0000-0000-0000-00000000000a'
+          EMP='11110000-0000-0000-0000-0000000000e1'
+          A1='d0000000-0000-0000-0000-0000000000a1'
+          expect_reject() {
+            if psql -v ON_ERROR_STOP=1 -f supabase/migrations/0017_membership_role_id_sync.sql >/dev/null 2>&1; then
+              echo "FAIL: 0017 applied despite drift [$1]"; exit 1
+            fi
+            echo "PASS: 0017 aborted on drift [$1]"
+          }
+          psql -qc "insert into public.roles (org_id,key,name,is_system) values ('$ORG','superadmin','X',true);"
+          expect_reject "extra-system-role"
+          psql -qc "delete from public.roles where org_id='$ORG' and key='superadmin';"
+          psql -qc "insert into public.roles (org_id,key,name,is_system) values ('$ORG','admin','X',false);"
+          expect_reject "system-key-not-system"
+          psql -qc "delete from public.roles where org_id='$ORG' and key='admin';"
+          psql -qc "insert into public.role_permissions (role_id,permission_key,record_scope) values ('$EMP','billing.manage',null);"
+          expect_reject "extra-grant-on-system-role"
+          psql -qc "delete from public.role_permissions where role_id='$EMP' and permission_key='billing.manage';"
+          psql -qc "update public.organization_memberships set role_id='$EMP' where user_id='$A1' and org_id='$ORG';"
+          expect_reject "mismatched-nonnull-role_id"
+          psql -qc "update public.organization_memberships set role_id=null where user_id='$A1' and org_id='$ORG';"
+          psql -qc "insert into public.roles (org_id,key,name,is_system) values ('$ORG','r_dup','employee',false);"
+          expect_reject "normalized-name-conflict"
+          psql -qc "delete from public.roles where org_id='$ORG' and key='r_dup';"
+          psql -qc "insert into public.roles (org_id,key,name,is_system) values ('$ORG','r_own','Owner',false);"
+          expect_reject "custom-name-reserved"
+          psql -qc "delete from public.roles where org_id='$ORG' and key='r_own';"
+          echo "PASS: all injectable drift categories rejected"
+
       - name: Apply 0017 (system-role provisioning + role_id sync)
         run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/0017_membership_role_id_sync.sql
 
@@ -378,10 +485,43 @@ jobs:
           fi
           echo "PASS: duplicate 0017 cleanly rejected"
 
-      - name: Verify 0017 (T1-T12)
+      - name: Verify 0017 (T1-T19)
         run: psql -v ON_ERROR_STOP=1 -f supabase/validation/0017_verify.sql
+
+      # Review v4 #5/#6: BOOLEAN-ONLY acceptance + the authoritative-cutover preflight.
+      - name: 0017 acceptance + cutover preflight = true (post-apply)
+        run: |
+          set +e
+          A=$(psql -At -f supabase/validation/0017_acceptance.sql)
+          C=$(psql -At -f supabase/validation/authoritative_cutover_preflight.sql)
+          echo "0017_acceptance=$A  cutover_preflight=$C"
+          if [ "$A" != "t" ]; then echo "FAIL: 0017_acceptance expected t, got '$A'"; exit 1; fi
+          if [ "$C" != "t" ]; then echo "FAIL: cutover preflight expected t, got '$C'"; exit 1; fi
+          echo "PASS: 0017 acceptance + cutover preflight both true"
+
+      - name: cutover preflight = false when an active member holds a CUSTOM role
+        run: |
+          set +e
+          ORG='aaaa1111-0000-0000-0000-00000000000a'
+          C1='11110000-0000-0000-0000-0000000000c1'
+          A1='d0000000-0000-0000-0000-0000000000a1'
+          psql -qc "update public.organization_memberships set role_id='$C1' where user_id='$A1' and org_id='$ORG';"
+          C=$(psql -At -f supabase/validation/authoritative_cutover_preflight.sql); RC=$?
+          if [ "$RC" -ne 0 ] || [ "$C" != "f" ]; then echo "FAIL: cutover preflight expected boolean 'f' with a custom-role member, got '$C' (rc$RC)"; exit 1; fi
+          echo "PASS: cutover preflight = f when an active member holds a custom role"
+          psql -qc "update public.organization_memberships set role_id=null where user_id='$A1' and org_id='$ORG';"
 
       - name: Roll back 0017 (run twice - idempotent, both must pass)
         run: |
           psql -v ON_ERROR_STOP=1 -f supabase/validation/0017_rollback.sql
           psql -v ON_ERROR_STOP=1 -f supabase/validation/0017_rollback.sql
+
+      # Review v4 #5: after rollback (functions + trigger gone) the acceptance query
+      # must still return exactly 'f' — never NULL, never an exception.
+      - name: 0017 acceptance = false after rollback (boolean-only)
+        run: |
+          set +e
+          A=$(psql -At -f supabase/validation/0017_acceptance.sql); RC=$?
+          echo "0017_acceptance=$A (rc$RC)"
+          if [ "$RC" -ne 0 ] || [ "$A" != "f" ]; then echo "FAIL: 0017 acceptance expected boolean 'f' after rollback, got '$A' (rc$RC)"; exit 1; fi
+          echo "PASS: 0017 acceptance = f after rollback (boolean-only)"

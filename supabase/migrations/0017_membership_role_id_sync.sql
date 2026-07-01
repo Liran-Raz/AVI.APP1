@@ -79,6 +79,85 @@ begin
   end if;
 end $$;
 
+-- ---- Drift strategy (review v4 #2): STOP on any NON-REPAIRABLE drift BEFORE
+-- doing any work, so a problem is never first discovered in postflight after
+-- COMMIT. REPAIRABLE drift (missing system roles / missing grants / NULL role_id)
+-- is deterministically filled by the idempotent seed + backfill below. Anything
+-- that the idempotent fill CANNOT safely reconcile aborts the whole migration.
+-- The expected catalog mirrors ensure_org_system_roles / ROLE_GRANTS (parity-tested).
+create temporary table _v4_expected_grants (role_key text, permission_key text, record_scope text) on commit drop;
+insert into _v4_expected_grants values
+  ('owner','organization.view',null),('owner','organization.settings',null),('owner','organization.delete',null),
+  ('owner','settings.view',null),('owner','settings.manage',null),
+  ('owner','team.view',null),('owner','team.invite',null),('owner','team.deactivate',null),('owner','team.reactivate',null),('owner','team.remove',null),('owner','team.change_role',null),
+  ('owner','invitations.view',null),('owner','invitations.revoke',null),('owner','invitations.resend',null),
+  ('owner','roles.view',null),('owner','roles.manage',null),
+  ('owner','clients.view','all'),('owner','clients.create',null),('owner','clients.edit','all'),('owner','clients.archive','all'),('owner','clients.restore','all'),('owner','clients.delete','all'),('owner','clients.export','all'),
+  ('owner','contacts.view','all'),('owner','contacts.create',null),('owner','contacts.edit','all'),('owner','contacts.delete','all'),
+  ('owner','tasks.view','all'),('owner','tasks.create',null),('owner','tasks.edit','all'),('owner','tasks.change_status','all'),('owner','tasks.archive','all'),('owner','tasks.delete','all'),('owner','tasks.assign_self',null),('owner','tasks.assign_others',null),
+  ('owner','notifications.view',null),('owner','notifications.manage',null),
+  ('owner','billing.view',null),('owner','billing.manage',null),
+  ('admin','organization.view',null),('admin','settings.view',null),
+  ('admin','team.view',null),('admin','team.invite',null),('admin','team.deactivate',null),('admin','team.reactivate',null),('admin','team.change_role',null),
+  ('admin','invitations.view',null),('admin','invitations.revoke',null),('admin','invitations.resend',null),
+  ('admin','roles.view',null),
+  ('admin','clients.view','all'),('admin','clients.create',null),('admin','clients.edit','all'),('admin','clients.archive','all'),('admin','clients.restore','all'),
+  ('admin','contacts.view','all'),('admin','contacts.create',null),('admin','contacts.edit','all'),('admin','contacts.delete','all'),
+  ('admin','tasks.view','all'),('admin','tasks.create',null),('admin','tasks.edit','all'),('admin','tasks.change_status','all'),('admin','tasks.archive','all'),('admin','tasks.delete','all'),('admin','tasks.assign_self',null),('admin','tasks.assign_others',null),
+  ('admin','notifications.view',null),('admin','notifications.manage',null),
+  ('employee','organization.view',null),('employee','settings.view',null),('employee','team.view',null),
+  ('employee','clients.view','all'),('employee','clients.create',null),('employee','clients.edit','all'),
+  ('employee','contacts.view','all'),('employee','contacts.create',null),('employee','contacts.edit','all'),
+  ('employee','tasks.view','all'),('employee','tasks.create',null),('employee','tasks.edit','all'),('employee','tasks.change_status','all'),('employee','tasks.archive','all'),('employee','tasks.delete','all'),('employee','tasks.assign_self',null),('employee','tasks.assign_others',null),
+  ('employee','notifications.view',null),('employee','notifications.manage',null);
+
+do $$
+begin
+  -- (a) extra system role: a system role whose key is not one of the 3.
+  if exists (select 1 from public.roles where is_system and key not in ('owner','admin','employee')) then
+    raise exception 'Refusing to apply 0017: NON-REPAIRABLE drift — an extra system role with an unexpected key exists.' using errcode='23514';
+  end if;
+  -- (b) wrong system-role definition: a role with a system key but is_system=false.
+  if exists (select 1 from public.roles where is_system = false and key in ('owner','admin','employee')) then
+    raise exception 'Refusing to apply 0017: NON-REPAIRABLE drift — a role has a system key (owner/admin/employee) but is_system=false.' using errcode='23514';
+  end if;
+  -- (c) extra grant OR wrong record_scope on an EXISTING system role (missing grants
+  --     are repairable and NOT flagged here).
+  if exists (
+    select 1 from public.roles r join public.role_permissions rp on rp.role_id=r.id
+    where r.is_system
+      and not exists (select 1 from _v4_expected_grants e
+                      where e.role_key = r.key and e.permission_key = rp.permission_key
+                        and e.record_scope is not distinct from rp.record_scope)
+  ) then
+    raise exception 'Refusing to apply 0017: NON-REPAIRABLE drift — a system role has an extra grant or a wrong record_scope.' using errcode='23514';
+  end if;
+  -- (d) mismatched non-NULL role_id: an ACTIVE membership pointing at a same-org
+  --     SYSTEM role whose key <> the enum.
+  if exists (select 1 from public.organization_memberships m
+             join public.roles r on r.id=m.role_id and r.org_id=m.org_id
+             where m.is_active and r.is_system and r.key <> m.role::text) then
+    raise exception 'Refusing to apply 0017: NON-REPAIRABLE drift — an active membership has a non-NULL system role_id that does not match its enum.' using errcode='23514';
+  end if;
+  -- (e) cross-org / dangling role_id on an ACTIVE membership.
+  if exists (select 1 from public.organization_memberships m
+             left join public.roles r on r.id=m.role_id and r.org_id=m.org_id
+             where m.is_active and m.role_id is not null and r.id is null) then
+    raise exception 'Refusing to apply 0017: NON-REPAIRABLE drift — an active membership has a cross-org or dangling role_id.' using errcode='23503';
+  end if;
+  -- (f) normalized-name conflict WITHIN an org (would break the 0016 unique index /
+  --     block provisioning).
+  if exists (select 1 from public.roles group by org_id, lower(btrim(name)) having count(*) > 1) then
+    raise exception 'Refusing to apply 0017: NON-REPAIRABLE drift — two roles in an org share a normalized name.' using errcode='23505';
+  end if;
+  -- (g) a CUSTOM role name that normalizes to a reserved system name would collide
+  --     with provisioning.
+  if exists (select 1 from public.roles where is_system = false
+             and lower(btrim(name)) in ('owner','manager','employee')) then
+    raise exception 'Refusing to apply 0017: NON-REPAIRABLE drift — a custom role name normalizes to a reserved system role name (Owner/Manager/Employee).' using errcode='23505';
+  end if;
+end $$;
+
 -- ============================================================
 -- 1. ensure_org_system_roles(org) — idempotent system roles + default grants.
 --    Mirrors 0012 / ROLE_GRANTS exactly (parity-tested). record_scope: NULL =

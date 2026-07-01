@@ -17,7 +17,19 @@ begin;
   drop function if exists public.validate_custom_role_payload(jsonb);
   drop function if exists public.custom_role_grant_check(text, text);
   drop index if exists public.roles_org_name_norm_uniq;
-  alter table public.roles drop column if exists description;
+  -- Drop description ONLY if 0016 created it (provenance stamp) — never a
+  -- pre-existing column (review v4 #1).
+  do $$ begin
+    if exists (
+      select 1 from pg_description d
+      join pg_class c on c.oid = d.objoid
+      join pg_attribute a on a.attrelid = c.oid and a.attnum = d.objsubid
+      where c.oid = 'public.roles'::regclass and a.attname = 'description'
+        and d.description = 'avi:0016 roles.description'
+    ) then
+      alter table public.roles drop column description;
+    end if;
+  end $$;
   drop table if exists public.audit_events;
   notify pgrst, 'reload schema';
 commit;

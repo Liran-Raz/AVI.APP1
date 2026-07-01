@@ -69,13 +69,17 @@ begin
   if exists (
     select 1 from information_schema.columns
     where table_schema='public' and table_name='roles' and column_name='description'
-      and data_type <> 'text'
   ) then
-    raise exception 'Refusing to apply 0016: roles.description exists with an unexpected type.';
+    raise exception 'Refusing to apply 0016: roles.description already exists (any type) — 0016 must be the SOLE creator of that column.';
   end if;
 end $$;
 
-alter table public.roles add column if not exists description text;
+-- Strict single-creator (review v4 #1): 0016 is the SOLE creator of
+-- roles.description (guarded absent above; no IF NOT EXISTS). The comment is a
+-- provenance stamp so the PRE-DATA rollback only ever drops a 0016-created
+-- column, never a pre-existing one.
+alter table public.roles add column description text;
+comment on column public.roles.description is 'avi:0016 roles.description';
 
 -- ---- Concurrency-safe normalized role-name uniqueness (review #6) ----
 do $$
