@@ -1,11 +1,23 @@
--- 0016 acceptance — full ACL/cardinality + function-security proof (review v4 #4),
--- BOOLEAN-ONLY and catalog-safe (review v4 #5): exactly one row, all_checks_passed
--- = true/false, NEVER NULL / NEVER an exception even when a table / index /
--- function / trigger is absent, or a function is overloaded. Cardinality is asserted
--- by explicit counts (=3 tables, =7 functions), NOT bool_and over "found" rows.
+-- 0016 acceptance — v6: CATALOG-EXACT function / index / description / trigger
+-- proof (review v6 #4). BOOLEAN-ONLY and catalog-safe: exactly one row,
+-- all_checks_passed = t/f, NEVER NULL / NEVER an exception. Cardinality by explicit
+-- counts. The unique index is proven via pg_index catalog data (not a regex over
+-- pg_get_indexdef): schema public, table public.roles, UNIQUE, btree, non-partial,
+-- exactly two key attributes, no INCLUDE attributes, first key column = org_id,
+-- second key = EXACTLY ONE expression normalized to lower(btrim(name)). The
+-- roles.description column is proven via pg_attribute / pg_attrdef (v6 #4): exact
+-- type text, nullable, no default, and the provenance stamp `avi:0016
+-- roles.description` is resolved via the REAL pg_attribute.attnum (NOT
+-- information_schema.ordinal_position). The updated-at trigger is proven with an
+-- EXACT tgtype = 19 (ROW + BEFORE + UPDATE only — rejects statement-level,
+-- extra-INSERT/DELETE/TRUNCATE variants) + exact tgfoid =
+-- to_regprocedure('public.set_updated_at()') (rejects a same-named function in
+-- another schema).
 -- Run: psql -At -f supabase/validation/0016_acceptance.sql  (expect t after apply)
+
+with rx as (select to_regclass('public.roles_org_name_norm_uniq') as oid)
 select coalesce((
-  -- exactly the 3 tables exist, each with RLS on
+  -- ---- exactly the 3 tables exist, each with RLS on ----
       coalesce((select count(*) from pg_class c join pg_namespace n on n.oid=c.relnamespace
         where n.nspname='public' and c.relname in ('roles','role_permissions','audit_events')
           and c.relkind='r' and c.relrowsecurity) = 3, false)
@@ -24,7 +36,7 @@ select coalesce((
         cross join (values ('anon'),('authenticated')) r(role)
         cross join (values ('SELECT'),('INSERT'),('UPDATE'),('DELETE'),('TRUNCATE'),('REFERENCES'),('TRIGGER')) p(priv)
         where n.nspname='public' and c.relname in ('roles','role_permissions','audit_events')), true)
-  -- exactly 7 functions across the 7 names (no overloads, none missing)
+  -- ---- exactly 7 functions across the 7 names (no overloads, none missing) ----
   and coalesce((select count(*) from pg_proc p join pg_namespace n on n.oid=p.pronamespace
         where n.nspname='public' and p.proname in
           ('create_org_role','update_org_role','delete_org_role','duplicate_org_role','list_org_roles',
@@ -64,22 +76,62 @@ select coalesce((
           ('create_org_role','update_org_role','delete_org_role','duplicate_org_role','list_org_roles',
            'custom_role_grant_check','validate_custom_role_payload')
           and a.grantee=0 and a.privilege_type='EXECUTE')), false)
-  -- unique index: EXACT — unique, NON-partial, btree expression (org_id, lower(btrim(name)))
-  and coalesce((select i.indisunique and i.indpred is null from pg_class c join pg_index i on i.indexrelid=c.oid
-        where c.relname='roles_org_name_norm_uniq'), false)
-  and coalesce(pg_get_indexdef(to_regclass('public.roles_org_name_norm_uniq')) ~ 'CREATE UNIQUE INDEX', false)
-  and coalesce(pg_get_indexdef(to_regclass('public.roles_org_name_norm_uniq')) ~ 'USING btree \(org_id, lower\(btrim\(name\)\)\)', false)
-  -- roles.description EXACT shape: text, NULLABLE, NO default, + provenance stamp comment
-  and coalesce((select data_type='text' and is_nullable='YES' and column_default is null
-        from information_schema.columns
-        where table_schema='public' and table_name='roles' and column_name='description'), false)
-  and coalesce((select col_description(to_regclass('public.roles'), ordinal_position::int) = 'avi:0016 roles.description'
-        from information_schema.columns where table_schema='public' and table_name='roles' and column_name='description'), false)
-  -- roles_set_updated_at trigger: EXACT — enabled, BEFORE UPDATE, FOR EACH ROW, calls public.set_updated_at
-  and coalesce((select exists (
-        select 1 from pg_trigger t join pg_class c on c.oid=t.tgrelid join pg_namespace n on n.oid=c.relnamespace
-          join pg_proc p on p.oid=t.tgfoid join pg_namespace pn on pn.oid=p.pronamespace
+  -- ---- roles_org_name_norm_uniq via pg_index (v6 #4): schema public, table
+  -- public.roles, UNIQUE btree, non-partial, 2 key attrs, no INCLUDE, first key
+  -- column = org_id, second key = EXACTLY ONE expression normalized to
+  -- lower(btrim(name)). ----
+  and coalesce((select ic.oid is not null and ns.nspname = 'public'
+        from pg_class ic
+        join pg_namespace ns on ns.oid = ic.relnamespace
+        where ic.oid = (select oid from rx)), false)
+  and coalesce((select rc.relname = 'roles' and rn.nspname = 'public'
+        from pg_index i
+        join pg_class rc on rc.oid = i.indrelid
+        join pg_namespace rn on rn.oid = rc.relnamespace
+        where i.indexrelid = (select oid from rx)), false)
+  and coalesce((select am.amname = 'btree'
+        from pg_index i
+        join pg_class ic on ic.oid = i.indexrelid
+        join pg_am am on am.oid = ic.relam
+        where i.indexrelid = (select oid from rx)), false)
+  and coalesce((select i.indisunique
+        from pg_index i where i.indexrelid = (select oid from rx)), false)
+  and coalesce((select i.indpred is null
+        from pg_index i where i.indexrelid = (select oid from rx)), false)
+  and coalesce((select i.indnkeyatts = 2
+        from pg_index i where i.indexrelid = (select oid from rx)), false)
+  and coalesce((select i.indnatts = 2
+        from pg_index i where i.indexrelid = (select oid from rx)), false)
+  -- first key: attnum(org_id); second key: 0 (= placeholder for an expression)
+  and coalesce((select (select a.attname from pg_attribute a
+                          where a.attrelid = i.indrelid and a.attnum = i.indkey[0]) = 'org_id'
+        from pg_index i where i.indexrelid = (select oid from rx)), false)
+  and coalesce((select i.indkey[1] = 0
+        from pg_index i where i.indexrelid = (select oid from rx)), false)
+  -- exactly ONE expression key, normalized to lower(btrim(name))
+  and coalesce((select i.indexprs is not null
+        from pg_index i where i.indexrelid = (select oid from rx)), false)
+  and coalesce((select pg_get_expr(i.indexprs, i.indrelid) ~ '^lower\(btrim\("?name"?\)\)$'
+        from pg_index i where i.indexrelid = (select oid from rx)), false)
+  -- ---- roles.description via pg_attribute / pg_attrdef (v6 #4): exact type text,
+  -- NULLABLE, NO default. The provenance stamp `avi:0016 roles.description` is
+  -- resolved via the REAL pg_attribute.attnum (NOT information_schema.ordinal_position). ----
+  and coalesce((select a.atttypid = 'text'::regtype
+                    and not a.attnotnull
+                    and not a.atthasdef
+                    and col_description(a.attrelid, a.attnum::int) = 'avi:0016 roles.description'
+        from pg_attribute a
+        where a.attrelid = to_regclass('public.roles')
+          and a.attname = 'description' and not a.attisdropped), false)
+  -- ---- roles_set_updated_at trigger: EXACTLY tgtype=19 (ROW + BEFORE + UPDATE only)
+  -- + EXACT tgfoid = to_regprocedure('public.set_updated_at()') (v6 #2). Rejects a
+  -- statement-level trigger (missing ROW bit), an extra INSERT/DELETE/TRUNCATE event
+  -- (extra event bits), or a same-named function in another schema (wrong OID). ----
+  and coalesce((select count(*) from pg_trigger t
+        join pg_class c on c.oid = t.tgrelid
+        join pg_namespace n on n.oid = c.relnamespace
         where n.nspname='public' and c.relname='roles' and t.tgname='roles_set_updated_at'
-          and t.tgenabled <> 'D' and (t.tgtype & 1) <> 0 and (t.tgtype & 2) <> 0 and (t.tgtype & 16) <> 0
-          and pn.nspname='public' and p.proname='set_updated_at')), false)
+          and t.tgenabled <> 'D'
+          and t.tgtype = 19
+          and t.tgfoid = to_regprocedure('public.set_updated_at()')) = 1, false)
 ), false) as all_checks_passed;

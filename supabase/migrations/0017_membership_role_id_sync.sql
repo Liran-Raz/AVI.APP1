@@ -41,6 +41,29 @@
 --   * Defense in depth: the composite FK (role_id, org_id) (0011) also rejects
 --     cross-org / dangling assignments.
 --
+-- INSTALL-TIME RACE (review v6 #1): the per-org advisory lock in
+-- ensure_org_system_roles only serializes CONCURRENT PROVISIONING after this
+-- function exists. Before COMMIT, a legacy enum-only writer running against
+-- organization_memberships could create drift between the drift guard and the
+-- CREATE TRIGGER step (writer commits an enum change; the migration then sees
+-- role='admin' but role_id at the 'employee' system role). To close this window
+-- we take an EXPLICIT TABLE LOCK IN SHARE ROW EXCLUSIVE MODE on the three
+-- involved tables BEFORE the drift guard runs. SHARE ROW EXCLUSIVE conflicts
+-- with ROW EXCLUSIVE (INSERT/UPDATE/DELETE) so it blocks every legacy writer,
+-- but it does NOT conflict with ACCESS SHARE so ordinary SELECT keeps working.
+-- The lock is held until COMMIT and covers the drift classification, function
+-- creation, CREATE TRIGGER (itself SHARE ROW EXCLUSIVE, compatible), the seed
+-- loop, and the backfill — the migration's view of memberships/roles/
+-- role_permissions is stable end-to-end. The advisory per-org lock remains as
+-- defense in depth for POST-migration concurrent provisioning of a new org.
+--
+-- SYSTEM-ROLE DISPLAY NAMES (review v6 #6, STOP-not-reconcile): the drift guard
+-- also refuses to apply if an existing SYSTEM role has a display name other than
+-- the expected owner=Owner / admin=Manager / employee=Employee. This is a
+-- deterministic guarantee for downstream UI and audit; automatic reconciliation
+-- would silently overwrite an operator-chosen rename, so we STOP and force a
+-- deliberate rename outside the migration.
+--
 -- APPLY AS ROLE postgres in the SQL Editor, AFTER 0011-0016. Re-apply is
 -- REJECTED by the no-overload guards (functions already exist); the data steps
 -- are idempotent.
@@ -78,6 +101,18 @@ begin
     raise exception 'Refusing to apply 0017: trigger organization_memberships_sync_role_id already exists.';
   end if;
 end $$;
+
+-- ---- Install-time write lock (review v6 #1): acquire SHARE ROW EXCLUSIVE on
+-- the three involved tables BEFORE the drift guard runs. This mode conflicts
+-- with ROW EXCLUSIVE (INSERT/UPDATE/DELETE) and blocks every legacy writer
+-- until COMMIT; ordinary SELECT (ACCESS SHARE) is unaffected. If a legacy
+-- writer already holds ROW EXCLUSIVE we WAIT for it — the migration cannot
+-- observe a partial view of memberships or roles. CREATE TRIGGER (also SHARE
+-- ROW EXCLUSIVE) is compatible with the lock this transaction already owns.
+lock table public.organization_memberships,
+           public.roles,
+           public.role_permissions
+  in share row exclusive mode;
 
 -- ---- Drift strategy (review v4 #2): STOP on any NON-REPAIRABLE drift BEFORE
 -- doing any work, so a problem is never first discovered in postflight after
@@ -155,6 +190,20 @@ begin
   if exists (select 1 from public.roles where is_system = false
              and lower(btrim(name)) in ('owner','manager','employee')) then
     raise exception 'Refusing to apply 0017: NON-REPAIRABLE drift — a custom role name normalizes to a reserved system role name (Owner/Manager/Employee).' using errcode='23505';
+  end if;
+  -- (h) SYSTEM-role display name drift (review v6 #6): STOP if any existing system
+  --     role has a display name different from the expected canonical name. We do
+  --     NOT silently rename an operator's choice; the fix is a deliberate manual
+  --     UPDATE outside this migration.
+  if exists (
+    select 1 from public.roles
+    where is_system and (
+         (key = 'owner'    and name is distinct from 'Owner')
+      or (key = 'admin'    and name is distinct from 'Manager')
+      or (key = 'employee' and name is distinct from 'Employee')
+    )
+  ) then
+    raise exception 'Refusing to apply 0017: NON-REPAIRABLE drift — a system role has a display name different from the expected canonical (owner=Owner / admin=Manager / employee=Employee). Rename it manually first.' using errcode='23514';
   end if;
 end $$;
 

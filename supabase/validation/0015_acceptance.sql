@@ -1,58 +1,114 @@
--- 0015 acceptance — audit_events EXACT shape (review v4 #3), BOOLEAN-ONLY and
--- catalog-safe (review v4 #5): returns exactly one row with `all_checks_passed`
+-- 0015 acceptance — v6: CATALOG-EXACT constraint + index proof (review v6 #3).
+-- BOOLEAN-ONLY and catalog-safe: returns exactly one row with `all_checks_passed`
 -- = true or false, NEVER NULL and NEVER an exception, even when the table / index
--- is absent. Every nullable catalog expression is wrapped in coalesce(...,false).
+-- is absent. Every check reads pg_class / pg_constraint / pg_index / pg_attribute
+-- directly. The 2 CHECK constraints are anchored to the EXACT normalized form of
+-- pg_get_constraintdef, so a weak variant that merely MENTIONS btrim(action) is
+-- rejected (it must be exactly `CHECK ((length(btrim(action)) > 0))`, and same
+-- for target_type). The index is proven via pg_index catalog data (not via
+-- pg_get_indexdef regex): schema, table, btree, non-unique, non-partial, exactly
+-- two key attributes, no INCLUDE attributes, no expressions, first key column
+-- exactly org_id ASC, second key exactly created_at DESC. Every nullable
+-- catalog expression is wrapped in coalesce(...,false).
 -- Run: psql -At -f supabase/validation/0015_acceptance.sql  (expect t after apply)
-with t as (select to_regclass('public.audit_events') as oid)
+
+with t as (select to_regclass('public.audit_events') as oid),
+     ix as (select to_regclass('public.audit_events_org_created_idx') as oid)
 select coalesce((
-      (select oid is not null from t)                                                   -- table exists
-  and coalesce((select c.relowner='postgres'::regrole from pg_class c, t where c.oid=t.oid), false)   -- owner postgres
-  and coalesce((select c.relrowsecurity from pg_class c, t where c.oid=t.oid), false)    -- RLS on
-  and (select count(*) from pg_policies where schemaname='public' and tablename='audit_events') = 0   -- zero policies
-  -- exact columns: name:type:nullable in ordinal order
+      -- ---- table exists / owner / RLS / no policies ----
+      (select oid is not null from t)
+  and coalesce((select c.relowner='postgres'::regrole from pg_class c, t where c.oid=t.oid), false)
+  and coalesce((select c.relrowsecurity from pg_class c, t where c.oid=t.oid), false)
+  and (select count(*) from pg_policies where schemaname='public' and tablename='audit_events') = 0
+  -- ---- exact columns (name:type:nullable in ordinal order) ----
   and coalesce((select string_agg(column_name||':'||data_type||':'||is_nullable, ',' order by ordinal_position)
        from information_schema.columns where table_schema='public' and table_name='audit_events')
       = 'id:uuid:NO,org_id:uuid:NO,actor_user_id:uuid:NO,action:text:NO,target_type:text:NO,target_id:uuid:YES,metadata:jsonb:NO,created_at:timestamp with time zone:NO', false)
-  -- exact defaults for id, metadata, created_at
+  -- ---- exact defaults for id / metadata / created_at ----
   and coalesce((select column_default like 'gen_random_uuid()%' from information_schema.columns
        where table_schema='public' and table_name='audit_events' and column_name='id'), false)
   and coalesce((select column_default like '%''{}''::jsonb%' from information_schema.columns
        where table_schema='public' and table_name='audit_events' and column_name='metadata'), false)
   and coalesce((select column_default like 'now()%' from information_schema.columns
        where table_schema='public' and table_name='audit_events' and column_name='created_at'), false)
-  -- PRIMARY KEY exactly on {id}
-  and coalesce((select array_agg(a.attname::text order by a.attname::text) = array['id']
-       from pg_constraint con
-       cross join lateral unnest(con.conkey) k(attnum)
-       join pg_attribute a on a.attrelid=con.conrelid and a.attnum=k.attnum
-       where con.conrelid = to_regclass('public.audit_events') and con.contype='p'), false)
-  -- FK: EXACTLY audit_events.org_id -> organizations.id, single-column, ON DELETE CASCADE
-  and coalesce((select count(*) from pg_constraint con
-       join pg_class rc on rc.oid=con.confrelid
-       where con.conrelid = to_regclass('public.audit_events') and con.contype='f'
-         and rc.relname='organizations' and con.confdeltype='c'
-         and cardinality(con.conkey)=1 and cardinality(con.confkey)=1
-         and (select a.attname from pg_attribute a where a.attrelid=con.conrelid and a.attnum=con.conkey[1]) = 'org_id'
-         and (select a.attname from pg_attribute a where a.attrelid=con.confrelid and a.attnum=con.confkey[1]) = 'id') = 1, false)
-  -- EXACTLY 2 CHECK constraints: one non-empty(action), one non-empty(target_type)
-  and coalesce((select count(*) filter (where contype='c') from pg_constraint
-       where conrelid = to_regclass('public.audit_events')) = 2, false)
-  and coalesce((select count(*) from pg_constraint
-       where conrelid = to_regclass('public.audit_events') and contype='c'
-         and pg_get_constraintdef(oid) ~ 'btrim\(action\)') = 1, false)
-  and coalesce((select count(*) from pg_constraint
-       where conrelid = to_regclass('public.audit_events') and contype='c'
-         and pg_get_constraintdef(oid) ~ 'btrim\(target_type\)') = 1, false)
-  -- EXACT index: NON-UNIQUE btree audit_events_org_created_idx (org_id, created_at DESC)
-  and coalesce((select i.indisunique = false from pg_class c join pg_index i on i.indexrelid=c.oid
-       where c.relname='audit_events_org_created_idx'), false)
-  and coalesce(pg_get_indexdef(to_regclass('public.audit_events_org_created_idx')) ~ 'USING btree \(org_id, created_at DESC\)', false)
-  -- no direct PUBLIC(0)/anon/authenticated ACL
+  -- ---- PRIMARY KEY: EXACTLY one PK, EXACTLY one key column, EXACTLY 'id' (v6 #3) ----
+  and coalesce((select count(*) from pg_constraint c, t
+       where c.conrelid = t.oid and c.contype = 'p') = 1, false)
+  and coalesce((select cardinality(c.conkey) = 1
+       from pg_constraint c, t where c.conrelid = t.oid and c.contype = 'p'), false)
+  and coalesce((select (select a.attname from pg_attribute a
+                          where a.attrelid = c.conrelid and a.attnum = c.conkey[1]) = 'id'
+       from pg_constraint c, t where c.conrelid = t.oid and c.contype = 'p'), false)
+  -- ---- FOREIGN KEY: EXACTLY one FK on the table AND it matches
+  -- audit_events.org_id -> public.organizations.id ON DELETE CASCADE, single-col (v6 #3) ----
+  and coalesce((select count(*) from pg_constraint c, t
+       where c.conrelid = t.oid and c.contype = 'f') = 1, false)
+  and coalesce((select cardinality(c.conkey) = 1 and cardinality(c.confkey) = 1
+       from pg_constraint c, t where c.conrelid = t.oid and c.contype = 'f'), false)
+  and coalesce((select (select a.attname from pg_attribute a
+                          where a.attrelid = c.conrelid and a.attnum = c.conkey[1]) = 'org_id'
+       from pg_constraint c, t where c.conrelid = t.oid and c.contype = 'f'), false)
+  and coalesce((select rn.nspname = 'public' and rc.relname = 'organizations'
+       from pg_constraint c, t
+       join pg_class rc on rc.oid = c.confrelid
+       join pg_namespace rn on rn.oid = rc.relnamespace
+       where c.conrelid = t.oid and c.contype = 'f'), false)
+  and coalesce((select (select a.attname from pg_attribute a
+                          where a.attrelid = c.confrelid and a.attnum = c.confkey[1]) = 'id'
+       from pg_constraint c, t where c.conrelid = t.oid and c.contype = 'f'), false)
+  and coalesce((select c.confdeltype = 'c'
+       from pg_constraint c, t where c.conrelid = t.oid and c.contype = 'f'), false)
+  -- ---- CHECK CONSTRAINTS: EXACTLY 2, anchored to the exact normalized form (v6 #3).
+  -- Rejects weak variants that merely reference btrim / mention 'action'. ----
+  and coalesce((select count(*) from pg_constraint c, t
+       where c.conrelid = t.oid and c.contype = 'c') = 2, false)
+  and coalesce((select count(*) from pg_constraint c, t
+       where c.conrelid = t.oid and c.contype = 'c'
+         and pg_get_constraintdef(c.oid) ~ '^CHECK \(\(length\(btrim\("?action"?\)\) > 0\)\)$') = 1, false)
+  and coalesce((select count(*) from pg_constraint c, t
+       where c.conrelid = t.oid and c.contype = 'c'
+         and pg_get_constraintdef(c.oid) ~ '^CHECK \(\(length\(btrim\("?target_type"?\)\) > 0\)\)$') = 1, false)
+  -- ---- INDEX audit_events_org_created_idx via pg_index catalog (v6 #3): schema
+  -- public, table public.audit_events, btree, non-unique, non-partial, 2 key attrs,
+  -- no INCLUDE, no expressions, first key = org_id ASC, second key = created_at DESC. ----
+  and coalesce((select ic.oid is not null and ns.nspname = 'public'
+        from pg_class ic
+        join pg_namespace ns on ns.oid = ic.relnamespace
+        where ic.oid = (select oid from ix)), false)
+  and coalesce((select i.indrelid = t.oid
+        from pg_index i, t
+        where i.indexrelid = (select oid from ix)), false)
+  and coalesce((select am.amname = 'btree'
+        from pg_index i
+        join pg_class ic on ic.oid = i.indexrelid
+        join pg_am am on am.oid = ic.relam
+        where i.indexrelid = (select oid from ix)), false)
+  and coalesce((select not i.indisunique
+        from pg_index i where i.indexrelid = (select oid from ix)), false)
+  and coalesce((select i.indpred is null
+        from pg_index i where i.indexrelid = (select oid from ix)), false)
+  and coalesce((select i.indnkeyatts = 2
+        from pg_index i where i.indexrelid = (select oid from ix)), false)
+  and coalesce((select i.indnatts = 2
+        from pg_index i where i.indexrelid = (select oid from ix)), false)
+  and coalesce((select i.indexprs is null
+        from pg_index i where i.indexrelid = (select oid from ix)), false)
+  and coalesce((select (select a.attname from pg_attribute a
+                          where a.attrelid = i.indrelid and a.attnum = i.indkey[0]) = 'org_id'
+        from pg_index i where i.indexrelid = (select oid from ix)), false)
+  and coalesce((select (i.indoption[0] & 1) = 0
+        from pg_index i where i.indexrelid = (select oid from ix)), false)
+  and coalesce((select (select a.attname from pg_attribute a
+                          where a.attrelid = i.indrelid and a.attnum = i.indkey[1]) = 'created_at'
+        from pg_index i where i.indexrelid = (select oid from ix)), false)
+  and coalesce((select (i.indoption[1] & 1) = 1
+        from pg_index i where i.indexrelid = (select oid from ix)), false)
+  -- ---- ACL: no direct PUBLIC(0)/anon/authenticated table ACL ----
   and coalesce((select not exists (
         select 1 from pg_class c, t
         cross join lateral aclexplode(coalesce(c.relacl, acldefault('r'::"char", c.relowner))) a
         where c.oid=t.oid and (a.grantee=0 or a.grantee='anon'::regrole or a.grantee='authenticated'::regrole))), false)
-  -- no EFFECTIVE privilege of ANY of the 7 types for anon/authenticated (covers PUBLIC-inherited)
+  -- ---- no EFFECTIVE privilege of ANY of the 7 types for anon/authenticated ----
   and coalesce((select bool_and(not has_table_privilege(r.role, c.oid, p.priv))
        from pg_class c, t
        cross join (values ('anon'),('authenticated')) r(role)

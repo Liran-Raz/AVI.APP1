@@ -10,17 +10,30 @@
 | Field | Value |
 |---|---|
 | Path | `supabase/migrations/0017_membership_role_id_sync.sql` |
-| Git blob | `df41d8bbfe67feab9eef8f84bbb93e23d62fbd4a` |
-| SHA-256 | `caf995ee309a291f40acb01f85a2a90d28b6b89e71501e2ce30983fe9cc719f0` |
-| Bytes / lines | 23140 / 441 |
+| Git blob | (regenerated for v6 — see `review-bundle/AVI-PR39-independent-review-v6.zip/MANIFEST.sha256`) |
+| SHA-256 | (regenerated for v6 — see `review-bundle/AVI-PR39-independent-review-v6.zip/MANIFEST.sha256`) |
+| Bytes / lines | (regenerated for v6 — see the same manifest) |
 
 ## What it does
+- **Install-time write lock (review v6 #1):** BEFORE the drift guard runs, 0017
+  takes `LOCK TABLE public.organization_memberships, public.roles,
+  public.role_permissions IN SHARE ROW EXCLUSIVE MODE`. SHARE ROW EXCLUSIVE
+  conflicts with ROW EXCLUSIVE (`INSERT`/`UPDATE`/`DELETE`) and blocks every legacy
+  writer until COMMIT — the migration's view of memberships/roles/role_permissions
+  is stable end-to-end (drift classification → function creation → CREATE TRIGGER
+  (itself SHARE ROW EXCLUSIVE, compatible) → seed loop → backfill). ACCESS SHARE
+  (SELECT) is unaffected. CI job `validate-membership-sync-install-race` proves
+  BOTH orderings with separate PG sessions: (A) writer holds ROW EXCLUSIVE →
+  migration blocks → writer commits → migration aborts on drift; (B) helper holds
+  SHARE ROW EXCLUSIVE → concurrent enum-only writer waits → helper releases →
+  writer completes → post-apply enum-only update goes through the new trigger.
 - `ensure_org_system_roles(org)` (SECURITY DEFINER): idempotently creates the 3
   system roles + their 88 default grants for one org (mirrors 0012 / `ROLE_GRANTS`).
   Takes a transaction-scoped advisory lock keyed on `org_id` (review v5 #1) so
-  concurrent provisioning of the SAME org is serialized (no race); different orgs
-  use different keys (no cross-org contention). CI proves two concurrent first
-  memberships of a new org yield exactly 3 system roles, both mapped.
+  concurrent provisioning of the SAME org is serialized POST-migration (no race);
+  different orgs use different keys (no cross-org contention). Defense in depth
+  ALONGSIDE the install-time table lock. CI proves two concurrent first memberships
+  of a new org yield exactly 3 system roles, both mapped.
 - `sync_membership_role_id()` BEFORE INSERT/UPDATE trigger — **strict rules**
   (review v3 #5): provisions when the SPECIFIC enum role is missing; maps a NULL
   `role_id` to the enum's system role (never leaves NULL); a `role_id := NULL`
@@ -30,12 +43,15 @@
   on an unchanged update a CUSTOM pointer is preserved and a SYSTEM/NULL one is
   re-synced.
 - Seeds every existing org + backfills any NULL `role_id`.
-- **Drift guard (review v4 #2):** an in-migration guard ABORTS before COMMIT on any
-  NON-REPAIRABLE drift (extra/undefined system role; extra grant or wrong scope;
-  mismatched or cross-org/dangling active `role_id`; normalized-name conflict; a custom
-  name that normalizes to a reserved system name). REPAIRABLE drift (missing system
-  roles / missing grants / NULL `role_id`) is deterministically filled by the idempotent
-  seed + backfill. A problem is never first discovered in postflight after COMMIT.
+- **Drift guard (review v4 #2, extended v6 #6):** an in-migration guard ABORTS
+  before COMMIT on any NON-REPAIRABLE drift (extra/undefined system role; extra
+  grant or wrong scope; mismatched or cross-org/dangling active `role_id`;
+  normalized-name conflict; a custom name that normalizes to a reserved system
+  name; **a system role whose display name is not the expected canonical
+  `owner=Owner` / `admin=Manager` / `employee=Employee`, STOP not reconcile**).
+  REPAIRABLE drift (missing system roles / missing grants / NULL `role_id`) is
+  deterministically filled by the idempotent seed + backfill. A problem is never
+  first discovered in postflight after COMMIT.
 
 CI proof: `validate-membership-sync` (T1–T19 + drift-category rejection + boolean-only
 acceptance + cutover preflight + missing-object=false) on throwaway PostgreSQL —
@@ -106,6 +122,14 @@ select
             where m.is_active and m.role_id is not null and r.id is null), false) as cross_org_or_dangling_role_id,
   coalesce((select count(*)>0 from (select 1 from public.roles group by org_id, lower(btrim(name)) having count(*)>1) z), false) as normalized_name_conflict,
   coalesce((select count(*)>0 from public.roles where is_system=false and lower(btrim(name)) in ('owner','manager','employee')), false) as custom_name_reserved,
+  -- review v6 #6: system-role display-name drift — STOP if any existing system role
+  -- has a display name other than the expected canonical (owner=Owner /
+  -- admin=Manager / employee=Employee). The migration guard also refuses to run.
+  coalesce((select count(*)>0 from public.roles
+            where is_system and (
+                 (key='owner'    and name is distinct from 'Owner')
+              or (key='admin'    and name is distinct from 'Manager')
+              or (key='employee' and name is distinct from 'Employee'))), false) as system_role_wrong_name,
   coalesce((
         not exists (select 1 from public.roles where is_system and key not in ('owner','admin','employee'))
     and not exists (select 1 from public.roles where is_system=false and key in ('owner','admin','employee'))
@@ -118,6 +142,10 @@ select
           where m.is_active and m.role_id is not null and r.id is null)
     and not exists (select 1 from (select 1 from public.roles group by org_id, lower(btrim(name)) having count(*)>1) z)
     and not exists (select 1 from public.roles where is_system=false and lower(btrim(name)) in ('owner','manager','employee'))
+    and not exists (select 1 from public.roles where is_system and (
+             (key='owner'    and name is distinct from 'Owner')
+          or (key='admin'    and name is distinct from 'Manager')
+          or (key='employee' and name is distinct from 'Employee')))
   ), false) as safe_to_apply;
 ```
 
@@ -171,10 +199,14 @@ select
   -- functions + trigger present with the right shape
       to_regprocedure('public.ensure_org_system_roles(uuid)') is not null
   and to_regprocedure('public.sync_membership_role_id()') is not null
+  -- review v6 #2: EXACT tgtype = 23 (ROW + BEFORE + INSERT + UPDATE only — rejects
+  -- statement-level, extra DELETE, extra TRUNCATE) + EXACT tgfoid via to_regprocedure
+  -- (rejects a same-named function in another schema).
   and exists (select 1 from pg_trigger t join pg_class c on c.oid=t.tgrelid join pg_namespace n on n.oid=c.relnamespace
               where n.nspname='public' and c.relname='organization_memberships'
                 and t.tgname='organization_memberships_sync_role_id' and t.tgenabled<>'D'
-                and (t.tgtype & 2)<>0 and (t.tgtype & 4)<>0 and (t.tgtype & 16)<>0)  -- BEFORE + INSERT + UPDATE
+                and t.tgtype = 23
+                and t.tgfoid = to_regprocedure('public.sync_membership_role_id()'))
   -- membership invariants (review v3 #5/#6)
   and (select count(*) from public.organization_memberships where is_active and role_id is null)=0
   and (select count(*) from public.organization_memberships m
@@ -190,6 +222,15 @@ select
         group by o.id
         having count(*) filter (where r.key in ('owner','admin','employee')) <> 3
             or count(*) filter (where r.key is not null and r.key not in ('owner','admin','employee')) > 0)
+  -- review v6 #6: SYSTEM-role display names match the expected canonical
+  -- (owner=Owner / admin=Manager / employee=Employee). STOP behavior — the
+  -- migration guard aborts on mismatch; the postflight refuses to mark green.
+  and not exists (
+        select 1 from public.roles
+        where is_system and (
+             (key = 'owner'    and name is distinct from 'Owner')
+          or (key = 'admin'    and name is distinct from 'Manager')
+          or (key = 'employee' and name is distinct from 'Employee')))
   -- EXACT per-org system-grant parity, both directions
   and not exists (
         select 1 from public.organizations o
