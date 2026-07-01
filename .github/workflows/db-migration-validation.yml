@@ -403,7 +403,10 @@ jobs:
             do \$mut\$ declare cn text;
             begin select conname into cn from pg_constraint where conrelid='public.audit_events'::regclass and contype='f';
               execute 'alter table public.audit_events drop constraint '||quote_ident(cn); end \$mut\$;
-            alter table public.audit_events add constraint fk_wrong foreign key (org_id) references public.roles(id) on delete cascade;
+            -- NOT VALID: skip validation of existing rows (they cannot possibly match
+            -- the wrong FK target). The catalog still records the WRONG confrelid, so
+            -- acceptance returns f — exactly what this negative is proving.
+            alter table public.audit_events add constraint fk_wrong foreign key (org_id) references public.roles(id) on delete cascade not valid;
           "
           NEG "0015-fk-wrong-schema" "0015_acceptance" "
             create schema if not exists other_schema;
@@ -411,7 +414,7 @@ jobs:
             do \$mut\$ declare cn text;
             begin select conname into cn from pg_constraint where conrelid='public.audit_events'::regclass and contype='f';
               execute 'alter table public.audit_events drop constraint '||quote_ident(cn); end \$mut\$;
-            alter table public.audit_events add constraint fk_wrong_schema foreign key (org_id) references other_schema.organizations(id) on delete cascade;
+            alter table public.audit_events add constraint fk_wrong_schema foreign key (org_id) references other_schema.organizations(id) on delete cascade not valid;
           "
           NEG "0015-fk-wrong-ondelete" "0015_acceptance" "
             do \$mut\$ declare cn text;
@@ -465,6 +468,9 @@ jobs:
           "
           # -------- 0016 (roles.description / roles_set_updated_at / roles_org_name_norm_uniq) --------
           NEG "0016-description-not-null" "0016_acceptance" "
+            -- Normalize any pre-existing NULL descriptions inside the transaction so
+            -- SET NOT NULL can succeed; the ROLLBACK reverts both changes.
+            update public.roles set description = coalesce(description, '');
             alter table public.roles alter column description set not null;
           "
           NEG "0016-description-with-default" "0016_acceptance" "
