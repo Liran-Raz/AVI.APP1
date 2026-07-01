@@ -10,9 +10,9 @@
 | Field | Value |
 |---|---|
 | Path | `supabase/migrations/0017_membership_role_id_sync.sql` |
-| Git blob | `c06023d162a7b0fe9625066824d4182356d2aa90` |
-| SHA-256 | `2ccce465033110e359844b5461eb24946fd3f3cfe33c06bba2d011841e44aa99` |
-| Bytes / lines | 15926 / 356 |
+| Git blob | `840e27afdc5a96b6e5cefa3e57267d65e4105d74` |
+| SHA-256 | `59bc0dfc2bdd4484d25c29407d4feb075fdcf9a6441a2dee8620723e1fabaf7c` |
+| Bytes / lines | 22729 / 435 |
 
 ## What it does
 - `ensure_org_system_roles(org)` (SECURITY DEFINER): idempotently creates the 3
@@ -26,8 +26,15 @@
   on an unchanged update a CUSTOM pointer is preserved and a SYSTEM/NULL one is
   re-synced.
 - Seeds every existing org + backfills any NULL `role_id`.
+- **Drift guard (review v4 #2):** an in-migration guard ABORTS before COMMIT on any
+  NON-REPAIRABLE drift (extra/undefined system role; extra grant or wrong scope;
+  mismatched or cross-org/dangling active `role_id`; normalized-name conflict; a custom
+  name that normalizes to a reserved system name). REPAIRABLE drift (missing system
+  roles / missing grants / NULL `role_id`) is deterministically filled by the idempotent
+  seed + backfill. A problem is never first discovered in postflight after COMMIT.
 
-CI proof: `validate-membership-sync` (T1–T19) on throwaway PostgreSQL —
+CI proof: `validate-membership-sync` (T1–T19 + drift-category rejection + boolean-only
+acceptance + cutover preflight + missing-object=false) on throwaway PostgreSQL —
 non-postgres-apply + duplicate-apply rejection; exact per-org system-role/grant
 parity (both directions); backfill; new-org-via-trigger; partial-org provisioning;
 enum re-sync; deactivate; custom no-clobber; valid + mismatched explicit changes;
@@ -51,16 +58,85 @@ select count(*) filter (where role_id is null) as null_role_id, count(*) as memb
 from public.organization_memberships;
 ```
 
+## Drift-classification preflight (review v4 #2 — run BEFORE applying)
+Read-only, BOOLEAN-ONLY. Classifies each drift category up front and returns
+`safe_to_apply`. PROCEED only if `safe_to_apply = t`. (The migration ALSO aborts before
+COMMIT on the same conditions, so this is a friendly early check, not the sole gate.)
+REPAIRABLE drift — missing system roles / missing grants / NULL `role_id` — is filled by
+the apply and is intentionally NOT flagged here.
+```sql
+with expected(role_key, permission_key, record_scope) as (values
+  ('owner','organization.view',null),('owner','organization.settings',null),('owner','organization.delete',null),
+  ('owner','settings.view',null),('owner','settings.manage',null),
+  ('owner','team.view',null),('owner','team.invite',null),('owner','team.deactivate',null),('owner','team.reactivate',null),('owner','team.remove',null),('owner','team.change_role',null),
+  ('owner','invitations.view',null),('owner','invitations.revoke',null),('owner','invitations.resend',null),
+  ('owner','roles.view',null),('owner','roles.manage',null),
+  ('owner','clients.view','all'),('owner','clients.create',null),('owner','clients.edit','all'),('owner','clients.archive','all'),('owner','clients.restore','all'),('owner','clients.delete','all'),('owner','clients.export','all'),
+  ('owner','contacts.view','all'),('owner','contacts.create',null),('owner','contacts.edit','all'),('owner','contacts.delete','all'),
+  ('owner','tasks.view','all'),('owner','tasks.create',null),('owner','tasks.edit','all'),('owner','tasks.change_status','all'),('owner','tasks.archive','all'),('owner','tasks.delete','all'),('owner','tasks.assign_self',null),('owner','tasks.assign_others',null),
+  ('owner','notifications.view',null),('owner','notifications.manage',null),
+  ('owner','billing.view',null),('owner','billing.manage',null),
+  ('admin','organization.view',null),('admin','settings.view',null),
+  ('admin','team.view',null),('admin','team.invite',null),('admin','team.deactivate',null),('admin','team.reactivate',null),('admin','team.change_role',null),
+  ('admin','invitations.view',null),('admin','invitations.revoke',null),('admin','invitations.resend',null),
+  ('admin','roles.view',null),
+  ('admin','clients.view','all'),('admin','clients.create',null),('admin','clients.edit','all'),('admin','clients.archive','all'),('admin','clients.restore','all'),
+  ('admin','contacts.view','all'),('admin','contacts.create',null),('admin','contacts.edit','all'),('admin','contacts.delete','all'),
+  ('admin','tasks.view','all'),('admin','tasks.create',null),('admin','tasks.edit','all'),('admin','tasks.change_status','all'),('admin','tasks.archive','all'),('admin','tasks.delete','all'),('admin','tasks.assign_self',null),('admin','tasks.assign_others',null),
+  ('admin','notifications.view',null),('admin','notifications.manage',null),
+  ('employee','organization.view',null),('employee','settings.view',null),('employee','team.view',null),
+  ('employee','clients.view','all'),('employee','clients.create',null),('employee','clients.edit','all'),
+  ('employee','contacts.view','all'),('employee','contacts.create',null),('employee','contacts.edit','all'),
+  ('employee','tasks.view','all'),('employee','tasks.create',null),('employee','tasks.edit','all'),('employee','tasks.change_status','all'),('employee','tasks.archive','all'),('employee','tasks.delete','all'),('employee','tasks.assign_self',null),('employee','tasks.assign_others',null),
+  ('employee','notifications.view',null),('employee','notifications.manage',null)
+)
+select
+  coalesce((select count(*)>0 from public.roles where is_system and key not in ('owner','admin','employee')), false) as extra_system_role,
+  coalesce((select count(*)>0 from public.roles where is_system=false and key in ('owner','admin','employee')), false) as system_key_not_system,
+  coalesce((select count(*)>0 from public.roles r join public.role_permissions rp on rp.role_id=r.id
+            where r.is_system and not exists (select 1 from expected e where e.role_key=r.key
+              and e.permission_key=rp.permission_key and e.record_scope is not distinct from rp.record_scope)), false) as extra_grant_or_wrong_scope,
+  coalesce((select count(*)>0 from public.organization_memberships m join public.roles r on r.id=m.role_id and r.org_id=m.org_id
+            where m.is_active and r.is_system and r.key<>m.role::text), false) as mismatched_active_role_id,
+  coalesce((select count(*)>0 from public.organization_memberships m left join public.roles r on r.id=m.role_id and r.org_id=m.org_id
+            where m.is_active and m.role_id is not null and r.id is null), false) as cross_org_or_dangling_role_id,
+  coalesce((select count(*)>0 from (select 1 from public.roles group by org_id, lower(btrim(name)) having count(*)>1) z), false) as normalized_name_conflict,
+  coalesce((select count(*)>0 from public.roles where is_system=false and lower(btrim(name)) in ('owner','manager','employee')), false) as custom_name_reserved,
+  coalesce((
+        not exists (select 1 from public.roles where is_system and key not in ('owner','admin','employee'))
+    and not exists (select 1 from public.roles where is_system=false and key in ('owner','admin','employee'))
+    and not exists (select 1 from public.roles r join public.role_permissions rp on rp.role_id=r.id
+          where r.is_system and not exists (select 1 from expected e where e.role_key=r.key
+            and e.permission_key=rp.permission_key and e.record_scope is not distinct from rp.record_scope))
+    and not exists (select 1 from public.organization_memberships m join public.roles r on r.id=m.role_id and r.org_id=m.org_id
+          where m.is_active and r.is_system and r.key<>m.role::text)
+    and not exists (select 1 from public.organization_memberships m left join public.roles r on r.id=m.role_id and r.org_id=m.org_id
+          where m.is_active and m.role_id is not null and r.id is null)
+    and not exists (select 1 from (select 1 from public.roles group by org_id, lower(btrim(name)) having count(*)>1) z)
+    and not exists (select 1 from public.roles where is_system=false and lower(btrim(name)) in ('owner','manager','employee'))
+  ), false) as safe_to_apply;
+```
+
 ## Execution
 Paste the entire unedited `0017_membership_role_id_sync.sql` and Run once. It owns
 its `BEGIN/COMMIT`. **Do not re-run** (the no-overload guard aborts a second apply).
 
-## Postflight (machine-readable; expect `all_checks_passed=true`)
-Proves the functions + trigger exist with the right shape, the membership
-invariants hold (no NULL / mismatched / cross-org active `role_id`), every org has
-exactly the 3 system roles, and EXACT per-org system-role/grant parity in BOTH
-directions (no missing, no extra). The expected catalog mirrors
-`ensure_org_system_roles` / `ROLE_GRANTS` (also guarded by the vitest SQL↔TS test).
+## Postflight (machine-readable, BOOLEAN-ONLY; expect `t`)
+**Step 1 — security objects + invariants (CI-tested):** run
+`supabase/validation/0017_acceptance.sql`; expect exactly `t`. It proves exactly 2
+functions with the exact signatures (no overloads), owner=postgres, SECURITY DEFINER,
+`search_path=''`, no EXECUTE for PUBLIC/anon/authenticated; exactly ONE non-internal
+`BEFORE INSERT OR UPDATE FOR EACH ROW` trigger on `public.organization_memberships` that
+calls `public.sync_membership_role_id()` (no competing trigger); and the membership
+invariants (no active NULL / cross-org / dangling / mismatched-system `role_id`; every
+org has exactly the 3 system roles).
+```
+psql -At -f supabase/validation/0017_acceptance.sql   # expect exactly: t
+```
+**Step 2 — EXACT per-org 88-grant parity (both directions):** run the query below; expect
+`all_checks_passed=t`. The expected catalog mirrors `ensure_org_system_roles` /
+`ROLE_GRANTS` (also guarded by the vitest SQL↔TS test and CI T1/T19). It is boolean-only
+(count / exists only).
 ```sql
 with expected(role_key, permission_key, record_scope) as (values
   ('owner','organization.view',null),('owner','organization.settings',null),('owner','organization.delete',null),
@@ -126,6 +202,16 @@ select
           except
           select e.role_key, e.permission_key, e.record_scope from expected e))
   as all_checks_passed;
+```
+
+## Authoritative-cutover preflight (review v4 #6 — a SEPARATE later gate)
+BEFORE enabling `DB_ROLE_AUTHORITATIVE`, run
+`supabase/validation/authoritative_cutover_preflight.sql`; it MUST return `t`. Under
+Decision A custom roles are NOT assignable to members, so if any ACTIVE membership
+resolves to a CUSTOM role the resolver fails closed and denies that user — the cutover
+must STOP.
+```
+psql -At -f supabase/validation/authoritative_cutover_preflight.sql   # expect exactly: t
 ```
 
 ## Rollback — two phases (do NOT destroy data post-use)
