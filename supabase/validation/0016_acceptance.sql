@@ -64,21 +64,22 @@ select coalesce((
           ('create_org_role','update_org_role','delete_org_role','duplicate_org_role','list_org_roles',
            'custom_role_grant_check','validate_custom_role_payload')
           and a.grantee=0 and a.privilege_type='EXECUTE')), false)
-  -- unique index: exists, unique, exact expression
-  and coalesce((select i.indisunique from pg_class c join pg_index i on i.indexrelid=c.oid
+  -- unique index: EXACT — unique, NON-partial, btree expression (org_id, lower(btrim(name)))
+  and coalesce((select i.indisunique and i.indpred is null from pg_class c join pg_index i on i.indexrelid=c.oid
         where c.relname='roles_org_name_norm_uniq'), false)
-  and coalesce(pg_get_indexdef(to_regclass('public.roles_org_name_norm_uniq')) ilike '%unique index%', false)
-  and coalesce(pg_get_indexdef(to_regclass('public.roles_org_name_norm_uniq')) ilike '%lower(btrim(name))%', false)
-  and coalesce(pg_get_indexdef(to_regclass('public.roles_org_name_norm_uniq')) ilike '%(org_id,%', false)
-  -- roles.description exact shape: text + provenance stamp comment
-  and coalesce((select data_type from information_schema.columns
-        where table_schema='public' and table_name='roles' and column_name='description') = 'text', false)
+  and coalesce(pg_get_indexdef(to_regclass('public.roles_org_name_norm_uniq')) ~ 'CREATE UNIQUE INDEX', false)
+  and coalesce(pg_get_indexdef(to_regclass('public.roles_org_name_norm_uniq')) ~ 'USING btree \(org_id, lower\(btrim\(name\)\)\)', false)
+  -- roles.description EXACT shape: text, NULLABLE, NO default, + provenance stamp comment
+  and coalesce((select data_type='text' and is_nullable='YES' and column_default is null
+        from information_schema.columns
+        where table_schema='public' and table_name='roles' and column_name='description'), false)
   and coalesce((select col_description(to_regclass('public.roles'), ordinal_position::int) = 'avi:0016 roles.description'
         from information_schema.columns where table_schema='public' and table_name='roles' and column_name='description'), false)
-  -- roles_set_updated_at trigger: enabled, BEFORE UPDATE, calls set_updated_at
+  -- roles_set_updated_at trigger: EXACT — enabled, BEFORE UPDATE, FOR EACH ROW, calls public.set_updated_at
   and coalesce((select exists (
         select 1 from pg_trigger t join pg_class c on c.oid=t.tgrelid join pg_namespace n on n.oid=c.relnamespace
-          join pg_proc p on p.oid=t.tgfoid
+          join pg_proc p on p.oid=t.tgfoid join pg_namespace pn on pn.oid=p.pronamespace
         where n.nspname='public' and c.relname='roles' and t.tgname='roles_set_updated_at'
-          and t.tgenabled <> 'D' and (t.tgtype & 2) <> 0 and (t.tgtype & 16) <> 0 and p.proname='set_updated_at')), false)
+          and t.tgenabled <> 'D' and (t.tgtype & 1) <> 0 and (t.tgtype & 2) <> 0 and (t.tgtype & 16) <> 0
+          and pn.nspname='public' and p.proname='set_updated_at')), false)
 ), false) as all_checks_passed;

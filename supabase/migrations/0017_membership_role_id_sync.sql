@@ -174,6 +174,12 @@ begin
     return;
   end if;
 
+  -- Serialize concurrent provisioning of the SAME org (review v5 #1) with a
+  -- transaction-scoped advisory lock keyed on org_id, so two concurrent inserts
+  -- into a brand-new org cannot race on system-role creation. Released at COMMIT;
+  -- different orgs use different keys, so there is no cross-org contention.
+  perform pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended(p_org_id::text, 0));
+
   insert into public.roles (org_id, key, name, is_system)
   values
     (p_org_id, 'owner',    'Owner',    true),

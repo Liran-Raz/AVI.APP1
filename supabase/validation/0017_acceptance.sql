@@ -16,15 +16,23 @@ select coalesce((
                                 where e like 'search_path=%' and btrim(split_part(e,'=',2),'"') = ''))
         from pg_proc p join pg_namespace n on n.oid=p.pronamespace
         where n.nspname='public' and p.proname in ('ensure_org_system_roles','sync_membership_role_id')), false)
-  -- no EXECUTE for PUBLIC(0)/anon/authenticated on either
+  -- no EXECUTE for PUBLIC(0)/anon/authenticated on either (catalog ACL)
   and coalesce((select not exists (
         select 1 from pg_proc p join pg_namespace n on n.oid=p.pronamespace
         cross join lateral aclexplode(coalesce(p.proacl, acldefault('f'::"char", p.proowner))) a
         where n.nspname='public' and p.proname in ('ensure_org_system_roles','sync_membership_role_id')
           and a.grantee in (0, 'anon'::regrole, 'authenticated'::regrole) and a.privilege_type='EXECUTE')), false)
-  -- exactly ONE non-internal trigger on organization_memberships (no competing trigger)
+  -- EFFECTIVE EXECUTE denied for anon + authenticated (covers PUBLIC-inherited) (v5 #4)
+  and coalesce((select bool_and(not has_function_privilege(g.role, p.oid, 'EXECUTE'))
+        from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+        cross join (values ('anon'),('authenticated')) g(role)
+        where n.nspname='public' and p.proname in ('ensure_org_system_roles','sync_membership_role_id')), false)
+  -- exactly ONE trigger RUNS public.sync_membership_role_id (no COMPETING sync trigger),
+  -- WITHOUT disqualifying other unrelated triggers on the table (v5 #5)
   and coalesce((select count(*) from pg_trigger t join pg_class c on c.oid=t.tgrelid join pg_namespace n on n.oid=c.relnamespace
-        where n.nspname='public' and c.relname='organization_memberships' and not t.tgisinternal) = 1, false)
+          join pg_proc p on p.oid=t.tgfoid join pg_namespace pn on pn.oid=p.pronamespace
+        where n.nspname='public' and c.relname='organization_memberships'
+          and pn.nspname='public' and p.proname='sync_membership_role_id' and not t.tgisinternal) = 1, false)
   -- and it is the expected one: enabled, BEFORE, INSERT+UPDATE, FOR EACH ROW, calls public.sync_membership_role_id
   and coalesce((select exists (
         select 1 from pg_trigger t join pg_class c on c.oid=t.tgrelid join pg_namespace n on n.oid=c.relnamespace

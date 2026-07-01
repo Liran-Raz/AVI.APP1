@@ -26,20 +26,27 @@ select coalesce((
        cross join lateral unnest(con.conkey) k(attnum)
        join pg_attribute a on a.attrelid=con.conrelid and a.attnum=k.attnum
        where con.conrelid = to_regclass('public.audit_events') and con.contype='p'), false)
-  -- FK: org_id -> organizations.id, ON DELETE CASCADE
-  and coalesce((select bool_or(true) from pg_constraint con
+  -- FK: EXACTLY audit_events.org_id -> organizations.id, single-column, ON DELETE CASCADE
+  and coalesce((select count(*) from pg_constraint con
        join pg_class rc on rc.oid=con.confrelid
        where con.conrelid = to_regclass('public.audit_events') and con.contype='f'
          and rc.relname='organizations' and con.confdeltype='c'
-         and (select a.attname from pg_attribute a where a.attrelid=con.conrelid and a.attnum=con.conkey[1]) = 'org_id'), false)
-  -- exactly 2 CHECK constraints, on non-empty action + target_type
+         and cardinality(con.conkey)=1 and cardinality(con.confkey)=1
+         and (select a.attname from pg_attribute a where a.attrelid=con.conrelid and a.attnum=con.conkey[1]) = 'org_id'
+         and (select a.attname from pg_attribute a where a.attrelid=con.confrelid and a.attnum=con.confkey[1]) = 'id') = 1, false)
+  -- EXACTLY 2 CHECK constraints: one non-empty(action), one non-empty(target_type)
   and coalesce((select count(*) filter (where contype='c') from pg_constraint
        where conrelid = to_regclass('public.audit_events')) = 2, false)
-  and coalesce((select bool_and(pg_get_constraintdef(oid) ~ 'btrim'
-                              and (pg_get_constraintdef(oid) ~ 'action' or pg_get_constraintdef(oid) ~ 'target_type'))
-       from pg_constraint where conrelid = to_regclass('public.audit_events') and contype='c'), false)
-  -- exact index: audit_events_org_created_idx (org_id, created_at DESC)
-  and coalesce(pg_get_indexdef(to_regclass('public.audit_events_org_created_idx')) ilike '%(org_id, created_at DESC)%', false)
+  and coalesce((select count(*) from pg_constraint
+       where conrelid = to_regclass('public.audit_events') and contype='c'
+         and pg_get_constraintdef(oid) ~ 'btrim\(action\)') = 1, false)
+  and coalesce((select count(*) from pg_constraint
+       where conrelid = to_regclass('public.audit_events') and contype='c'
+         and pg_get_constraintdef(oid) ~ 'btrim\(target_type\)') = 1, false)
+  -- EXACT index: NON-UNIQUE btree audit_events_org_created_idx (org_id, created_at DESC)
+  and coalesce((select i.indisunique = false from pg_class c join pg_index i on i.indexrelid=c.oid
+       where c.relname='audit_events_org_created_idx'), false)
+  and coalesce(pg_get_indexdef(to_regclass('public.audit_events_org_created_idx')) ~ 'USING btree \(org_id, created_at DESC\)', false)
   -- no direct PUBLIC(0)/anon/authenticated ACL
   and coalesce((select not exists (
         select 1 from pg_class c, t

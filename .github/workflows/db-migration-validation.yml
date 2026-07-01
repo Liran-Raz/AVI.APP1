@@ -518,6 +518,30 @@ jobs:
           echo "PASS: cutover preflight = f when an active member holds a custom role"
           psql -qc "update public.organization_memberships set role_id=null where user_id='$A1' and org_id='$ORG';"
 
+      # Review v5 #1: concurrent provisioning of the SAME brand-new org is race-free
+      # (the advisory xact lock in ensure_org_system_roles serializes it). Two SEPARATE
+      # backends insert the first two memberships of a new org at the same time -> both
+      # succeed, EXACTLY 3 system roles are created (no duplicates), both map correctly.
+      - name: Concurrent new-org provisioning is race-free (advisory lock)
+        run: |
+          set +e
+          ORG='eeee5555-0000-0000-0000-00000000000e'
+          U1='e0000000-0000-0000-0000-0000000000e1'
+          U2='e0000000-0000-0000-0000-0000000000e2'
+          psql -v ON_ERROR_STOP=1 -c "insert into public.organizations (id, org_code, name) values ('$ORG','ORGE','Org E');"
+          ins() { psql -At -v ON_ERROR_STOP=1 -c "insert into public.organization_memberships (user_id, org_id, role, is_active, role_id) values ('$1','$ORG','$2',true,null);" >"$3" 2>&1; echo $? >"$3.rc"; }
+          ins "$U1" owner    /tmp/prov_a &
+          ins "$U2" employee /tmp/prov_b &
+          wait
+          RC1=$(cat /tmp/prov_a.rc 2>/dev/null||echo 99); RC2=$(cat /tmp/prov_b.rc 2>/dev/null||echo 99)
+          echo "rc1=$RC1 rc2=$RC2"; cat /tmp/prov_a /tmp/prov_b
+          if [ "$RC1" != "0" ] || [ "$RC2" != "0" ]; then echo "FAIL: a concurrent membership insert errored"; exit 1; fi
+          N=$(psql -At -c "select count(*) from public.roles where org_id='$ORG' and is_system;")
+          if [ "$N" != "3" ]; then echo "FAIL: expected exactly 3 system roles after concurrent provisioning, got '$N'"; exit 1; fi
+          MAP=$(psql -At -c "select count(*) from public.organization_memberships m join public.roles r on r.id=m.role_id and r.org_id=m.org_id where m.org_id='$ORG' and r.is_system and r.key=m.role::text;")
+          if [ "$MAP" != "2" ]; then echo "FAIL: expected both memberships mapped to matching system roles, got '$MAP'"; exit 1; fi
+          echo "PASS: concurrent new-org provisioning -> exactly 3 system roles, both mapped (race-free)"
+
       - name: Roll back 0017 (run twice - idempotent, both must pass)
         run: |
           psql -v ON_ERROR_STOP=1 -f supabase/validation/0017_rollback.sql
