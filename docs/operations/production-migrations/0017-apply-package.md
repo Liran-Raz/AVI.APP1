@@ -10,13 +10,17 @@
 | Field | Value |
 |---|---|
 | Path | `supabase/migrations/0017_membership_role_id_sync.sql` |
-| Git blob | `840e27afdc5a96b6e5cefa3e57267d65e4105d74` |
-| SHA-256 | `59bc0dfc2bdd4484d25c29407d4feb075fdcf9a6441a2dee8620723e1fabaf7c` |
-| Bytes / lines | 22729 / 435 |
+| Git blob | `df41d8bbfe67feab9eef8f84bbb93e23d62fbd4a` |
+| SHA-256 | `caf995ee309a291f40acb01f85a2a90d28b6b89e71501e2ce30983fe9cc719f0` |
+| Bytes / lines | 23140 / 441 |
 
 ## What it does
 - `ensure_org_system_roles(org)` (SECURITY DEFINER): idempotently creates the 3
   system roles + their 88 default grants for one org (mirrors 0012 / `ROLE_GRANTS`).
+  Takes a transaction-scoped advisory lock keyed on `org_id` (review v5 #1) so
+  concurrent provisioning of the SAME org is serialized (no race); different orgs
+  use different keys (no cross-org contention). CI proves two concurrent first
+  memberships of a new org yield exactly 3 system roles, both mapped.
 - `sync_membership_role_id()` BEFORE INSERT/UPDATE trigger — **strict rules**
   (review v3 #5): provisions when the SPECIFIC enum role is missing; maps a NULL
   `role_id` to the enum's system role (never leaves NULL); a `role_id := NULL`
