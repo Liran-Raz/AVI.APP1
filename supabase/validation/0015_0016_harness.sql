@@ -61,6 +61,13 @@ create table if not exists public.role_permissions (
     check (permission_key <> 'ownership.transfer')
 );
 
+-- Fail-closed posture mirroring 0011 (RLS on + revoked) so the 0016 acceptance's
+-- "all 3 tables RLS-on / locked" checks are faithful to Production.
+alter table public.roles enable row level security;
+alter table public.role_permissions enable row level security;
+revoke all on public.roles from anon, authenticated;
+revoke all on public.role_permissions from anon, authenticated;
+
 -- composite FK (role_id, org_id) -> roles(id, org_id), ON DELETE NO ACTION (0011).
 do $$ begin
   alter table public.organization_memberships

@@ -345,7 +345,14 @@ jobs:
           A16=$(psql -At -f supabase/validation/0016_acceptance.sql)
           echo "0015_acceptance=$A15  0016_acceptance=$A16"
           if [ "$A15" != "t" ]; then echo "FAIL: 0015_acceptance expected t, got '$A15'"; exit 1; fi
-          if [ "$A16" != "t" ]; then echo "FAIL: 0016_acceptance expected t, got '$A16'"; exit 1; fi
+          if [ "$A16" != "t" ]; then
+            echo "FAIL: 0016_acceptance expected t, got '$A16' — diagnostics:"
+            psql -At -c "select 'rls3='||(select count(*) from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relname in ('roles','role_permissions','audit_events') and c.relkind='r' and c.relrowsecurity);"
+            psql -At -c "select 'stamp='||coalesce(col_description(to_regclass('public.roles'), (select ordinal_position from information_schema.columns where table_schema='public' and table_name='roles' and column_name='description')::int),'<none>');"
+            psql -At -c "select 'descr_type='||coalesce((select data_type from information_schema.columns where table_schema='public' and table_name='roles' and column_name='description'),'<none>');"
+            psql -At -c "select 'idxdef='||coalesce(pg_get_indexdef(to_regclass('public.roles_org_name_norm_uniq')),'<none>');"
+            exit 1
+          fi
           echo "PASS: both acceptance queries return true"
 
       - name: acceptance = false (never NULL/exception) on missing index / overload

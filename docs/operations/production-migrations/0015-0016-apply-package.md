@@ -133,6 +133,9 @@ select check_name, pass from (
        and p.proname in ('custom_role_grant_check','validate_custom_role_payload','create_org_role',
                          'update_org_role','delete_org_role','duplicate_org_role','list_org_roles')) = 0
   union all select 'name_index_absent', to_regclass('public.roles_org_name_norm_uniq') is null
+  union all select 'description_absent',   -- review v4 #1: 0016 is the SOLE creator of roles.description
+    not exists (select 1 from information_schema.columns
+                where table_schema='public' and table_name='roles' and column_name='description')
   union all select 'no_dup_normalized_names',
     not exists (select 1 from public.roles group by org_id, lower(btrim(name)) having count(*) > 1)
   union all select 'roles_rls_still_closed',
