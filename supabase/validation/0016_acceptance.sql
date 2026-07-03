@@ -1,5 +1,8 @@
--- 0016 acceptance — v7: CATALOG-EXACT function / index / description / trigger
--- proof (review v6 #4 + v7 additions). BOOLEAN-ONLY and catalog-safe: exactly
+-- 0016 acceptance — v8: CATALOG-EXACT function / index / description / trigger
+-- proof (review v6 #4 + v7 + v8 #3: the updated-at trigger is asserted in the
+-- EXACT catalog state the intended CREATE TRIGGER produces — tgenabled='O',
+-- tgqual is null, tgnargs=0, tgattr empty, not internal — on top of exact
+-- tgtype/tgfoid and the by-function-OID exclusivity). BOOLEAN-ONLY and catalog-safe: exactly
 -- one row, all_checks_passed = t/f, NEVER NULL / NEVER an exception.
 -- Cardinality by explicit counts. The unique index is proven via pg_index
 -- catalog data (not a regex over pg_get_indexdef): schema public, table
@@ -142,13 +145,17 @@ select coalesce((
         from pg_attribute a
         where a.attrelid = to_regclass('public.roles')
           and a.attname = 'description' and not a.attisdropped), false)
-  -- ---- roles_set_updated_at trigger — v6 #2 + v7:
+  -- ---- roles_set_updated_at trigger — v6 #2 + v7 + v8 #3 (EXACT catalog state):
   -- (1) EXACTLY ONE non-internal trigger on public.roles calls public.set_updated_at()
   --     (rejects an extra trigger with a DIFFERENT name that also calls the same
   --     function — the count would be 2).
-  -- (2) THAT trigger is named 'roles_set_updated_at', enabled, EXACT tgtype = 19
-  --     (ROW + BEFORE + UPDATE only), EXACT tgfoid via to_regprocedure(...) (rejects
-  --     a same-named function in another schema).
+  -- (2) THAT trigger is named 'roles_set_updated_at' and is in EXACTLY the state
+  --     the intended CREATE TRIGGER produces: tgenabled='O' (enabled, ORIGIN —
+  --     rejects ENABLE REPLICA/ALWAYS and DISABLE), tgtype=19 (ROW+BEFORE+UPDATE
+  --     only), exact tgfoid via to_regprocedure(...) (rejects a same-named
+  --     function in another schema), not internal, NO WHEN qualification
+  --     (tgqual is null), NO function arguments (tgnargs=0), NO column-specific
+  --     UPDATE OF list (tgattr empty).
   and coalesce((select count(*) from pg_trigger t
         join pg_class c on c.oid = t.tgrelid
         join pg_namespace n on n.oid = c.relnamespace
@@ -159,8 +166,11 @@ select coalesce((
         join pg_class c on c.oid = t.tgrelid
         join pg_namespace n on n.oid = c.relnamespace
         where n.nspname='public' and c.relname='roles' and t.tgname='roles_set_updated_at'
-          and t.tgenabled <> 'D'
+          and t.tgenabled = 'O'
           and t.tgtype = 19
           and t.tgfoid = to_regprocedure('public.set_updated_at()')
-          and not t.tgisinternal) = 1, false)
+          and not t.tgisinternal
+          and t.tgqual is null
+          and t.tgnargs = 0
+          and cardinality(t.tgattr::int2[]) = 0) = 1, false)
 ), false) as all_checks_passed;

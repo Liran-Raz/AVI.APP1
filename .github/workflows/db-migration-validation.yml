@@ -274,12 +274,13 @@ jobs:
         run: psql -v ON_ERROR_STOP=1 -f supabase/validation/0015_0016_verify.sql
 
       # Review #7: the 0016 optimistic-concurrency PREFLIGHT must detect a missing/
-      # disabled roles_set_updated_at trigger (BEFORE UPDATE, calls set_updated_at,
-      # on a timestamptz column) and return pass=false.
+      # disabled roles_set_updated_at trigger and return pass=false. v8 #3: the
+      # preflight asserts the EXACT catalog state (tgenabled='O', tgtype=19, exact
+      # tgfoid, not internal, no WHEN qual, no args, no UPDATE OF column list).
       - name: roles_set_updated_at trigger preflight (present=true, missing=false)
         run: |
           set +e
-          PRE='select (exists (select 1 from pg_trigger t join pg_class c on c.oid=t.tgrelid join pg_namespace n on n.oid=c.relnamespace join pg_proc p on p.oid=t.tgfoid where n.nspname=$$public$$ and c.relname=$$roles$$ and t.tgname=$$roles_set_updated_at$$ and t.tgenabled <> $$D$$ and (t.tgtype & 2)<>0 and (t.tgtype & 16)<>0 and p.proname=$$set_updated_at$$) and exists (select 1 from information_schema.columns where table_schema=$$public$$ and table_name=$$roles$$ and column_name=$$updated_at$$ and data_type=$$timestamp with time zone$$)) as pass;'
+          PRE='select (exists (select 1 from pg_trigger t join pg_class c on c.oid=t.tgrelid join pg_namespace n on n.oid=c.relnamespace where n.nspname=$$public$$ and c.relname=$$roles$$ and t.tgname=$$roles_set_updated_at$$ and t.tgenabled = $$O$$ and t.tgtype = 19 and t.tgfoid = to_regprocedure($$public.set_updated_at()$$) and not t.tgisinternal and t.tgqual is null and t.tgnargs = 0 and cardinality(t.tgattr::int2[]) = 0) and exists (select 1 from information_schema.columns where table_schema=$$public$$ and table_name=$$roles$$ and column_name=$$updated_at$$ and data_type=$$timestamp with time zone$$)) as pass;'
           P1=$(psql -At -c "$PRE")
           if [ "$P1" != "t" ]; then echo "FAIL: preflight expected pass=t with the trigger present, got '$P1'"; exit 1; fi
           echo "PASS: preflight pass=true with the trigger present"
@@ -374,47 +375,67 @@ jobs:
       # a fragment) is loaded via \i, then the transaction is ROLLED BACK so the
       # positive state is preserved for the next test. Each variant MUST return
       # exactly 'f'.
-      - name: Malformed-catalog negatives (v6 #5) — 0015/0016 variants -> acceptance=false
+      - name: Malformed-catalog negatives (v6 #5 / v8 #1-#3) — 0015/0016 variants -> acceptance=false
         run: |
           set +e
           NEG () {
             local name="$1" script="$2" mutation="$3"
-            local out V
-            out=$(psql -At <<PSQL
+            local out rc V
+            # v8 #2: ON_ERROR_STOP=1 + rc verification — an SQL error inside the
+            # mutation or inside the acceptance file FAILS the CI test instead of
+            # being swallowed as an aborted transaction. A negative must prove
+            # acceptance=f with rc=0, never via an error.
+            out=$(psql -At -v ON_ERROR_STOP=1 <<PSQL
           begin;
           ${mutation}
           \\i supabase/validation/${script}.sql
           rollback;
           PSQL
-            )
+            ); rc=$?
             V=$(printf '%s\n' "$out" | tr -d '\r' | grep -E '^[tf]$' | tail -1)
-            if [ "$V" != "f" ]; then
-              echo "FAIL: [$name] expected acceptance=f, got '$V'"
+            if [ "$rc" -ne 0 ]; then
+              echo "FAIL: [$name] psql exited rc=$rc (SQL error while proving the negative)"
               printf 'RAW:\n%s\n' "$out"
               exit 1
             fi
-            echo "PASS: [$name] -> acceptance=f"
+            if [ "$V" != "f" ]; then
+              echo "FAIL: [$name] expected acceptance=f, got '$V' (rc=$rc)"
+              printf 'RAW:\n%s\n' "$out"
+              exit 1
+            fi
+            echo "PASS: [$name] -> acceptance=f (rc=0)"
           }
           # -------- 0015 (audit_events) --------
+          # v8 #2: an ADDITIONAL (fully valid) FK -> the aggregate FK proof sees
+          # n=2 -> acceptance returns exactly f with rc=0 (no multi-row scalar
+          # subquery error).
           NEG "0015-fk-additional" "0015_acceptance" "
             alter table public.audit_events add constraint fk_extra foreign key (org_id) references public.organizations(id);
           "
+          # v8 #1: wrong-TABLE target, fully VALIDATED (no NOT VALID). A decoy
+          # table is populated with every organizations.id so validation passes;
+          # every other FK attribute (CASCADE / NO ACTION / SIMPLE / not
+          # deferrable / immediate) is preserved — the ONLY deviation is the
+          # referenced relation, so acceptance=f isolates the wrong-table check.
           NEG "0015-fk-wrong-table" "0015_acceptance" "
+            create table public.orgs_decoy (id uuid primary key);
+            insert into public.orgs_decoy (id) select id from public.organizations;
             do \$mut\$ declare cn text;
             begin select conname into cn from pg_constraint where conrelid='public.audit_events'::regclass and contype='f';
               execute 'alter table public.audit_events drop constraint '||quote_ident(cn); end \$mut\$;
-            -- NOT VALID: skip validation of existing rows (they cannot possibly match
-            -- the wrong FK target). The catalog still records the WRONG confrelid, so
-            -- acceptance returns f — exactly what this negative is proving.
-            alter table public.audit_events add constraint fk_wrong foreign key (org_id) references public.roles(id) on delete cascade not valid;
+            alter table public.audit_events add constraint fk_wrong foreign key (org_id) references public.orgs_decoy(id) on delete cascade;
           "
+          # v8 #1: wrong-SCHEMA target, fully VALIDATED — same-named table in
+          # other_schema populated with every public.organizations.id; only the
+          # referenced schema deviates.
           NEG "0015-fk-wrong-schema" "0015_acceptance" "
             create schema if not exists other_schema;
-            create table if not exists other_schema.organizations (id uuid primary key);
+            create table other_schema.organizations (id uuid primary key);
+            insert into other_schema.organizations (id) select id from public.organizations;
             do \$mut\$ declare cn text;
             begin select conname into cn from pg_constraint where conrelid='public.audit_events'::regclass and contype='f';
               execute 'alter table public.audit_events drop constraint '||quote_ident(cn); end \$mut\$;
-            alter table public.audit_events add constraint fk_wrong_schema foreign key (org_id) references other_schema.organizations(id) on delete cascade not valid;
+            alter table public.audit_events add constraint fk_wrong_schema foreign key (org_id) references other_schema.organizations(id) on delete cascade;
           "
           NEG "0015-fk-wrong-ondelete" "0015_acceptance" "
             do \$mut\$ declare cn text;
@@ -466,19 +487,25 @@ jobs:
             drop index public.audit_events_org_created_idx;
             create index audit_events_org_created_idx on public.audit_events (org_id desc, created_at asc);
           "
-          # v7 additions --------
+          # v7 additions (v8 #1: wrong-referenced-column rebuilt as fully VALIDATED) --------
+          # Alternate UUID column alt_id is populated 1:1 from id, made NOT NULL +
+          # UNIQUE, then the FK is rerouted to organizations(alt_id) and VALIDATED
+          # (every audit_events.org_id equals some organizations.id = alt_id).
+          # Every other FK attribute is preserved; only the referenced COLUMN
+          # deviates, so acceptance=f isolates the wrong-referenced-column check.
           NEG "0015-fk-wrong-referenced-column" "0015_acceptance" "
-            -- Add an alternate UUID + UNIQUE column on organizations so a FK can reference it.
-            alter table public.organizations add column alt_id uuid unique default gen_random_uuid();
+            alter table public.organizations add column alt_id uuid;
+            update public.organizations set alt_id = id;
+            alter table public.organizations alter column alt_id set not null;
+            alter table public.organizations add constraint organizations_alt_id_uniq unique (alt_id);
             do \$mut\$ declare cn text;
             begin select conname into cn from pg_constraint where conrelid='public.audit_events'::regclass and contype='f';
               execute 'alter table public.audit_events drop constraint '||quote_ident(cn); end \$mut\$;
-            -- NOT VALID skips existing-row validation; the catalog still records the WRONG confkey.
-            alter table public.audit_events add constraint fk_wrong_col foreign key (org_id) references public.organizations(alt_id) on delete cascade not valid;
+            alter table public.audit_events add constraint fk_wrong_col foreign key (org_id) references public.organizations(alt_id) on delete cascade;
           "
+          # v8 #1 (kept from v7 as the ISOLATED convalidated=false proof): the FK
+          # target is fully CORRECT — the ONLY deviation is NOT VALID.
           NEG "0015-fk-not-valid" "0015_acceptance" "
-            -- Drop + re-add the correct FK but NOT VALIDATED. Catalog: same target
-            -- everything else, but convalidated=false — v7 rejects that.
             do \$mut\$ declare cn text;
             begin select conname into cn from pg_constraint where conrelid='public.audit_events'::regclass and contype='f';
               execute 'alter table public.audit_events drop constraint '||quote_ident(cn); end \$mut\$;
@@ -549,6 +576,27 @@ jobs:
             -- that also calls public.set_updated_at() on public.roles. The v7 exclusivity
             -- check counts triggers by function OID, so the count becomes 2 -> acceptance=f.
             create trigger roles_extra_setter before update on public.roles for each row execute function public.set_updated_at();
+          "
+          # v8 #3 additions — the trigger must be in EXACTLY the intended catalog
+          # state; each variant deviates in ONE newly-asserted attribute.
+          NEG "0016-trigger-enable-replica" "0016_acceptance" "
+            -- tgenabled becomes 'R' (fires only in replica mode) — not 'O'.
+            alter table public.roles enable replica trigger roles_set_updated_at;
+          "
+          NEG "0016-trigger-when-false" "0016_acceptance" "
+            -- Correct trigger but with a WHEN qualification -> tgqual is NOT null.
+            drop trigger roles_set_updated_at on public.roles;
+            create trigger roles_set_updated_at before update on public.roles for each row when (false) execute function public.set_updated_at();
+          "
+          NEG "0016-trigger-update-of-column" "0016_acceptance" "
+            -- Correct function/event mask but column-specific UPDATE OF -> tgattr NOT empty.
+            drop trigger roles_set_updated_at on public.roles;
+            create trigger roles_set_updated_at before update of name on public.roles for each row execute function public.set_updated_at();
+          "
+          NEG "0016-trigger-with-argument" "0016_acceptance" "
+            -- Correct trigger but the function is invoked with an argument -> tgnargs=1.
+            drop trigger roles_set_updated_at on public.roles;
+            create trigger roles_set_updated_at before update on public.roles for each row execute function public.set_updated_at('x');
           "
           echo "PASS: all 0015/0016 malformed-catalog negatives -> acceptance=f"
 
@@ -716,26 +764,33 @@ jobs:
       # Review v6 #5/#6: malformed 0017 variants -> acceptance=false. Every mutation
       # is applied inside a TRANSACTION, then the FULL 0017_acceptance.sql is loaded
       # via \i, then ROLLBACK preserves the positive state for downstream steps.
-      - name: Malformed-catalog negatives (v6 #5/#6) — 0017 variants -> acceptance=false
+      - name: Malformed-catalog negatives (v6 #5/#6 / v8 #3) — 0017 variants -> acceptance=false
         run: |
           set +e
           NEG_0017 () {
             local name="$1" mutation="$2"
-            local out V
-            out=$(psql -At <<PSQL
+            local out rc V
+            # v8 #2: ON_ERROR_STOP=1 + rc verification — an SQL error FAILS the
+            # test; a negative must prove acceptance=f with rc=0.
+            out=$(psql -At -v ON_ERROR_STOP=1 <<PSQL
           begin;
           ${mutation}
           \\i supabase/validation/0017_acceptance.sql
           rollback;
           PSQL
-            )
+            ); rc=$?
             V=$(printf '%s\n' "$out" | tr -d '\r' | grep -E '^[tf]$' | tail -1)
-            if [ "$V" != "f" ]; then
-              echo "FAIL: [$name] expected acceptance=f, got '$V'"
+            if [ "$rc" -ne 0 ]; then
+              echo "FAIL: [$name] psql exited rc=$rc (SQL error while proving the negative)"
               printf 'RAW:\n%s\n' "$out"
               exit 1
             fi
-            echo "PASS: [$name] -> acceptance=f"
+            if [ "$V" != "f" ]; then
+              echo "FAIL: [$name] expected acceptance=f, got '$V' (rc=$rc)"
+              printf 'RAW:\n%s\n' "$out"
+              exit 1
+            fi
+            echo "PASS: [$name] -> acceptance=f (rc=0)"
           }
           # Duplicate trigger calling sync_membership_role_id -> count > 1 -> f
           NEG_0017 "0017-duplicate-sync-trigger" "
@@ -782,6 +837,23 @@ jobs:
             create or replace function other_sync.sync_membership_role_id() returns trigger language plpgsql as \$f\$ begin return new; end \$f\$;
             drop trigger organization_memberships_sync_role_id on public.organization_memberships;
             create trigger organization_memberships_sync_role_id before insert or update on public.organization_memberships for each row execute function other_sync.sync_membership_role_id();
+          "
+          # v8 #3 additions — the sync trigger must be in EXACTLY the intended
+          # catalog state; each variant deviates in ONE newly-asserted attribute.
+          NEG_0017 "0017-sync-trigger-enable-replica" "
+            alter table public.organization_memberships enable replica trigger organization_memberships_sync_role_id;
+          "
+          NEG_0017 "0017-sync-trigger-when-false" "
+            drop trigger organization_memberships_sync_role_id on public.organization_memberships;
+            create trigger organization_memberships_sync_role_id before insert or update on public.organization_memberships for each row when (false) execute function public.sync_membership_role_id();
+          "
+          NEG_0017 "0017-sync-trigger-update-of-column" "
+            drop trigger organization_memberships_sync_role_id on public.organization_memberships;
+            create trigger organization_memberships_sync_role_id before insert or update of role on public.organization_memberships for each row execute function public.sync_membership_role_id();
+          "
+          NEG_0017 "0017-sync-trigger-with-argument" "
+            drop trigger organization_memberships_sync_role_id on public.organization_memberships;
+            create trigger organization_memberships_sync_role_id before insert or update on public.organization_memberships for each row execute function public.sync_membership_role_id('x');
           "
           echo "PASS: all 0017 malformed-catalog negatives -> acceptance=f"
 
@@ -952,7 +1024,7 @@ jobs:
         run: |
           psql -v ON_ERROR_STOP=1 -c "update public.organization_memberships set role='employee', role_id=null where user_id='d0000000-0000-0000-0000-0000000000a3' and org_id='aaaa1111-0000-0000-0000-00000000000a';"
 
-      # Test B — v7: REAL migration-first with a CI-only event trigger. Runs the
+      # Test B — v7/v8: REAL migration-first with a CI-only event trigger. Runs the
       # actual `supabase/migrations/0017_membership_role_id_sync.sql` in one psql
       # session. A CI-only event trigger fires INSIDE the migration's transaction
       # on `ddl_command_end` for `CREATE FUNCTION public.ensure_org_system_roles`
@@ -960,13 +1032,15 @@ jobs:
       # EXCLUSIVE MODE has already been acquired and BEFORE COMMIT. The trigger
       # `pg_sleep`s for 8s, deterministically pausing the migration while the lock
       # is held. During the pause a legacy enum-only writer runs in ANOTHER
-      # session; pg_locks proves it holds RowExclusiveLock NOT granted (waiter),
-      # and the migration holds ShareRowExclusiveLock granted. When the sleep
-      # ends the migration completes and commits; the writer's UPDATE then goes
-      # through the newly-installed sync_role_id trigger, synchronizing role_id.
-      # The event trigger + helper function live entirely in CI setup — the
-      # production migration file is UNMODIFIED.
-      - name: Test B - real migration-first — event trigger pauses migration in-tx; writer WAITS then completes; trigger syncs role_id
+      # session. v8 #4: the two backends are identified EXPLICITLY via
+      # application_name (PGAPPNAME=avi_v8_migration / avi_v8_legacy_writer), and
+      # every pg_locks probe JOINS pg_stat_activity and pins the backend by that
+      # name — generic counts from unrelated sessions are NOT accepted. When the
+      # sleep ends the migration completes and commits; the writer's UPDATE then
+      # goes through the newly-installed sync_role_id trigger, synchronizing
+      # role_id. The event trigger + helper function live entirely in CI setup —
+      # the production migration file is UNMODIFIED.
+      - name: Test B - real migration-first — event trigger pauses migration in-tx; app-name-pinned writer WAITS then completes; trigger syncs role_id
         run: |
           set +e
           A3='d0000000-0000-0000-0000-0000000000a3'
@@ -984,7 +1058,7 @@ jobs:
               where command_tag = 'CREATE FUNCTION'
                 and object_identity like 'public.ensure_org_system_roles%'
             loop
-              raise notice 'v7 CI pause: sleeping 8s while migration holds SHARE ROW EXCLUSIVE (obj=%)', o.object_identity;
+              raise notice 'v8 CI pause: sleeping 8s while migration holds SHARE ROW EXCLUSIVE (obj=%)', o.object_identity;
               perform pg_sleep(8);
               return;
             end loop;
@@ -995,39 +1069,47 @@ jobs:
             execute function public._ci_pause_migration_fn();
           SQL_SETUP
 
-          # --- Session M: run the REAL migration. It will pause inside its own
-          # transaction after acquiring SHARE ROW EXCLUSIVE and creating the first
-          # function. ---
-          (psql -v ON_ERROR_STOP=1 -f supabase/migrations/0017_membership_role_id_sync.sql > /tmp/mig_M.log 2>&1) &
+          # --- Session M (application_name=avi_v8_migration): run the REAL
+          # migration. It will pause inside its own transaction after acquiring
+          # SHARE ROW EXCLUSIVE and creating the first function. ---
+          (PGAPPNAME=avi_v8_migration psql -v ON_ERROR_STOP=1 -f supabase/migrations/0017_membership_role_id_sync.sql > /tmp/mig_M.log 2>&1) &
           M=$!
           sleep 4  # migration: guards -> LOCK TABLE -> drift check -> CREATE FUNCTION -> event trigger pg_sleep
 
-          # --- Session W: legacy enum-only writer. Will block on ROW EXCLUSIVE. ---
-          (psql -v ON_ERROR_STOP=1 -c "update public.organization_memberships set role='admin' where user_id='$A3' and org_id='$ORG';" > /tmp/writer_W.log 2>&1) &
+          # --- Session W (application_name=avi_v8_legacy_writer): legacy enum-only
+          # writer. Will block on ROW EXCLUSIVE. ---
+          (PGAPPNAME=avi_v8_legacy_writer psql -v ON_ERROR_STOP=1 -c "update public.organization_memberships set role='admin' where user_id='$A3' and org_id='$ORG';" > /tmp/writer_W.log 2>&1) &
           W=$!
           sleep 2
 
-          # Prove W is BLOCKED with RowExclusiveLock not granted.
-          BLOCKED_W=$(psql -At -c "select count(*) from pg_locks l join pg_class c on c.oid=l.relation join pg_namespace ns on ns.oid=c.relnamespace where ns.nspname='public' and c.relname='organization_memberships' and l.mode='RowExclusiveLock' and not l.granted;")
-          if [ "${BLOCKED_W:-0}" -lt 1 ]; then
-            echo "FAIL: writer W was NOT blocked (BLOCKED_W=${BLOCKED_W:-0})"
-            psql -c "select l.locktype, l.relation::regclass as rel, l.mode, l.granted, a.pid, a.wait_event_type, a.wait_event, a.state, left(a.query, 60) as query from pg_locks l left join pg_stat_activity a on a.pid=l.pid where l.relation is not null;"
-            kill $M $W 2>/dev/null
-            psql -c "drop event trigger if exists _ci_pause_migration_evt; drop function if exists public._ci_pause_migration_fn();" >/dev/null 2>&1
-            exit 1
-          fi
-          echo "PASS: writer W BLOCKED with RowExclusiveLock not granted (waiter count=$BLOCKED_W)"
+          # v8 #5: unconditional raw lock-evidence dump while both sessions are in
+          # flight (lands in the job log that ships in the review bundle).
+          echo "--- pg_locks x pg_stat_activity evidence (during the in-tx pause) ---"
+          psql -c "select a.application_name, l.locktype, l.relation::regclass as rel, l.mode, l.granted, a.pid, a.wait_event_type, a.wait_event, a.state, left(a.query, 80) as query from pg_locks l join pg_stat_activity a on a.pid = l.pid where l.relation = 'public.organization_memberships'::regclass order by a.application_name, l.mode;"
 
-          # Prove M is HOLDING ShareRowExclusiveLock (granted).
-          HOLDS_M=$(psql -At -c "select count(*) from pg_locks l join pg_class c on c.oid=l.relation join pg_namespace ns on ns.oid=c.relnamespace where ns.nspname='public' and c.relname='organization_memberships' and l.mode='ShareRowExclusiveLock' and l.granted;")
-          if [ "${HOLDS_M:-0}" -lt 1 ]; then
-            echo "FAIL: migration M was NOT holding SHARE ROW EXCLUSIVE (HOLDS_M=${HOLDS_M:-0})"
-            psql -c "select l.locktype, l.relation::regclass as rel, l.mode, l.granted, a.pid, a.wait_event_type, a.wait_event, a.state, left(a.query, 60) as query from pg_locks l left join pg_stat_activity a on a.pid=l.pid where l.relation is not null;"
+          # v8 #4: prove THE avi_v8_legacy_writer backend (not any generic session)
+          # waits with an ungranted RowExclusiveLock on public.organization_memberships.
+          BLOCKED_W=$(psql -At -c "select count(*) from pg_locks l join pg_stat_activity a on a.pid = l.pid join pg_class c on c.oid = l.relation join pg_namespace ns on ns.oid = c.relnamespace where ns.nspname='public' and c.relname='organization_memberships' and l.mode='RowExclusiveLock' and not l.granted and a.application_name='avi_v8_legacy_writer';")
+          if [ "$BLOCKED_W" != "1" ]; then
+            echo "FAIL: expected exactly 1 ungranted RowExclusiveLock held by backend avi_v8_legacy_writer, got '$BLOCKED_W'"
+            psql -c "select a.application_name, l.locktype, l.relation::regclass as rel, l.mode, l.granted, a.pid, a.wait_event_type, a.wait_event, a.state, left(a.query, 60) as query from pg_locks l left join pg_stat_activity a on a.pid=l.pid where l.relation is not null;"
             kill $M $W 2>/dev/null
             psql -c "drop event trigger if exists _ci_pause_migration_evt; drop function if exists public._ci_pause_migration_fn();" >/dev/null 2>&1
             exit 1
           fi
-          echo "PASS: migration M is HOLDING ShareRowExclusiveLock granted (count=$HOLDS_M)"
+          echo "PASS: backend application_name=avi_v8_legacy_writer WAITS with RowExclusiveLock not granted on public.organization_memberships (count=$BLOCKED_W)"
+
+          # v8 #4: prove THE avi_v8_migration backend HOLDS the granted
+          # ShareRowExclusiveLock on public.organization_memberships.
+          HOLDS_M=$(psql -At -c "select count(*) from pg_locks l join pg_stat_activity a on a.pid = l.pid join pg_class c on c.oid = l.relation join pg_namespace ns on ns.oid = c.relnamespace where ns.nspname='public' and c.relname='organization_memberships' and l.mode='ShareRowExclusiveLock' and l.granted and a.application_name='avi_v8_migration';")
+          if [ "$HOLDS_M" != "1" ]; then
+            echo "FAIL: expected exactly 1 granted ShareRowExclusiveLock held by backend avi_v8_migration, got '$HOLDS_M'"
+            psql -c "select a.application_name, l.locktype, l.relation::regclass as rel, l.mode, l.granted, a.pid, a.wait_event_type, a.wait_event, a.state, left(a.query, 60) as query from pg_locks l left join pg_stat_activity a on a.pid=l.pid where l.relation is not null;"
+            kill $M $W 2>/dev/null
+            psql -c "drop event trigger if exists _ci_pause_migration_evt; drop function if exists public._ci_pause_migration_fn();" >/dev/null 2>&1
+            exit 1
+          fi
+          echo "PASS: backend application_name=avi_v8_migration HOLDS ShareRowExclusiveLock granted on public.organization_memberships (count=$HOLDS_M)"
 
           # --- Wait for both to complete. ---
           wait $M; RC_M=$?

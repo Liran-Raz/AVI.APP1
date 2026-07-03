@@ -1,5 +1,7 @@
--- 0017 acceptance — v6: EXACT trigger tgtype (=23) + system-role NAME check +
--- security-object proof + membership invariants (review v6 #2/#6). BOOLEAN-ONLY
+-- 0017 acceptance — v8: EXACT trigger catalog state (tgenabled='O', tgtype=23,
+-- exact tgfoid, not internal, tgqual null, tgnargs=0, tgattr empty — v8 #3) +
+-- system-role NAME check + security-object proof + membership invariants
+-- (review v6 #2/#6 + v8 #3). BOOLEAN-ONLY
 -- and catalog-safe: exactly one row, all_checks_passed = t/f, NEVER NULL / NEVER
 -- an exception even when a function / trigger is absent or overloaded. The
 -- membership sync trigger's event mask is asserted as EXACTLY tgtype=23
@@ -43,16 +45,24 @@ select coalesce((
           join pg_proc p on p.oid=t.tgfoid join pg_namespace pn on pn.oid=p.pronamespace
         where n.nspname='public' and c.relname='organization_memberships'
           and pn.nspname='public' and p.proname='sync_membership_role_id' and not t.tgisinternal) = 1, false)
-  -- ---- and it is the expected one: enabled, EXACT tgtype=23 (ROW+BEFORE+INSERT+UPDATE only,
-  -- rejects statement-level / extra DELETE / extra TRUNCATE), EXACT tgfoid via
-  -- to_regprocedure (rejects a same-named function in another schema — v6 #2). ----
+  -- ---- and it is the expected one in EXACTLY the state the intended CREATE
+  -- TRIGGER produces (v6 #2 + v8 #3): tgenabled='O' (enabled ORIGIN — rejects
+  -- ENABLE REPLICA/ALWAYS and DISABLE), EXACT tgtype=23 (ROW+BEFORE+INSERT+UPDATE
+  -- only, rejects statement-level / extra DELETE / extra TRUNCATE), EXACT tgfoid
+  -- via to_regprocedure (rejects a same-named function in another schema), not
+  -- internal, NO WHEN qualification (tgqual is null), NO function arguments
+  -- (tgnargs=0), NO column-specific UPDATE OF list (tgattr empty). ----
   and coalesce((select exists (
         select 1 from pg_trigger t join pg_class c on c.oid=t.tgrelid join pg_namespace n on n.oid=c.relnamespace
         where n.nspname='public' and c.relname='organization_memberships'
           and t.tgname='organization_memberships_sync_role_id'
-          and t.tgenabled <> 'D'
+          and t.tgenabled = 'O'
           and t.tgtype = 23
-          and t.tgfoid = to_regprocedure('public.sync_membership_role_id()'))), false)
+          and t.tgfoid = to_regprocedure('public.sync_membership_role_id()')
+          and not t.tgisinternal
+          and t.tgqual is null
+          and t.tgnargs = 0
+          and cardinality(t.tgattr::int2[]) = 0)), false)
   -- ---- membership invariants: no active NULL / cross-org / dangling / mismatched-system role_id ----
   and coalesce((select count(*) from public.organization_memberships where is_active and role_id is null) = 0, false)
   and coalesce((select count(*) from public.organization_memberships m

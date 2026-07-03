@@ -115,16 +115,23 @@ select check_name, pass from (
     not exists (select 1 from public.roles group by org_id, lower(btrim(name)) having count(*) > 1)
   union all select 'roles_rls_still_closed',
     (select count(*) from pg_policies where schemaname='public' and tablename in ('roles','role_permissions')) = 0
-  -- review v6 #2: optimistic concurrency depends on the updated-at trigger. Assert
-  -- EXACT tgtype = 19 (ROW+BEFORE+UPDATE only — rejects statement-level or an extra
-  -- INSERT/DELETE/TRUNCATE event) + EXACT tgfoid via to_regprocedure (rejects a
-  -- same-named function in another schema).
+  -- review v6 #2 + v8 #3: optimistic concurrency depends on the updated-at
+  -- trigger. Assert the EXACT catalog state the intended CREATE TRIGGER produces:
+  -- tgenabled='O' (enabled ORIGIN — rejects ENABLE REPLICA/ALWAYS and DISABLE),
+  -- EXACT tgtype = 19 (ROW+BEFORE+UPDATE only — rejects statement-level or an
+  -- extra INSERT/DELETE/TRUNCATE event), EXACT tgfoid via to_regprocedure
+  -- (rejects a same-named function in another schema), not internal, NO WHEN
+  -- qualification, NO function arguments, NO column-specific UPDATE OF list.
   union all select 'roles_set_updated_at_trigger_ok', (
     exists (
       select 1 from pg_trigger t join pg_class c on c.oid=t.tgrelid join pg_namespace n on n.oid=c.relnamespace
       where n.nspname='public' and c.relname='roles' and t.tgname='roles_set_updated_at'
-        and t.tgenabled <> 'D' and t.tgtype = 19
+        and t.tgenabled = 'O' and t.tgtype = 19
         and t.tgfoid = to_regprocedure('public.set_updated_at()')
+        and not t.tgisinternal
+        and t.tgqual is null
+        and t.tgnargs = 0
+        and cardinality(t.tgattr::int2[]) = 0
     )
     and (select data_type from information_schema.columns
          where table_schema='public' and table_name='roles' and column_name='updated_at') = 'timestamp with time zone'

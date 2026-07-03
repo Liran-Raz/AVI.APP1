@@ -205,13 +205,26 @@ begin
   end;
 end $$;
 
--- T12: the sync trigger exists and is enabled.
+-- T12 (v8 #3): the sync trigger exists in EXACTLY the catalog state the intended
+-- CREATE TRIGGER produces: enabled ORIGIN ('O'), tgtype=23 (ROW+BEFORE+INSERT+
+-- UPDATE only), exact function OID, not internal, no WHEN qual, no arguments,
+-- no column-specific UPDATE OF list.
 do $$
 declare v_count int;
 begin
-  select count(*) into v_count from pg_trigger
-  where tgname='organization_memberships_sync_role_id' and tgenabled <> 'D';
-  if v_count <> 1 then raise exception 'T12 FAIL: sync trigger not present/enabled (count=%)', v_count; end if;
+  select count(*) into v_count from pg_trigger t
+  join pg_class c on c.oid = t.tgrelid
+  join pg_namespace n on n.oid = c.relnamespace
+  where n.nspname = 'public' and c.relname = 'organization_memberships'
+    and t.tgname = 'organization_memberships_sync_role_id'
+    and t.tgenabled = 'O'
+    and t.tgtype = 23
+    and t.tgfoid = to_regprocedure('public.sync_membership_role_id()')
+    and not t.tgisinternal
+    and t.tgqual is null
+    and t.tgnargs = 0
+    and cardinality(t.tgattr::int2[]) = 0;
+  if v_count <> 1 then raise exception 'T12 FAIL: sync trigger not in the exact expected catalog state (count=%)', v_count; end if;
 end $$;
 
 -- T13: an explicit SYSTEM role_id whose key != the enum is REJECTED (23514) and

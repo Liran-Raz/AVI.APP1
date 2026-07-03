@@ -16,8 +16,8 @@
 | Lines | 490 |
 
 The 0017 migration file was last changed for v6 (LOCK TABLE ... IN SHARE ROW
-EXCLUSIVE MODE + system-role name-drift check) and is UNCHANGED in v7 — v7's
-scope is CI + acceptance + docs only.
+EXCLUSIVE MODE + system-role name-drift check) and is UNCHANGED in v7 and v8 —
+those rounds' scope is CI + acceptance + docs only.
 
 ## What it does
 - **Install-time write lock (review v6 #1):** BEFORE the drift guard runs, 0017
@@ -177,10 +177,13 @@ its `BEGIN/COMMIT`. **Do not re-run** (the no-overload guard aborts a second app
 `supabase/validation/0017_acceptance.sql`; expect exactly `t`. It proves exactly 2
 functions with the exact signatures (no overloads), owner=postgres, SECURITY DEFINER,
 `search_path=''`, no EXECUTE for PUBLIC/anon/authenticated; exactly ONE non-internal
-`BEFORE INSERT OR UPDATE FOR EACH ROW` trigger on `public.organization_memberships` that
-calls `public.sync_membership_role_id()` (no competing trigger); and the membership
-invariants (no active NULL / cross-org / dangling / mismatched-system `role_id`; every
-org has exactly the 3 system roles).
+trigger on `public.organization_memberships` that calls
+`public.sync_membership_role_id()` (no competing trigger), and that trigger is in
+EXACTLY the intended catalog state (v8 #3): `tgenabled='O'`, `tgtype=23`
+(ROW+BEFORE+INSERT+UPDATE only), exact `tgfoid`, not internal, no WHEN
+qualification, no function arguments, no column-specific `UPDATE OF` list; and the
+membership invariants (no active NULL / cross-org / dangling / mismatched-system
+`role_id`; every org has exactly the 3 system roles).
 ```
 psql -At -f supabase/validation/0017_acceptance.sql   # expect exactly: t
 ```
@@ -218,14 +221,23 @@ select
   -- functions + trigger present with the right shape
       to_regprocedure('public.ensure_org_system_roles(uuid)') is not null
   and to_regprocedure('public.sync_membership_role_id()') is not null
-  -- review v6 #2: EXACT tgtype = 23 (ROW + BEFORE + INSERT + UPDATE only — rejects
-  -- statement-level, extra DELETE, extra TRUNCATE) + EXACT tgfoid via to_regprocedure
-  -- (rejects a same-named function in another schema).
+  -- review v6 #2 + v8 #3: the sync trigger in EXACTLY the catalog state the
+  -- intended CREATE TRIGGER produces — tgenabled='O' (enabled ORIGIN, rejects
+  -- ENABLE REPLICA/ALWAYS and DISABLE), EXACT tgtype = 23 (ROW + BEFORE + INSERT
+  -- + UPDATE only — rejects statement-level, extra DELETE, extra TRUNCATE),
+  -- EXACT tgfoid via to_regprocedure (rejects a same-named function in another
+  -- schema), not internal, NO WHEN qualification, NO function arguments, NO
+  -- column-specific UPDATE OF list.
   and exists (select 1 from pg_trigger t join pg_class c on c.oid=t.tgrelid join pg_namespace n on n.oid=c.relnamespace
               where n.nspname='public' and c.relname='organization_memberships'
-                and t.tgname='organization_memberships_sync_role_id' and t.tgenabled<>'D'
+                and t.tgname='organization_memberships_sync_role_id'
+                and t.tgenabled = 'O'
                 and t.tgtype = 23
-                and t.tgfoid = to_regprocedure('public.sync_membership_role_id()'))
+                and t.tgfoid = to_regprocedure('public.sync_membership_role_id()')
+                and not t.tgisinternal
+                and t.tgqual is null
+                and t.tgnargs = 0
+                and cardinality(t.tgattr::int2[]) = 0)
   -- membership invariants (review v3 #5/#6)
   and (select count(*) from public.organization_memberships where is_active and role_id is null)=0
   and (select count(*) from public.organization_memberships m
