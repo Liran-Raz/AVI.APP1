@@ -88,4 +88,11 @@ select coalesce((
           or (key = 'admin'    and name is distinct from 'Manager')
           or (key = 'employee' and name is distinct from 'Employee')
         )) = 0, false)
+  -- ---- DECISION A (final-gate): custom roles are permission definitions ONLY and
+  -- must NOT be assigned to memberships. NO membership — ACTIVE OR INACTIVE — may
+  -- have a role_id that resolves to a role with is_system=false. (Join on id alone
+  -- is sufficient: the composite FK already guarantees same-org.) ----
+  and coalesce((select count(*) from public.organization_memberships m
+        join public.roles r on r.id = m.role_id
+        where r.is_system = false) = 0, false)
 ), false) as all_checks_passed;

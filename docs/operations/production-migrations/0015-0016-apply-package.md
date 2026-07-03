@@ -88,10 +88,10 @@ drop `audit_events`** — that destroys audit history.
 | Field | Value |
 |---|---|
 | Path | `supabase/migrations/0016_role_management_rpcs.sql` |
-| Git blob | `9517d03b08e58dd146c625e2f8439336d7ea0d70` |
-| SHA-256 | `30a35c262e6e32055d9d9c8f5736d753dfb355ce9158bc3c9997a6577bfaa7f9` |
-| Bytes / lines | 21237 / 504 |
-| Functions | 5 SECURITY DEFINER RPCs (`create/update/delete/duplicate/list_org_role`) + 2 immutable helpers (`custom_role_grant_check`, `validate_custom_role_payload`, non-SECURITY-DEFINER, REVOKEd from public/anon/authenticated) |
+| Git blob | `50fc33c477b8792facc72d3b238eb7ab547a2b76` |
+| SHA-256 (LF) | `ca9664444225658b945c6197b6597ceaccc35862bad33298f8e906768c1730d0` |
+| Bytes (LF) / lines | 22191 / 518 |
+| Functions | 5 SECURITY DEFINER RPCs (`create/update/delete/duplicate/list_org_role`) + 2 immutable helpers (`custom_role_grant_check`, `validate_custom_role_payload`, non-SECURITY-DEFINER) — **ALL SEVEN DB-DORMANT: EXECUTE revoked from PUBLIC, anon AND authenticated; enablement is a separate versioned rollout migration (see `docs/security/ROLE_MANAGEMENT_DB_DORMANCY.md`)** |
 | Also | `roles.description` (text; STRICT single-creator — guarded ABSENT + provenance-stamped `avi:0016 roles.description`) + UNIQUE index `roles_org_name_norm_uniq (org_id, lower(btrim(name)))` |
 | Semantics | `CREATE FUNCTION` / `ADD COLUMN` (no `OR REPLACE` / no `IF NOT EXISTS`) + absence guards; single-apply, a re-apply is REJECTED. Audit snapshots read the PERSISTED, normalized, ordered grants. |
 
@@ -153,8 +153,11 @@ It proves, exactly: the **3** tables (`roles`, `role_permissions`, `audit_events
 with RLS on, zero policies, no direct (relacl) ACL, and no effective PUBLIC/anon/
 authenticated privilege of ANY of the 7 types; **exactly 7** functions across the 7 names
 (no overloads, none missing) with the exact signatures; owner=postgres; SECURITY DEFINER
-on the 5 RPCs only (not the 2 helpers); pinned empty `search_path` on the 5; `authenticated`
-EXECUTE only on the 5, `anon`/PUBLIC on none; the exact unique index `roles_org_name_norm_uniq`
+on the 5 RPCs only (not the 2 helpers); pinned empty `search_path` on the 5; **DB-DORMANT
+EXECUTE surface — NO effective EXECUTE for `authenticated` OR `anon` on ANY of the 7
+(`has_function_privilege`, which also catches grants inherited through an intermediate
+role) and NO direct catalog ACL entry for PUBLIC(0)/anon/authenticated**; the exact
+unique index `roles_org_name_norm_uniq`
 (unique, `(org_id, lower(btrim(name)))`); `roles.description` = text + the provenance stamp;
 and the `roles_set_updated_at` trigger (BEFORE UPDATE, calls `set_updated_at`). Cardinality
 is asserted by explicit counts (=3 tables, =7 functions), NOT `bool_and` over "found" rows.

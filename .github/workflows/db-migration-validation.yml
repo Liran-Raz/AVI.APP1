@@ -263,12 +263,39 @@ jobs:
           fi
           echo "PASS: duplicate 0016 cleanly rejected"
 
-      - name: anon cannot execute a management RPC (expect denial)
+      # Final-gate DB-DORMANCY: NEITHER anon NOR authenticated may execute ANY of
+      # the 5 role-management RPCs — a signed-in Owner calling through PostgREST
+      # must get SQLSTATE 42501 BEFORE the function body runs, independent of the
+      # Vercel flags. Every call below must FAIL.
+      - name: DB dormancy — anon AND authenticated cannot execute ANY management RPC
         run: |
-          if psql -q -c "set role anon; select public.create_org_role('11111111-0000-0000-0000-0000000000aa','x',null,'[]'::jsonb);" >/dev/null 2>&1; then
-            echo "FAIL: anon executed a management RPC"; exit 1
-          fi
-          echo "PASS: anon denied execute"
+          set +e
+          SUB='a0000000-0000-0000-0000-0000000000a1'   # active OWNER of org ...aa — even the Owner is denied
+          ORG='11111111-0000-0000-0000-0000000000aa'
+          declare -a CALLS=(
+            "select public.create_org_role('$ORG','dormx',null,'[]'::jsonb);"
+            "select public.update_org_role('$ORG','33333333-0000-0000-0000-000000000002','n',null,'[]'::jsonb, now());"
+            "select public.delete_org_role('$ORG','33333333-0000-0000-0000-000000000002');"
+            "select public.duplicate_org_role('$ORG','33333333-0000-0000-0000-000000000002','dupx');"
+            "select count(*) from public.list_org_roles('$ORG');"
+          )
+          for role in anon authenticated; do
+            for call in "${CALLS[@]}"; do
+              out=$(psql -At -c "set role $role; select set_config('request.jwt.claim.sub','$SUB',false); $call" 2>&1); rc=$?
+              if [ "$rc" -eq 0 ]; then
+                echo "FAIL: role '$role' executed: $call"
+                echo "$out"
+                exit 1
+              fi
+              if ! printf '%s' "$out" | grep -q "permission denied"; then
+                echo "FAIL: role '$role' was denied but NOT with 'permission denied': $call"
+                echo "$out"
+                exit 1
+              fi
+            done
+            echo "PASS: $role denied EXECUTE on all 5 RPCs (permission denied)"
+          done
+          echo "PASS: DB-dormant — no role-management RPC is callable by anon or authenticated"
 
       - name: Verify 0015/0016 (definition, privileges, behavior)
         run: psql -v ON_ERROR_STOP=1 -f supabase/validation/0015_0016_verify.sql
@@ -308,6 +335,9 @@ jobs:
       # (the unique index is the sole arbiter; create_org_role has no read-modify-
       # write TOCTOU). Two SEPARATE backends create the same normalized name at the
       # same time -> exactly one commits, the other gets unique_violation (23505).
+      # Final-gate note: the RPCs are DB-DORMANT (no EXECUTE for authenticated), so
+      # this race runs as postgres (the owner) with the auth.uid() GUC set — the
+      # race under test is the unique-index arbiter, not the ACL.
       - name: Concurrency-safe role name (two parallel creates -> exactly one wins)
         run: |
           set +e   # default shell is `bash -e`; the LOSING psql exits non-zero by design
@@ -316,7 +346,7 @@ jobs:
           run_create() {
             # ON_ERROR_STOP=1 so a SQL error makes psql exit non-zero (the loser).
             psql -At -v ON_ERROR_STOP=1 \
-              -c "set role authenticated; select set_config('request.jwt.claim.sub','$SUB',false); select public.create_org_role('$ORG', '$1', null, '[]'::jsonb);" \
+              -c "select set_config('request.jwt.claim.sub','$SUB',false); select public.create_org_role('$ORG', '$1', null, '[]'::jsonb);" \
               >"$2" 2>&1
             echo $? >"$2.rc"
           }
@@ -598,6 +628,25 @@ jobs:
             drop trigger roles_set_updated_at on public.roles;
             create trigger roles_set_updated_at before update on public.roles for each row execute function public.set_updated_at('x');
           "
+          # Final-gate DB-DORMANCY negatives: ANY route by which authenticated (or anon)
+          # regains EXECUTE on a management RPC must flip acceptance to f.
+          NEG "0016-execute-granted-to-authenticated" "0016_acceptance" "
+            grant execute on function public.create_org_role(uuid, text, text, jsonb) to authenticated;
+          "
+          NEG "0016-execute-granted-to-anon" "0016_acceptance" "
+            grant execute on function public.list_org_roles(uuid) to anon;
+          "
+          NEG "0016-execute-granted-to-PUBLIC" "0016_acceptance" "
+            grant execute on function public.delete_org_role(uuid, uuid) to public;
+          "
+          NEG "0016-execute-via-inherited-role" "0016_acceptance" "
+            -- EXECUTE granted to an intermediate role that authenticated INHERITS from:
+            -- the direct-ACL check alone would miss it; has_function_privilege does not.
+            do \$mut\$ begin create role rm_gateway; exception when duplicate_object then null; end \$mut\$;
+            alter role rm_gateway inherit;
+            grant execute on function public.update_org_role(uuid, uuid, text, text, jsonb, timestamptz) to rm_gateway;
+            grant rm_gateway to authenticated;
+          "
           echo "PASS: all 0015/0016 malformed-catalog negatives -> acceptance=f"
 
       - name: Roll back 0015/0016 (run twice - idempotent, both must pass)
@@ -855,9 +904,24 @@ jobs:
             drop trigger organization_memberships_sync_role_id on public.organization_memberships;
             create trigger organization_memberships_sync_role_id before insert or update on public.organization_memberships for each row execute function public.sync_membership_role_id('x');
           "
+          # DECISION A negatives (final-gate): a membership whose role_id resolves to a
+          # CUSTOM (is_system=false) role must flip acceptance to f — whether the
+          # membership is ACTIVE or INACTIVE. The harness seed custom role ...c1 exists;
+          # the sync trigger honors an explicit same-org custom assignment, so the
+          # mutation itself succeeds — acceptance is what must reject the STATE.
+          NEG_0017 "0017-decision-a-active-custom-pointer" "
+            update public.organization_memberships
+              set role_id='11110000-0000-0000-0000-0000000000c1'
+              where user_id='d0000000-0000-0000-0000-0000000000a3' and org_id='aaaa1111-0000-0000-0000-00000000000a';
+          "
+          NEG_0017 "0017-decision-a-inactive-custom-pointer" "
+            update public.organization_memberships
+              set is_active=false, role_id='11110000-0000-0000-0000-0000000000c1'
+              where user_id='d0000000-0000-0000-0000-0000000000a3' and org_id='aaaa1111-0000-0000-0000-00000000000a';
+          "
           echo "PASS: all 0017 malformed-catalog negatives -> acceptance=f"
 
-      - name: cutover preflight = false when an active member holds a CUSTOM role
+      - name: cutover preflight = false when ANY member (active OR inactive) holds a CUSTOM role
         run: |
           set +e
           ORG='aaaa1111-0000-0000-0000-00000000000a'
@@ -865,9 +929,14 @@ jobs:
           A1='d0000000-0000-0000-0000-0000000000a1'
           psql -qc "update public.organization_memberships set role_id='$C1' where user_id='$A1' and org_id='$ORG';"
           C=$(psql -At -f supabase/validation/authoritative_cutover_preflight.sql); RC=$?
-          if [ "$RC" -ne 0 ] || [ "$C" != "f" ]; then echo "FAIL: cutover preflight expected boolean 'f' with a custom-role member, got '$C' (rc$RC)"; exit 1; fi
-          echo "PASS: cutover preflight = f when an active member holds a custom role"
-          psql -qc "update public.organization_memberships set role_id=null where user_id='$A1' and org_id='$ORG';"
+          if [ "$RC" -ne 0 ] || [ "$C" != "f" ]; then echo "FAIL: cutover preflight expected boolean 'f' with an ACTIVE custom-role member, got '$C' (rc$RC)"; exit 1; fi
+          echo "PASS: cutover preflight = f when an ACTIVE member holds a custom role"
+          # Decision A covers INACTIVE memberships too (they can be reactivated).
+          psql -qc "update public.organization_memberships set is_active=false where user_id='$A1' and org_id='$ORG';"
+          C=$(psql -At -f supabase/validation/authoritative_cutover_preflight.sql); RC=$?
+          if [ "$RC" -ne 0 ] || [ "$C" != "f" ]; then echo "FAIL: cutover preflight expected boolean 'f' with an INACTIVE custom-role member, got '$C' (rc$RC)"; exit 1; fi
+          echo "PASS: cutover preflight = f when an INACTIVE member holds a custom role"
+          psql -qc "update public.organization_memberships set is_active=true, role_id=null where user_id='$A1' and org_id='$ORG';"
 
       # Review v5 #1: concurrent provisioning of the SAME brand-new org is race-free
       # (the advisory xact lock in ensure_org_system_roles serializes it). Two SEPARATE

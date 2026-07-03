@@ -280,12 +280,13 @@ select
   as all_checks_passed;
 ```
 
-## Authoritative-cutover preflight (review v4 #6 — a SEPARATE later gate)
+## Authoritative-cutover preflight (review v4 #6 + final-gate Decision A — a SEPARATE later gate)
 BEFORE enabling `DB_ROLE_AUTHORITATIVE`, run
 `supabase/validation/authoritative_cutover_preflight.sql`; it MUST return `t`. Under
-Decision A custom roles are NOT assignable to members, so if any ACTIVE membership
-resolves to a CUSTOM role the resolver fails closed and denies that user — the cutover
-must STOP.
+Decision A custom roles are NOT assignable to members, so if ANY membership — ACTIVE
+OR INACTIVE — resolves to a CUSTOM role the cutover must STOP: an active one would be
+denied by the fail-closed resolver, and an inactive one could be reactivated into that
+same denial. (The 0017 acceptance file also asserts this Decision A invariant.)
 ```
 psql -At -f supabase/validation/authoritative_cutover_preflight.sql   # expect exactly: t
 ```

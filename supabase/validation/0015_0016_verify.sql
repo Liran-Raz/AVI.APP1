@@ -32,7 +32,10 @@ begin
   if c <> 5 then raise exception 'D1 FAIL: expected 5 hardened functions, got %', c; end if;
 end $$;
 
--- D2: authenticated may execute all five; anon may not.
+-- D2 (final-gate DB-DORMANCY): NEITHER authenticated NOR anon may execute ANY of
+-- the five RPCs. has_function_privilege is the EFFECTIVE check, so a grant that
+-- reaches authenticated/anon through an intermediate role also fails here.
+-- Enablement is a future, separate, versioned rollout migration.
 do $$
 declare bad int;
 begin
@@ -40,9 +43,9 @@ begin
   from pg_proc p join pg_namespace n on n.oid = p.pronamespace
   where n.nspname = 'public'
     and p.proname in ('create_org_role','update_org_role','delete_org_role','duplicate_org_role','list_org_roles')
-    and (not has_function_privilege('authenticated', p.oid, 'EXECUTE')
+    and (has_function_privilege('authenticated', p.oid, 'EXECUTE')
          or has_function_privilege('anon', p.oid, 'EXECUTE'));
-  if bad <> 0 then raise exception 'D2 FAIL: % functions with wrong execute privileges', bad; end if;
+  if bad <> 0 then raise exception 'D2 FAIL: % functions executable by authenticated/anon (must be DB-dormant)', bad; end if;
 end $$;
 
 -- D3: audit_events fail-closed (RLS on, 0 policies, NO PUBLIC/anon/authenticated

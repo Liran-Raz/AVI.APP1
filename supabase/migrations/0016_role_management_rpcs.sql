@@ -7,12 +7,16 @@
 -- direct table grants, no RLS policies. DEPENDS ON 0015 (audit_events) — each
 -- mutation writes an audit row IN THE SAME TRANSACTION.
 --
--- HARDENING (review #4/#5/#6/#7/#10):
+-- HARDENING (review #4/#5/#6/#7/#10 + final-gate DB-DORMANCY):
 --   * CREATE FUNCTION (never CREATE OR REPLACE) + no-overload guards: a duplicate
 --     apply FAILS cleanly rather than silently replacing a security function.
 --   * Apply-as-postgres asserted; owners are postgres; search_path '' pinned;
---     objects fully qualified; no dynamic SQL; REVOKE PUBLIC/anon; GRANT only
---     authenticated; no direct table grants.
+--     objects fully qualified; no dynamic SQL; no direct table grants.
+--   * DB-LEVEL DORMANCY: EXECUTE on ALL FIVE RPCs is revoked from PUBLIC, anon
+--     AND authenticated. A Vercel flag cannot prevent direct PostgREST calls,
+--     so the OFF state is enforced in the database itself. Enablement is a
+--     separate versioned rollout migration (grant execute), reversible by the
+--     matching revoke. See docs/security/ROLE_MANAGEMENT_DB_DORMANCY.md.
 --   * Absence/shape guards: audit_events must exist (0015) with the expected
 --     columns; the functions + unique index must be absent; roles.description, if
 --     present, must be text — else STOP.
@@ -482,17 +486,27 @@ begin
     order by r.is_system desc, lower(r.name) asc, rp.permission_key asc;
 end $$;
 
--- ---- Execute surface: authenticated only on the 5 RPCs. PUBLIC/anon cannot. ----
-revoke all on function public.create_org_role(uuid, text, text, jsonb) from public, anon;
-grant execute on function public.create_org_role(uuid, text, text, jsonb) to authenticated;
-revoke all on function public.update_org_role(uuid, uuid, text, text, jsonb, timestamptz) from public, anon;
-grant execute on function public.update_org_role(uuid, uuid, text, text, jsonb, timestamptz) to authenticated;
-revoke all on function public.delete_org_role(uuid, uuid) from public, anon;
-grant execute on function public.delete_org_role(uuid, uuid) to authenticated;
-revoke all on function public.duplicate_org_role(uuid, uuid, text) from public, anon;
-grant execute on function public.duplicate_org_role(uuid, uuid, text) to authenticated;
-revoke all on function public.list_org_roles(uuid) from public, anon;
-grant execute on function public.list_org_roles(uuid) to authenticated;
+-- ---- Execute surface: DORMANT (DB-level gate). ----
+-- NO role may execute ANY of the 5 RPCs: EXECUTE is revoked from PUBLIC, anon
+-- AND authenticated (owner postgres can always run them, which is what the
+-- validation harness uses). This is deliberate defense-in-depth: the Vercel
+-- flags (ROLES_MANAGEMENT_UI / ROLES_MANAGEMENT_WRITE) gate only the app
+-- routes — they CANNOT stop a signed-in user from invoking an RPC directly
+-- through PostgREST. With this revoke the capability is dormant AT THE
+-- DATABASE, independent of any environment variable.
+--
+-- ENABLEMENT is a separate, versioned, auditable, reversible rollout
+-- migration (see docs/security/ROLE_MANAGEMENT_DB_DORMANCY.md):
+--   * UI/read gate:  grant execute on public.list_org_roles(uuid) to authenticated;
+--   * Write gate:    grant execute on the 4 write RPCs to authenticated;
+-- and each is reversed by the matching REVOKE. Until such a migration is
+-- applied, authenticated receives SQLSTATE 42501 (permission denied) before
+-- the function body ever runs.
+revoke all on function public.create_org_role(uuid, text, text, jsonb) from public, anon, authenticated;
+revoke all on function public.update_org_role(uuid, uuid, text, text, jsonb, timestamptz) from public, anon, authenticated;
+revoke all on function public.delete_org_role(uuid, uuid) from public, anon, authenticated;
+revoke all on function public.duplicate_org_role(uuid, uuid, text) from public, anon, authenticated;
+revoke all on function public.list_org_roles(uuid) from public, anon, authenticated;
 
 notify pgrst, 'reload schema';
 

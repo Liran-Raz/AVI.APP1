@@ -1,8 +1,14 @@
--- 0016 acceptance — v8: CATALOG-EXACT function / index / description / trigger
--- proof (review v6 #4 + v7 + v8 #3: the updated-at trigger is asserted in the
--- EXACT catalog state the intended CREATE TRIGGER produces — tgenabled='O',
--- tgqual is null, tgnargs=0, tgattr empty, not internal — on top of exact
--- tgtype/tgfoid and the by-function-OID exclusivity). BOOLEAN-ONLY and catalog-safe: exactly
+-- 0016 acceptance — final-gate: CATALOG-EXACT function / index / description /
+-- trigger proof + DB-DORMANCY. The 5 role-management RPCs must have NO effective
+-- EXECUTE for authenticated OR anon (has_function_privilege — also catches a
+-- grant inherited through an intermediate role) and NO direct catalog ACL entry
+-- for PUBLIC(0)/anon/authenticated. Enablement is a future versioned rollout
+-- migration; until then the capability is dormant AT THE DATABASE, independent
+-- of any Vercel flag. (Also carries review v6 #4 + v7 + v8 #3: the updated-at
+-- trigger asserted in the EXACT catalog state the intended CREATE TRIGGER
+-- produces — tgenabled='O', tgqual is null, tgnargs=0, tgattr empty, not
+-- internal — on top of exact tgtype/tgfoid and the by-function-OID
+-- exclusivity). BOOLEAN-ONLY and catalog-safe: exactly
 -- one row, all_checks_passed = t/f, NEVER NULL / NEVER an exception.
 -- Cardinality by explicit counts. The unique index is proven via pg_index
 -- catalog data (not a regex over pg_get_indexdef): schema public, table
@@ -59,13 +65,15 @@ select coalesce((
         and to_regprocedure('public.custom_role_grant_check(text,text)') is not null
         and to_regprocedure('public.validate_custom_role_payload(jsonb)') is not null), false)
   -- the 5 RPCs: exactly 5, owner postgres, SECURITY DEFINER, search_path='',
-  -- authenticated EXECUTE, anon NOT
+  -- and DB-DORMANT (final-gate): NO EFFECTIVE EXECUTE for authenticated OR anon.
+  -- has_function_privilege is the EFFECTIVE check, so a grant to any intermediate
+  -- role that authenticated/anon inherits from also flips this to false.
   and coalesce((select count(*) from pg_proc p join pg_namespace n on n.oid=p.pronamespace
         where n.nspname='public' and p.proname in ('create_org_role','update_org_role','delete_org_role','duplicate_org_role','list_org_roles')) = 5, false)
   and coalesce((select bool_and(p.prosecdef and p.proowner='postgres'::regrole
                     and exists (select 1 from unnest(coalesce(p.proconfig, array[]::text[])) e
                                 where e like 'search_path=%' and btrim(split_part(e,'=',2),'"') = '')
-                    and has_function_privilege('authenticated', p.oid, 'EXECUTE')
+                    and not has_function_privilege('authenticated', p.oid, 'EXECUTE')
                     and not has_function_privilege('anon', p.oid, 'EXECUTE'))
         from pg_proc p join pg_namespace n on n.oid=p.pronamespace
         where n.nspname='public' and p.proname in ('create_org_role','update_org_role','delete_org_role','duplicate_org_role','list_org_roles')), false)
@@ -77,14 +85,16 @@ select coalesce((
                     and not has_function_privilege('anon', p.oid, 'EXECUTE'))
         from pg_proc p join pg_namespace n on n.oid=p.pronamespace
         where n.nspname='public' and p.proname in ('custom_role_grant_check','validate_custom_role_payload')), false)
-  -- no PUBLIC(0) EXECUTE on any of the 7
+  -- no DIRECT catalog EXECUTE ACL for PUBLIC(0)/anon/authenticated on ANY of the 7
+  -- (dormancy at the catalog level; the effective check above covers inheritance)
   and coalesce((select not exists (
         select 1 from pg_proc p join pg_namespace n on n.oid=p.pronamespace
         cross join lateral aclexplode(coalesce(p.proacl, acldefault('f'::"char", p.proowner))) a
         where n.nspname='public' and p.proname in
           ('create_org_role','update_org_role','delete_org_role','duplicate_org_role','list_org_roles',
            'custom_role_grant_check','validate_custom_role_payload')
-          and a.grantee=0 and a.privilege_type='EXECUTE')), false)
+          and a.grantee in (0, 'anon'::regrole, 'authenticated'::regrole)
+          and a.privilege_type='EXECUTE')), false)
   -- ---- roles_org_name_norm_uniq via pg_index (v6 #4): schema public, table
   -- public.roles, UNIQUE btree, non-partial, 2 key attrs, no INCLUDE, first key
   -- column = org_id, second key = EXACTLY ONE expression normalized to
