@@ -466,6 +466,29 @@ jobs:
             drop index public.audit_events_org_created_idx;
             create index audit_events_org_created_idx on public.audit_events (org_id desc, created_at asc);
           "
+          # v7 additions --------
+          NEG "0015-fk-wrong-referenced-column" "0015_acceptance" "
+            -- Add an alternate UUID + UNIQUE column on organizations so a FK can reference it.
+            alter table public.organizations add column alt_id uuid unique default gen_random_uuid();
+            do \$mut\$ declare cn text;
+            begin select conname into cn from pg_constraint where conrelid='public.audit_events'::regclass and contype='f';
+              execute 'alter table public.audit_events drop constraint '||quote_ident(cn); end \$mut\$;
+            -- NOT VALID skips existing-row validation; the catalog still records the WRONG confkey.
+            alter table public.audit_events add constraint fk_wrong_col foreign key (org_id) references public.organizations(alt_id) on delete cascade not valid;
+          "
+          NEG "0015-fk-not-valid" "0015_acceptance" "
+            -- Drop + re-add the correct FK but NOT VALIDATED. Catalog: same target
+            -- everything else, but convalidated=false — v7 rejects that.
+            do \$mut\$ declare cn text;
+            begin select conname into cn from pg_constraint where conrelid='public.audit_events'::regclass and contype='f';
+              execute 'alter table public.audit_events drop constraint '||quote_ident(cn); end \$mut\$;
+            alter table public.audit_events add constraint fk_correct_not_valid foreign key (org_id) references public.organizations(id) on delete cascade not valid;
+          "
+          NEG "0015-index-desc-nulls-last" "0015_acceptance" "
+            -- Same shape but the second key is DESC NULLS LAST — indoption[1] becomes 1, not 3.
+            drop index public.audit_events_org_created_idx;
+            create index audit_events_org_created_idx on public.audit_events (org_id, created_at desc nulls last);
+          "
           # -------- 0016 (roles.description / roles_set_updated_at / roles_org_name_norm_uniq) --------
           NEG "0016-description-not-null" "0016_acceptance" "
             -- Normalize any pre-existing NULL descriptions inside the transaction so
@@ -509,6 +532,23 @@ jobs:
             create or replace function other_fn_schema.set_updated_at() returns trigger language plpgsql as \$f\$ begin new.updated_at = now(); return new; end \$f\$;
             drop trigger roles_set_updated_at on public.roles;
             create trigger roles_set_updated_at before update on public.roles for each row execute function other_fn_schema.set_updated_at();
+          "
+          # v7 additions --------
+          NEG "0016-index-2nd-key-DESC" "0016_acceptance" "
+            -- Second key becomes DESC (indoption[1]=1). v7 rejects that (must be 0).
+            drop index public.roles_org_name_norm_uniq;
+            create unique index roles_org_name_norm_uniq on public.roles (org_id, lower(btrim(name)) desc);
+          "
+          NEG "0016-index-1st-key-DESC-NULLS-FIRST" "0016_acceptance" "
+            -- First key DESC + NULLS FIRST -> indoption[0]=3. v7 rejects that (must be 0).
+            drop index public.roles_org_name_norm_uniq;
+            create unique index roles_org_name_norm_uniq on public.roles (org_id desc nulls first, lower(btrim(name)));
+          "
+          NEG "0016-trigger-extra-with-different-name" "0016_acceptance" "
+            -- Keep the canonical trigger AND add an extra trigger with a DIFFERENT name
+            -- that also calls public.set_updated_at() on public.roles. The v7 exclusivity
+            -- check counts triggers by function OID, so the count becomes 2 -> acceptance=f.
+            create trigger roles_extra_setter before update on public.roles for each row execute function public.set_updated_at();
           "
           echo "PASS: all 0015/0016 malformed-catalog negatives -> acceptance=f"
 
@@ -912,71 +952,113 @@ jobs:
         run: |
           psql -v ON_ERROR_STOP=1 -c "update public.organization_memberships set role='employee', role_id=null where user_id='d0000000-0000-0000-0000-0000000000a3' and org_id='aaaa1111-0000-0000-0000-00000000000a';"
 
-      # Test B (semantics) — a helper transaction takes the SAME lock the migration
-      # takes (LOCK TABLE ... IN SHARE ROW EXCLUSIVE MODE on the three tables) and
-      # holds it. A legacy enum-only writer in ANOTHER session must WAIT until the
-      # helper commits. Combined with the static grep above, this proves the
-      # migration's install-time behavior blocks concurrent writers.
-      - name: Test B - migration-first — helper holds SHARE ROW EXCLUSIVE; legacy writer WAITS
+      # Test B — v7: REAL migration-first with a CI-only event trigger. Runs the
+      # actual `supabase/migrations/0017_membership_role_id_sync.sql` in one psql
+      # session. A CI-only event trigger fires INSIDE the migration's transaction
+      # on `ddl_command_end` for `CREATE FUNCTION public.ensure_org_system_roles`
+      # — which is executed by the migration AFTER LOCK TABLE ... IN SHARE ROW
+      # EXCLUSIVE MODE has already been acquired and BEFORE COMMIT. The trigger
+      # `pg_sleep`s for 8s, deterministically pausing the migration while the lock
+      # is held. During the pause a legacy enum-only writer runs in ANOTHER
+      # session; pg_locks proves it holds RowExclusiveLock NOT granted (waiter),
+      # and the migration holds ShareRowExclusiveLock granted. When the sleep
+      # ends the migration completes and commits; the writer's UPDATE then goes
+      # through the newly-installed sync_role_id trigger, synchronizing role_id.
+      # The event trigger + helper function live entirely in CI setup — the
+      # production migration file is UNMODIFIED.
+      - name: Test B - real migration-first — event trigger pauses migration in-tx; writer WAITS then completes; trigger syncs role_id
         run: |
           set +e
           A3='d0000000-0000-0000-0000-0000000000a3'
           ORG='aaaa1111-0000-0000-0000-00000000000a'
-          (psql -v ON_ERROR_STOP=1 <<'SQL_H' > /tmp/hold.log 2>&1
-          begin;
-          lock table public.organization_memberships,
-                     public.roles,
-                     public.role_permissions
-            in share row exclusive mode;
-          select pg_sleep(6);
-          commit;
-          SQL_H
-          ) &
-          HOLD=$!
+
+          # --- Install the CI-only pause mechanism (event trigger + helper fn). ---
+          psql -v ON_ERROR_STOP=1 <<'SQL_SETUP'
+          create or replace function public._ci_pause_migration_fn()
+            returns event_trigger language plpgsql as $fn$
+          declare
+            o record;
+          begin
+            for o in
+              select * from pg_event_trigger_ddl_commands()
+              where command_tag = 'CREATE FUNCTION'
+                and object_identity like 'public.ensure_org_system_roles%'
+            loop
+              raise notice 'v7 CI pause: sleeping 8s while migration holds SHARE ROW EXCLUSIVE (obj=%)', o.object_identity;
+              perform pg_sleep(8);
+              return;
+            end loop;
+          end $fn$;
+          drop event trigger if exists _ci_pause_migration_evt;
+          create event trigger _ci_pause_migration_evt on ddl_command_end
+            when tag in ('CREATE FUNCTION')
+            execute function public._ci_pause_migration_fn();
+          SQL_SETUP
+
+          # --- Session M: run the REAL migration. It will pause inside its own
+          # transaction after acquiring SHARE ROW EXCLUSIVE and creating the first
+          # function. ---
+          (psql -v ON_ERROR_STOP=1 -f supabase/migrations/0017_membership_role_id_sync.sql > /tmp/mig_M.log 2>&1) &
+          M=$!
+          sleep 4  # migration: guards -> LOCK TABLE -> drift check -> CREATE FUNCTION -> event trigger pg_sleep
+
+          # --- Session W: legacy enum-only writer. Will block on ROW EXCLUSIVE. ---
+          (psql -v ON_ERROR_STOP=1 -c "update public.organization_memberships set role='admin' where user_id='$A3' and org_id='$ORG';" > /tmp/writer_W.log 2>&1) &
+          W=$!
           sleep 2
-          (psql -v ON_ERROR_STOP=1 <<SQL_W > /tmp/writer_B.log 2>&1
-          update public.organization_memberships set role='admin' where user_id='$A3' and org_id='$ORG';
-          SQL_W
-          ) &
-          WB=$!
-          sleep 2
-          BLOCKED=$(psql -At -c "select count(*) from pg_locks l join pg_class c on c.oid=l.relation join pg_namespace ns on ns.oid=c.relnamespace where ns.nspname='public' and c.relname='organization_memberships' and l.mode='RowExclusiveLock' and not l.granted;")
-          if [ "${BLOCKED:-0}" -lt 1 ]; then
-            echo "FAIL: legacy writer was NOT blocked by SHARE ROW EXCLUSIVE (BLOCKED=${BLOCKED:-0})"
+
+          # Prove W is BLOCKED with RowExclusiveLock not granted.
+          BLOCKED_W=$(psql -At -c "select count(*) from pg_locks l join pg_class c on c.oid=l.relation join pg_namespace ns on ns.oid=c.relnamespace where ns.nspname='public' and c.relname='organization_memberships' and l.mode='RowExclusiveLock' and not l.granted;")
+          if [ "${BLOCKED_W:-0}" -lt 1 ]; then
+            echo "FAIL: writer W was NOT blocked (BLOCKED_W=${BLOCKED_W:-0})"
             psql -c "select l.locktype, l.relation::regclass as rel, l.mode, l.granted, a.pid, a.wait_event_type, a.wait_event, a.state, left(a.query, 60) as query from pg_locks l left join pg_stat_activity a on a.pid=l.pid where l.relation is not null;"
-            kill $HOLD $WB 2>/dev/null
+            kill $M $W 2>/dev/null
+            psql -c "drop event trigger if exists _ci_pause_migration_evt; drop function if exists public._ci_pause_migration_fn();" >/dev/null 2>&1
             exit 1
           fi
-          echo "PASS: SHARE ROW EXCLUSIVE blocks a concurrent ROW EXCLUSIVE writer (waiter count=$BLOCKED)"
-          wait $HOLD; RC_H=$?
-          wait $WB; RC_W=$?
-          echo "rc_H=$RC_H rc_W=$RC_W"
-          echo "--- hold log ---"; cat /tmp/hold.log
-          echo "--- writer log ---"; cat /tmp/writer_B.log
-          if [ "$RC_H" -ne 0 ] || [ "$RC_W" -ne 0 ]; then echo "FAIL: hold/writer errored"; exit 1; fi
-          echo "PASS: after the hold released, the legacy writer completed"
+          echo "PASS: writer W BLOCKED with RowExclusiveLock not granted (waiter count=$BLOCKED_W)"
 
-      - name: Reset a3 after Test B semantics (before the real apply)
-        run: |
-          psql -v ON_ERROR_STOP=1 -c "update public.organization_memberships set role='employee', role_id=null where user_id='d0000000-0000-0000-0000-0000000000a3' and org_id='aaaa1111-0000-0000-0000-00000000000a';"
+          # Prove M is HOLDING ShareRowExclusiveLock (granted).
+          HOLDS_M=$(psql -At -c "select count(*) from pg_locks l join pg_class c on c.oid=l.relation join pg_namespace ns on ns.oid=c.relnamespace where ns.nspname='public' and c.relname='organization_memberships' and l.mode='ShareRowExclusiveLock' and l.granted;")
+          if [ "${HOLDS_M:-0}" -lt 1 ]; then
+            echo "FAIL: migration M was NOT holding SHARE ROW EXCLUSIVE (HOLDS_M=${HOLDS_M:-0})"
+            psql -c "select l.locktype, l.relation::regclass as rel, l.mode, l.granted, a.pid, a.wait_event_type, a.wait_event, a.state, left(a.query, 60) as query from pg_locks l left join pg_stat_activity a on a.pid=l.pid where l.relation is not null;"
+            kill $M $W 2>/dev/null
+            psql -c "drop event trigger if exists _ci_pause_migration_evt; drop function if exists public._ci_pause_migration_fn();" >/dev/null 2>&1
+            exit 1
+          fi
+          echo "PASS: migration M is HOLDING ShareRowExclusiveLock granted (count=$HOLDS_M)"
 
-      - name: Apply 0017 in a clean state (after Test B semantics)
-        run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/0017_membership_role_id_sync.sql
+          # --- Wait for both to complete. ---
+          wait $M; RC_M=$?
+          wait $W; RC_W=$?
+          echo "rc_M=$RC_M rc_W=$RC_W"
+          echo "--- migration M log (tail) ---"; tail -30 /tmp/mig_M.log
+          echo "--- writer W log ---"; cat /tmp/writer_W.log
 
-      # Test B (post-apply) — an enum-only update NOW runs through the new trigger,
-      # and the row finishes with role and role_id consistent.
-      - name: Test B - post-apply — enum-only update fires the trigger; role and role_id consistent
-        run: |
-          set +e
-          A3='d0000000-0000-0000-0000-0000000000a3'
-          ORG='aaaa1111-0000-0000-0000-00000000000a'
-          psql -v ON_ERROR_STOP=1 -c "update public.organization_memberships set role='admin' where user_id='$A3' and org_id='$ORG';"
-          RC=$?
-          if [ "$RC" -ne 0 ]; then echo "FAIL: post-apply enum-only update errored"; exit 1; fi
+          if [ "$RC_M" -ne 0 ]; then
+            echo "FAIL: migration M ended with rc=$RC_M"
+            psql -c "drop event trigger if exists _ci_pause_migration_evt; drop function if exists public._ci_pause_migration_fn();" >/dev/null 2>&1
+            exit 1
+          fi
+          if [ "$RC_W" -ne 0 ]; then
+            echo "FAIL: writer W ended with rc=$RC_W"
+            psql -c "drop event trigger if exists _ci_pause_migration_evt; drop function if exists public._ci_pause_migration_fn();" >/dev/null 2>&1
+            exit 1
+          fi
+
+          # --- Verify the trigger installed by M synced W's role_id to 'admin'. ---
           KEY=$(psql -At -c "select r.key from public.organization_memberships m join public.roles r on r.id=m.role_id and r.org_id=m.org_id where m.user_id='$A3' and m.org_id='$ORG';")
           if [ "$KEY" != "admin" ]; then
-            echo "FAIL: after trigger, a3 role_id key expected 'admin', got '$KEY'"
+            echo "FAIL: after Test B, a3 role_id key expected 'admin', got '$KEY'"
             psql -c "select m.role, m.role_id, r.key, r.name from public.organization_memberships m left join public.roles r on r.id=m.role_id where m.user_id='$A3' and m.org_id='$ORG';"
+            psql -c "drop event trigger if exists _ci_pause_migration_evt; drop function if exists public._ci_pause_migration_fn();" >/dev/null 2>&1
             exit 1
           fi
-          echo "PASS: Test B — post-migration enum-only update re-synced role_id via the trigger"
+          echo "PASS: Test B — real migration-first: rc_M=0 rc_W=0; writer was BLOCKED then completed; trigger synced role_id"
+
+          # --- Drop the CI-only pause mechanism so it does not affect the rest of the job. ---
+          psql -v ON_ERROR_STOP=1 <<'SQL_CLEANUP'
+          drop event trigger if exists _ci_pause_migration_evt;
+          drop function if exists public._ci_pause_migration_fn();
+          SQL_CLEANUP

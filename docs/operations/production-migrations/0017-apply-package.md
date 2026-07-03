@@ -10,9 +10,14 @@
 | Field | Value |
 |---|---|
 | Path | `supabase/migrations/0017_membership_role_id_sync.sql` |
-| Git blob | (regenerated for v6 — see `review-bundle/AVI-PR39-independent-review-v6.zip/MANIFEST.sha256`) |
-| SHA-256 | (regenerated for v6 — see `review-bundle/AVI-PR39-independent-review-v6.zip/MANIFEST.sha256`) |
-| Bytes / lines | (regenerated for v6 — see the same manifest) |
+| Git blob | `0dbca46b5c0e7c40bbb9d1b7ff6f5f88c660d145` |
+| SHA-256 (LF-canonical) | `f9295b622afa8bb19893fda7b7e7e43f06b299a48d19228ce4a96be4b31a14f4` |
+| Bytes (LF-canonical) | 26241 |
+| Lines | 490 |
+
+The 0017 migration file was last changed for v6 (LOCK TABLE ... IN SHARE ROW
+EXCLUSIVE MODE + system-role name-drift check) and is UNCHANGED in v7 — v7's
+scope is CI + acceptance + docs only.
 
 ## What it does
 - **Install-time write lock (review v6 #1):** BEFORE the drift guard runs, 0017
@@ -23,10 +28,24 @@
   is stable end-to-end (drift classification → function creation → CREATE TRIGGER
   (itself SHARE ROW EXCLUSIVE, compatible) → seed loop → backfill). ACCESS SHARE
   (SELECT) is unaffected. CI job `validate-membership-sync-install-race` proves
-  BOTH orderings with separate PG sessions: (A) writer holds ROW EXCLUSIVE →
-  migration blocks → writer commits → migration aborts on drift; (B) helper holds
-  SHARE ROW EXCLUSIVE → concurrent enum-only writer waits → helper releases →
-  writer completes → post-apply enum-only update goes through the new trigger.
+  BOTH orderings with SEPARATE PG sessions:
+    - **(A) writer-first (v6):** a legacy enum-only writer holds a ROW EXCLUSIVE
+      transaction; the REAL migration is launched in another session, blocks on
+      LOCK TABLE (waiter observed via `pg_locks` with `mode='ShareRowExclusiveLock'
+      and not granted`), waits for the writer to commit, then aborts before COMMIT
+      on the drift the writer just left (mismatched non-NULL role_id).
+    - **(B) migration-first (v7 real):** the REAL migration is launched; a CI-only
+      event trigger on `ddl_command_end` for `CREATE FUNCTION
+      public.ensure_org_system_roles` fires INSIDE the migration's transaction and
+      `pg_sleep`s deterministically AFTER SHARE ROW EXCLUSIVE is held and BEFORE
+      COMMIT. During that window a legacy enum-only writer in another session is
+      observed waiting with `RowExclusiveLock not granted` while the migration is
+      observed holding `ShareRowExclusiveLock granted`. When the sleep ends the
+      migration completes (rc=0), the writer completes (rc=0), and the newly-
+      installed `organization_memberships_sync_role_id` trigger synchronizes the
+      writer's `role_id`. The event trigger + helper function are installed and
+      dropped by the CI job itself — the production migration file is UNMODIFIED
+      (no `pg_sleep`, no test hook, in the file that ships).
 - `ensure_org_system_roles(org)` (SECURITY DEFINER): idempotently creates the 3
   system roles + their 88 default grants for one org (mirrors 0012 / `ROLE_GRANTS`).
   Takes a transaction-scoped advisory lock keyed on `org_id` (review v5 #1) so

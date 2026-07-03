@@ -1,15 +1,18 @@
--- 0015 acceptance — v6: CATALOG-EXACT constraint + index proof (review v6 #3).
--- BOOLEAN-ONLY and catalog-safe: returns exactly one row with `all_checks_passed`
--- = true or false, NEVER NULL and NEVER an exception, even when the table / index
--- is absent. Every check reads pg_class / pg_constraint / pg_index / pg_attribute
--- directly. The 2 CHECK constraints are anchored to the EXACT normalized form of
--- pg_get_constraintdef, so a weak variant that merely MENTIONS btrim(action) is
--- rejected (it must be exactly `CHECK ((length(btrim(action)) > 0))`, and same
--- for target_type). The index is proven via pg_index catalog data (not via
--- pg_get_indexdef regex): schema, table, btree, non-unique, non-partial, exactly
--- two key attributes, no INCLUDE attributes, no expressions, first key column
--- exactly org_id ASC, second key exactly created_at DESC. Every nullable
--- catalog expression is wrapped in coalesce(...,false).
+-- 0015 acceptance — v7: CATALOG-EXACT constraint + index proof (review v6 #3 +
+-- v7 additions). BOOLEAN-ONLY and catalog-safe: returns exactly one row with
+-- `all_checks_passed` = true or false, NEVER NULL and NEVER an exception, even
+-- when the table / index is absent. Every check reads pg_class / pg_constraint /
+-- pg_index / pg_attribute directly. The 2 CHECK constraints are anchored to the
+-- EXACT normalized form of pg_get_constraintdef, so a weak variant that merely
+-- MENTIONS btrim(action) is rejected. The FK is proven exact end-to-end
+-- (v7): single-col, referenced schema/table/column, ON DELETE CASCADE + ON UPDATE
+-- NO ACTION + MATCH SIMPLE, convalidated, not deferrable, not initially deferred.
+-- The index is proven exact end-to-end (v7): btree, non-unique, non-partial,
+-- indisvalid + indisready + indislive, 2 key attrs, no INCLUDE, no expressions,
+-- first key column = org_id with EXACT indoption[0] = 0 (ASC + default NULLS
+-- LAST), second key column = created_at with EXACT indoption[1] = 3 (DESC +
+-- default NULLS FIRST) — a wrong direction or wrong NULL ordering both fail.
+-- Every nullable catalog expression is wrapped in coalesce(...,false).
 -- Run: psql -At -f supabase/validation/0015_acceptance.sql  (expect t after apply)
 
 with t as (select to_regclass('public.audit_events') as oid),
@@ -58,6 +61,18 @@ select coalesce((
        from pg_constraint c where c.conrelid = (select oid from t) and c.contype = 'f'), false)
   and coalesce((select c.confdeltype = 'c'
        from pg_constraint c where c.conrelid = (select oid from t) and c.contype = 'f'), false)
+  -- v7: FK attributes end-to-end — validated, not deferrable, not deferred,
+  -- ON UPDATE NO ACTION ('a'), MATCH SIMPLE ('s').
+  and coalesce((select c.convalidated
+       from pg_constraint c where c.conrelid = (select oid from t) and c.contype = 'f'), false)
+  and coalesce((select not c.condeferrable
+       from pg_constraint c where c.conrelid = (select oid from t) and c.contype = 'f'), false)
+  and coalesce((select not c.condeferred
+       from pg_constraint c where c.conrelid = (select oid from t) and c.contype = 'f'), false)
+  and coalesce((select c.confupdtype = 'a'
+       from pg_constraint c where c.conrelid = (select oid from t) and c.contype = 'f'), false)
+  and coalesce((select c.confmatchtype = 's'
+       from pg_constraint c where c.conrelid = (select oid from t) and c.contype = 'f'), false)
   -- ---- CHECK CONSTRAINTS: EXACTLY 2, anchored to the exact normalized form (v6 #3).
   -- Rejects weak variants that merely reference btrim / mention 'action'. ----
   and coalesce((select count(*) from pg_constraint c, t
@@ -93,15 +108,26 @@ select coalesce((
         from pg_index i where i.indexrelid = (select oid from ix)), false)
   and coalesce((select i.indexprs is null
         from pg_index i where i.indexrelid = (select oid from ix)), false)
+  -- v7: index is live, valid, ready (rejects INVALID / not-yet-ready / dead states).
+  and coalesce((select i.indisvalid
+        from pg_index i where i.indexrelid = (select oid from ix)), false)
+  and coalesce((select i.indisready
+        from pg_index i where i.indexrelid = (select oid from ix)), false)
+  and coalesce((select i.indislive
+        from pg_index i where i.indexrelid = (select oid from ix)), false)
   and coalesce((select (select a.attname from pg_attribute a
                           where a.attrelid = i.indrelid and a.attnum = i.indkey[0]) = 'org_id'
         from pg_index i where i.indexrelid = (select oid from ix)), false)
-  and coalesce((select (i.indoption[0] & 1) = 0
+  -- v7: EXACT indoption for key 1 = 0 (ASC + default NULLS LAST). Rejects DESC
+  -- and rejects ASC + NULLS FIRST (indoption bit 1) too.
+  and coalesce((select i.indoption[0] = 0
         from pg_index i where i.indexrelid = (select oid from ix)), false)
   and coalesce((select (select a.attname from pg_attribute a
                           where a.attrelid = i.indrelid and a.attnum = i.indkey[1]) = 'created_at'
         from pg_index i where i.indexrelid = (select oid from ix)), false)
-  and coalesce((select (i.indoption[1] & 1) = 1
+  -- v7: EXACT indoption for key 2 = 3 (DESC + default NULLS FIRST). Rejects ASC,
+  -- and rejects DESC + NULLS LAST (which would give indoption = 1).
+  and coalesce((select i.indoption[1] = 3
         from pg_index i where i.indexrelid = (select oid from ix)), false)
   -- ---- ACL: no direct PUBLIC(0)/anon/authenticated table ACL ----
   and coalesce((select not exists (

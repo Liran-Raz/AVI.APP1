@@ -1,18 +1,24 @@
--- 0016 acceptance — v6: CATALOG-EXACT function / index / description / trigger
--- proof (review v6 #4). BOOLEAN-ONLY and catalog-safe: exactly one row,
--- all_checks_passed = t/f, NEVER NULL / NEVER an exception. Cardinality by explicit
--- counts. The unique index is proven via pg_index catalog data (not a regex over
--- pg_get_indexdef): schema public, table public.roles, UNIQUE, btree, non-partial,
--- exactly two key attributes, no INCLUDE attributes, first key column = org_id,
--- second key = EXACTLY ONE expression normalized to lower(btrim(name)). The
--- roles.description column is proven via pg_attribute / pg_attrdef (v6 #4): exact
--- type text, nullable, no default, and the provenance stamp `avi:0016
--- roles.description` is resolved via the REAL pg_attribute.attnum (NOT
--- information_schema.ordinal_position). The updated-at trigger is proven with an
+-- 0016 acceptance — v7: CATALOG-EXACT function / index / description / trigger
+-- proof (review v6 #4 + v7 additions). BOOLEAN-ONLY and catalog-safe: exactly
+-- one row, all_checks_passed = t/f, NEVER NULL / NEVER an exception.
+-- Cardinality by explicit counts. The unique index is proven via pg_index
+-- catalog data (not a regex over pg_get_indexdef): schema public, table
+-- public.roles, UNIQUE, btree, non-partial, exactly two key attributes, no
+-- INCLUDE attributes, indisvalid + indisready + indislive (v7), first key
+-- column = org_id with EXACT indoption[0] = 0 (ASC + NULLS LAST default),
+-- second key = EXACTLY ONE expression normalized to lower(btrim(name)) with
+-- EXACT indoption[1] = 0 (ASC + NULLS LAST default) — v7 rejects a wrong
+-- direction or wrong NULL ordering on either key. The roles.description column
+-- is proven via pg_attribute / pg_attrdef (v6 #4): exact type text, nullable,
+-- no default, and the provenance stamp `avi:0016 roles.description` is
+-- resolved via the REAL pg_attribute.attnum (NOT
+-- information_schema.ordinal_position). The updated-at trigger is proven with
 -- EXACT tgtype = 19 (ROW + BEFORE + UPDATE only — rejects statement-level,
 -- extra-INSERT/DELETE/TRUNCATE variants) + exact tgfoid =
--- to_regprocedure('public.set_updated_at()') (rejects a same-named function in
--- another schema).
+-- to_regprocedure('public.set_updated_at()') (rejects a same-named function
+-- in another schema), PLUS an exclusivity check (v7): EXACTLY ONE non-internal
+-- trigger on public.roles calls public.set_updated_at() — an extra trigger
+-- with a DIFFERENT name that also calls the same function fails acceptance.
 -- Run: psql -At -f supabase/validation/0016_acceptance.sql  (expect t after apply)
 
 with rx as (select to_regclass('public.roles_org_name_norm_uniq') as oid)
@@ -102,11 +108,24 @@ select coalesce((
         from pg_index i where i.indexrelid = (select oid from rx)), false)
   and coalesce((select i.indnatts = 2
         from pg_index i where i.indexrelid = (select oid from rx)), false)
+  -- v7: index is live, valid, ready (rejects INVALID / not-yet-ready / dead states).
+  and coalesce((select i.indisvalid
+        from pg_index i where i.indexrelid = (select oid from rx)), false)
+  and coalesce((select i.indisready
+        from pg_index i where i.indexrelid = (select oid from rx)), false)
+  and coalesce((select i.indislive
+        from pg_index i where i.indexrelid = (select oid from rx)), false)
   -- first key: attnum(org_id); second key: 0 (= placeholder for an expression)
   and coalesce((select (select a.attname from pg_attribute a
                           where a.attrelid = i.indrelid and a.attnum = i.indkey[0]) = 'org_id'
         from pg_index i where i.indexrelid = (select oid from rx)), false)
   and coalesce((select i.indkey[1] = 0
+        from pg_index i where i.indexrelid = (select oid from rx)), false)
+  -- v7: EXACT indoption for BOTH keys = 0 (ASC + default NULLS LAST). Rejects
+  -- DESC / NULLS FIRST on either key (indoption[k] != 0 fails).
+  and coalesce((select i.indoption[0] = 0
+        from pg_index i where i.indexrelid = (select oid from rx)), false)
+  and coalesce((select i.indoption[1] = 0
         from pg_index i where i.indexrelid = (select oid from rx)), false)
   -- exactly ONE expression key, normalized to lower(btrim(name))
   and coalesce((select i.indexprs is not null
@@ -123,15 +142,25 @@ select coalesce((
         from pg_attribute a
         where a.attrelid = to_regclass('public.roles')
           and a.attname = 'description' and not a.attisdropped), false)
-  -- ---- roles_set_updated_at trigger: EXACTLY tgtype=19 (ROW + BEFORE + UPDATE only)
-  -- + EXACT tgfoid = to_regprocedure('public.set_updated_at()') (v6 #2). Rejects a
-  -- statement-level trigger (missing ROW bit), an extra INSERT/DELETE/TRUNCATE event
-  -- (extra event bits), or a same-named function in another schema (wrong OID). ----
+  -- ---- roles_set_updated_at trigger — v6 #2 + v7:
+  -- (1) EXACTLY ONE non-internal trigger on public.roles calls public.set_updated_at()
+  --     (rejects an extra trigger with a DIFFERENT name that also calls the same
+  --     function — the count would be 2).
+  -- (2) THAT trigger is named 'roles_set_updated_at', enabled, EXACT tgtype = 19
+  --     (ROW + BEFORE + UPDATE only), EXACT tgfoid via to_regprocedure(...) (rejects
+  --     a same-named function in another schema).
+  and coalesce((select count(*) from pg_trigger t
+        join pg_class c on c.oid = t.tgrelid
+        join pg_namespace n on n.oid = c.relnamespace
+        where n.nspname='public' and c.relname='roles'
+          and t.tgfoid = to_regprocedure('public.set_updated_at()')
+          and not t.tgisinternal) = 1, false)
   and coalesce((select count(*) from pg_trigger t
         join pg_class c on c.oid = t.tgrelid
         join pg_namespace n on n.oid = c.relnamespace
         where n.nspname='public' and c.relname='roles' and t.tgname='roles_set_updated_at'
           and t.tgenabled <> 'D'
           and t.tgtype = 19
-          and t.tgfoid = to_regprocedure('public.set_updated_at()')) = 1, false)
+          and t.tgfoid = to_regprocedure('public.set_updated_at()')
+          and not t.tgisinternal) = 1, false)
 ), false) as all_checks_passed;
