@@ -111,6 +111,63 @@ export type RecordScope = (typeof RECORD_SCOPES)[number];
 export const SUPPORTED_RECORD_SCOPES: readonly RecordScope[] = ["all", "own"];
 
 // ============================================================
+// Custom-role GRANTABLE catalog (Phase 8K, Decision B)
+// ============================================================
+//
+// NOT every PERMISSIONS value may be granted to a CUSTOM role. A permission is
+// grantable ONLY if it is enforced END-TO-END by the central authorization
+// engine (so a DB grant actually takes effect) AND has no enum-bound relational
+// override, owner-only restriction, self-scoped semantics, or unimplemented
+// surface that would make a custom grant misleading ("granted but ignored").
+//
+// EXCLUDED (with reason) — must stay non-grantable until the custom-role
+// ASSIGNMENT phase implements complete enforcement for them:
+//   * ownership.transfer                      protected action; never grantable (not in PERMISSIONS).
+//   * roles.manage                            Decision B: only the legacy Owner manages roles.
+//   * roles.view                              list_org_roles gates on the enum owner/admin — a custom grant is ignored by the DB.
+//   * team.invite/change_role/deactivate/
+//     reactivate/remove                       membership lifecycle: enum-bound relational invariants + coarse role belts.
+//   * invitations.* , organization.* ,
+//     settings.* , billing.*                  owner-only / coarse-belt / future / not engine-enforced.
+//   * notifications.*                         inherently self-scoped; a role grant is meaningless.
+//   * clients.delete/export , team.remove     not implemented (future); cannot be enforced yet.
+//
+// Conservative + forward-safe: widen this list only when the excluded surfaces
+// gain complete grant-driven enforcement. Kept framework-free so the UI catalog,
+// the zod validators, and the DB allowlist all derive from ONE source.
+export const CUSTOM_ROLE_GRANTABLE_PERMISSIONS = [
+  PERMISSIONS.TEAM_VIEW,
+  PERMISSIONS.CLIENTS_VIEW,
+  PERMISSIONS.CLIENTS_CREATE,
+  PERMISSIONS.CLIENTS_EDIT,
+  PERMISSIONS.CLIENTS_ARCHIVE,
+  PERMISSIONS.CLIENTS_RESTORE,
+  PERMISSIONS.CONTACTS_VIEW,
+  PERMISSIONS.CONTACTS_CREATE,
+  PERMISSIONS.CONTACTS_EDIT,
+  PERMISSIONS.CONTACTS_DELETE,
+  PERMISSIONS.TASKS_VIEW,
+  PERMISSIONS.TASKS_CREATE,
+  PERMISSIONS.TASKS_EDIT,
+  PERMISSIONS.TASKS_CHANGE_STATUS,
+  PERMISSIONS.TASKS_ARCHIVE,
+  PERMISSIONS.TASKS_DELETE,
+  PERMISSIONS.TASKS_ASSIGN_SELF,
+  PERMISSIONS.TASKS_ASSIGN_OTHERS,
+] as const;
+
+const CUSTOM_ROLE_GRANTABLE_SET = new Set<string>(
+  CUSTOM_ROLE_GRANTABLE_PERMISSIONS,
+);
+
+// True only for permissions that may be granted to a CUSTOM role. Note this is
+// STRICTER than isGrantablePermission (which is the full PERMISSIONS catalog used
+// by system roles): system roles may legitimately hold roles.manage etc.
+export function isCustomRoleGrantable(key: string): key is Permission {
+  return CUSTOM_ROLE_GRANTABLE_SET.has(key);
+}
+
+// ============================================================
 // Capability (what /api/me exposes to the client as display HINTS)
 // ============================================================
 

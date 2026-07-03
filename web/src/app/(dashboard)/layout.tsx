@@ -1,7 +1,10 @@
 import { redirect } from "next/navigation";
 
 import { AppShell } from "@/components/dashboard/app-shell";
-import { getCurrentSession } from "@/server/auth/session";
+import { getCurrentSession, type FullSession } from "@/server/auth/session";
+import { can } from "@/server/auth/authorization";
+import { PERMISSIONS } from "@/server/auth/permissions";
+import { isRoleManagementUiEnabled } from "@/server/auth/role-management.flags";
 
 export default async function DashboardLayout({
   children,
@@ -22,12 +25,19 @@ export default async function DashboardLayout({
     role: m.role,
   }));
 
+  // Reveal the roles-management nav only when the UI flag is on AND the viewer
+  // can view roles (Owner/Manager). Display-only — the page + RPCs re-check.
+  const showRolesNav =
+    isRoleManagementUiEnabled() &&
+    can(session as FullSession, PERMISSIONS.ROLES_VIEW);
+
   return (
     <AppShell
       profile={session.profile}
       organization={session.activeOrg}
       memberships={offices}
       activeOrgId={session.activeOrg.id}
+      showRolesNav={showRolesNav}
     >
       {children}
     </AppShell>

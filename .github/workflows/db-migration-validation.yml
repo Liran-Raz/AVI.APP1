@@ -158,3 +158,989 @@ jobs:
 
       - name: Rollback rehearsal (R1-R2)
         run: psql -v ON_ERROR_STOP=1 -f supabase/validation/0011_rollback.sql
+
+  # Role-management migrations (0015 audit_events + 0016 RPCs). Self-contained
+  # harness on a SEPARATE throwaway postgres:16 — no Supabase / Production.
+  validate-role-management:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      PGHOST: localhost
+      PGPORT: "5432"
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGDATABASE: postgres
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Ensure psql client
+        run: psql --version || (sudo apt-get update && sudo apt-get install -y postgresql-client)
+
+      - name: Wait for PostgreSQL
+        run: |
+          for i in $(seq 1 30); do
+            if pg_isready -q; then echo "postgres ready"; exit 0; fi
+            sleep 2
+          done
+          echo "postgres did not become ready"; exit 1
+
+      - name: Build role-management harness (prereqs + auth.uid + fixtures)
+        run: psql -v ON_ERROR_STOP=1 -f supabase/validation/0015_0016_harness.sql
+
+      # Review #3: 0015 is strict single-apply (CREATE TABLE/INDEX, no IF NOT
+      # EXISTS, absence guards). A non-postgres apply and a conflicting object fail.
+      - name: 0015 refuses a non-postgres role
+        run: |
+          if psql -v ON_ERROR_STOP=1 -c "set role authenticated;" -f supabase/migrations/0015_audit_events.sql >/dev/null 2>&1; then
+            echo "FAIL: 0015 applied as a non-postgres role"; exit 1
+          fi
+          echo "PASS: 0015 refused a non-postgres role"
+
+      - name: 0015 refuses a conflicting pre-existing audit_events
+        run: |
+          psql -v ON_ERROR_STOP=1 -c "create table public.audit_events (x int);"
+          if psql -v ON_ERROR_STOP=1 -f supabase/migrations/0015_audit_events.sql >/dev/null 2>&1; then
+            echo "FAIL: 0015 applied despite a conflicting audit_events table"; exit 1
+          fi
+          echo "PASS: 0015 rejected the conflicting table"
+          psql -v ON_ERROR_STOP=1 -c "drop table public.audit_events;"
+
+      - name: Apply 0015 (audit_events)
+        run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/0015_audit_events.sql
+
+      - name: Reject duplicate 0015 (absence guard must fail)
+        run: |
+          if psql -v ON_ERROR_STOP=1 -f supabase/migrations/0015_audit_events.sql >/dev/null 2>&1; then
+            echo "FAIL: re-applying 0015 did not error on the existing table"; exit 1
+          fi
+          echo "PASS: duplicate 0015 cleanly rejected"
+
+      - name: 0016 refuses a non-postgres role
+        run: |
+          if psql -v ON_ERROR_STOP=1 -c "set role authenticated;" -f supabase/migrations/0016_role_management_rpcs.sql >/dev/null 2>&1; then
+            echo "FAIL: 0016 applied as a non-postgres role"; exit 1
+          fi
+          echo "PASS: 0016 refused a non-postgres role"
+
+      # Review v4 #1: roles.description is a strict single-creator — 0016 refuses to
+      # apply if the column already exists, of ANY type.
+      - name: 0016 refuses a pre-existing roles.description (text)
+        run: |
+          psql -v ON_ERROR_STOP=1 -c "alter table public.roles add column description text;"
+          if psql -v ON_ERROR_STOP=1 -f supabase/migrations/0016_role_management_rpcs.sql >/dev/null 2>&1; then
+            echo "FAIL: 0016 applied despite a pre-existing text description"; exit 1
+          fi
+          echo "PASS: 0016 rejected a pre-existing text description"
+          psql -v ON_ERROR_STOP=1 -c "alter table public.roles drop column description;"
+
+      - name: 0016 refuses a pre-existing roles.description (wrong type)
+        run: |
+          psql -v ON_ERROR_STOP=1 -c "alter table public.roles add column description integer;"
+          if psql -v ON_ERROR_STOP=1 -f supabase/migrations/0016_role_management_rpcs.sql >/dev/null 2>&1; then
+            echo "FAIL: 0016 applied despite a wrong-type description"; exit 1
+          fi
+          echo "PASS: 0016 rejected a wrong-type description"
+          psql -v ON_ERROR_STOP=1 -c "alter table public.roles drop column description;"
+
+      - name: Apply 0016 (role-management RPCs)
+        run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/0016_role_management_rpcs.sql
+
+      - name: Reject duplicate 0016 (no-overload guard must fail)
+        run: |
+          if psql -v ON_ERROR_STOP=1 -f supabase/migrations/0016_role_management_rpcs.sql >/dev/null 2>&1; then
+            echo "FAIL: re-applying 0016 did not error on existing functions"; exit 1
+          fi
+          echo "PASS: duplicate 0016 cleanly rejected"
+
+      - name: anon cannot execute a management RPC (expect denial)
+        run: |
+          if psql -q -c "set role anon; select public.create_org_role('11111111-0000-0000-0000-0000000000aa','x',null,'[]'::jsonb);" >/dev/null 2>&1; then
+            echo "FAIL: anon executed a management RPC"; exit 1
+          fi
+          echo "PASS: anon denied execute"
+
+      - name: Verify 0015/0016 (definition, privileges, behavior)
+        run: psql -v ON_ERROR_STOP=1 -f supabase/validation/0015_0016_verify.sql
+
+      # Review #7: the 0016 optimistic-concurrency PREFLIGHT must detect a missing/
+      # disabled roles_set_updated_at trigger and return pass=false. v8 #3: the
+      # preflight asserts the EXACT catalog state (tgenabled='O', tgtype=19, exact
+      # tgfoid, not internal, no WHEN qual, no args, no UPDATE OF column list).
+      - name: roles_set_updated_at trigger preflight (present=true, missing=false)
+        run: |
+          set +e
+          PRE='select (exists (select 1 from pg_trigger t join pg_class c on c.oid=t.tgrelid join pg_namespace n on n.oid=c.relnamespace where n.nspname=$$public$$ and c.relname=$$roles$$ and t.tgname=$$roles_set_updated_at$$ and t.tgenabled = $$O$$ and t.tgtype = 19 and t.tgfoid = to_regprocedure($$public.set_updated_at()$$) and not t.tgisinternal and t.tgqual is null and t.tgnargs = 0 and cardinality(t.tgattr::int2[]) = 0) and exists (select 1 from information_schema.columns where table_schema=$$public$$ and table_name=$$roles$$ and column_name=$$updated_at$$ and data_type=$$timestamp with time zone$$)) as pass;'
+          P1=$(psql -At -c "$PRE")
+          if [ "$P1" != "t" ]; then echo "FAIL: preflight expected pass=t with the trigger present, got '$P1'"; exit 1; fi
+          echo "PASS: preflight pass=true with the trigger present"
+          psql -v ON_ERROR_STOP=1 -c "drop trigger roles_set_updated_at on public.roles;"
+          P2=$(psql -At -c "$PRE")
+          if [ "$P2" != "f" ]; then echo "FAIL: preflight expected pass=f with the trigger dropped, got '$P2'"; exit 1; fi
+          echo "PASS: preflight pass=false with the trigger missing"
+          psql -v ON_ERROR_STOP=1 -c "create trigger roles_set_updated_at before update on public.roles for each row execute function public.set_updated_at();"
+
+      # Review #3/#4: prove the relacl-based PUBLIC/anon/authenticated table-ACL
+      # detector is not a false-negative (it catches a deliberately-added PUBLIC grant).
+      - name: 0015 PUBLIC-grant detection (relacl catches a PUBLIC table grant)
+        run: |
+          set +e
+          DET="select count(*) from pg_class c cross join lateral aclexplode(coalesce(c.relacl, acldefault('r'::\"char\", c.relowner))) a where c.oid='public.audit_events'::regclass and (a.grantee=0 or a.grantee='anon'::regrole or a.grantee='authenticated'::regrole);"
+          BAD0=$(psql -At -c "$DET")
+          if [ "$BAD0" != "0" ]; then echo "FAIL: baseline detector expected 0, got '$BAD0'"; exit 1; fi
+          psql -v ON_ERROR_STOP=1 -c "grant select on public.audit_events to public;"
+          BAD1=$(psql -At -c "$DET")
+          if [ "${BAD1:-0}" -lt 1 ]; then echo "FAIL: detector did NOT catch a PUBLIC grant (got '$BAD1')"; exit 1; fi
+          echo "PASS: relacl detector catches a PUBLIC table grant (baseline=$BAD0, after=$BAD1)"
+          psql -v ON_ERROR_STOP=1 -c "revoke select on public.audit_events from public;"
+
+      # Review #6: prove the normalized role-name uniqueness is CONCURRENCY-safe
+      # (the unique index is the sole arbiter; create_org_role has no read-modify-
+      # write TOCTOU). Two SEPARATE backends create the same normalized name at the
+      # same time -> exactly one commits, the other gets unique_violation (23505).
+      - name: Concurrency-safe role name (two parallel creates -> exactly one wins)
+        run: |
+          set +e   # default shell is `bash -e`; the LOSING psql exits non-zero by design
+          SUB='a0000000-0000-0000-0000-0000000000a1'   # active owner of org ...aa
+          ORG='11111111-0000-0000-0000-0000000000aa'
+          run_create() {
+            # ON_ERROR_STOP=1 so a SQL error makes psql exit non-zero (the loser).
+            psql -At -v ON_ERROR_STOP=1 \
+              -c "set role authenticated; select set_config('request.jwt.claim.sub','$SUB',false); select public.create_org_role('$ORG', '$1', null, '[]'::jsonb);" \
+              >"$2" 2>&1
+            echo $? >"$2.rc"
+          }
+          # Same NORMALIZED name (lower(btrim(name))) via case/whitespace variants.
+          run_create "ZZ Concurrency Race"         /tmp/race_a &
+          run_create "   zz concurrency race   "   /tmp/race_b &
+          wait
+          RC1=$(cat /tmp/race_a.rc 2>/dev/null || echo 99); RC2=$(cat /tmp/race_b.rc 2>/dev/null || echo 99)
+          SUCC=$(( (RC1==0?1:0) + (RC2==0?1:0) ))
+          echo "rc_a=$RC1 rc_b=$RC2"
+          echo "--- race_a ---"; cat /tmp/race_a
+          echo "--- race_b ---"; cat /tmp/race_b
+          if [ "$SUCC" -ne 1 ]; then
+            echo "FAIL: expected exactly one concurrent create to succeed (got $SUCC)"; exit 1
+          fi
+          if ! grep -Eq 'already exists|unique_violation|23505' /tmp/race_a /tmp/race_b; then
+            echo "FAIL: the losing create did not report a unique-name conflict"; exit 1
+          fi
+          echo "PASS: concurrent identical-normalized-name creates -> exactly one wins; loser 23505"
+
+      # Review v4 #3/#4/#5: machine-readable, BOOLEAN-ONLY acceptance (exactly
+      # true/false, never NULL / never an exception). Positive = t after apply.
+      - name: 0015 + 0016 acceptance = true (post-apply)
+        run: |
+          set +e
+          A15=$(psql -At -f supabase/validation/0015_acceptance.sql)
+          A16=$(psql -At -f supabase/validation/0016_acceptance.sql)
+          echo "0015_acceptance=$A15  0016_acceptance=$A16"
+          if [ "$A15" != "t" ]; then echo "FAIL: 0015_acceptance expected t, got '$A15'"; exit 1; fi
+          if [ "$A16" != "t" ]; then
+            echo "FAIL: 0016_acceptance expected t, got '$A16' — diagnostics:"
+            psql -At -c "select 'rls3='||(select count(*) from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relname in ('roles','role_permissions','audit_events') and c.relkind='r' and c.relrowsecurity);"
+            psql -At -c "select 'stamp='||coalesce(col_description(to_regclass('public.roles'), (select ordinal_position from information_schema.columns where table_schema='public' and table_name='roles' and column_name='description')::int),'<none>');"
+            psql -At -c "select 'descr_type='||coalesce((select data_type from information_schema.columns where table_schema='public' and table_name='roles' and column_name='description'),'<none>');"
+            psql -At -c "select 'idxdef='||coalesce(pg_get_indexdef(to_regclass('public.roles_org_name_norm_uniq')),'<none>');"
+            exit 1
+          fi
+          echo "PASS: both acceptance queries return true"
+
+      - name: acceptance = false (never NULL/exception) on missing index / overload
+        run: |
+          set +e
+          psql -v ON_ERROR_STOP=1 -c "drop index public.roles_org_name_norm_uniq;"
+          V=$(psql -At -f supabase/validation/0016_acceptance.sql); RC=$?
+          if [ "$RC" -ne 0 ] || [ "$V" != "f" ]; then echo "FAIL: missing index expected boolean 'f', got '$V' (rc$RC)"; exit 1; fi
+          echo "PASS: missing index -> 0016 acceptance = f"
+          psql -v ON_ERROR_STOP=1 -c "create unique index roles_org_name_norm_uniq on public.roles (org_id, lower(btrim(name)));"
+          psql -v ON_ERROR_STOP=1 -c "create function public.list_org_roles(text) returns int language sql as \$\$ select 1 \$\$;"
+          V=$(psql -At -f supabase/validation/0016_acceptance.sql); RC=$?
+          if [ "$RC" -ne 0 ] || [ "$V" != "f" ]; then echo "FAIL: overload expected boolean 'f', got '$V' (rc$RC)"; exit 1; fi
+          echo "PASS: function overload -> 0016 acceptance = f"
+          psql -v ON_ERROR_STOP=1 -c "drop function public.list_org_roles(text);"
+
+      # Review v6 #5: exhaustive malformed-catalog negatives. Every malformed
+      # variant is injected inside a TRANSACTION, the FULL acceptance file (not
+      # a fragment) is loaded via \i, then the transaction is ROLLED BACK so the
+      # positive state is preserved for the next test. Each variant MUST return
+      # exactly 'f'.
+      - name: Malformed-catalog negatives (v6 #5 / v8 #1-#3) — 0015/0016 variants -> acceptance=false
+        run: |
+          set +e
+          NEG () {
+            local name="$1" script="$2" mutation="$3"
+            local out rc V
+            # v8 #2: ON_ERROR_STOP=1 + rc verification — an SQL error inside the
+            # mutation or inside the acceptance file FAILS the CI test instead of
+            # being swallowed as an aborted transaction. A negative must prove
+            # acceptance=f with rc=0, never via an error.
+            out=$(psql -At -v ON_ERROR_STOP=1 <<PSQL
+          begin;
+          ${mutation}
+          \\i supabase/validation/${script}.sql
+          rollback;
+          PSQL
+            ); rc=$?
+            V=$(printf '%s\n' "$out" | tr -d '\r' | grep -E '^[tf]$' | tail -1)
+            if [ "$rc" -ne 0 ]; then
+              echo "FAIL: [$name] psql exited rc=$rc (SQL error while proving the negative)"
+              printf 'RAW:\n%s\n' "$out"
+              exit 1
+            fi
+            if [ "$V" != "f" ]; then
+              echo "FAIL: [$name] expected acceptance=f, got '$V' (rc=$rc)"
+              printf 'RAW:\n%s\n' "$out"
+              exit 1
+            fi
+            echo "PASS: [$name] -> acceptance=f (rc=0)"
+          }
+          # -------- 0015 (audit_events) --------
+          # v8 #2: an ADDITIONAL (fully valid) FK -> the aggregate FK proof sees
+          # n=2 -> acceptance returns exactly f with rc=0 (no multi-row scalar
+          # subquery error).
+          NEG "0015-fk-additional" "0015_acceptance" "
+            alter table public.audit_events add constraint fk_extra foreign key (org_id) references public.organizations(id);
+          "
+          # v8 #1: wrong-TABLE target, fully VALIDATED (no NOT VALID). A decoy
+          # table is populated with every organizations.id so validation passes;
+          # every other FK attribute (CASCADE / NO ACTION / SIMPLE / not
+          # deferrable / immediate) is preserved — the ONLY deviation is the
+          # referenced relation, so acceptance=f isolates the wrong-table check.
+          NEG "0015-fk-wrong-table" "0015_acceptance" "
+            create table public.orgs_decoy (id uuid primary key);
+            insert into public.orgs_decoy (id) select id from public.organizations;
+            do \$mut\$ declare cn text;
+            begin select conname into cn from pg_constraint where conrelid='public.audit_events'::regclass and contype='f';
+              execute 'alter table public.audit_events drop constraint '||quote_ident(cn); end \$mut\$;
+            alter table public.audit_events add constraint fk_wrong foreign key (org_id) references public.orgs_decoy(id) on delete cascade;
+          "
+          # v8 #1: wrong-SCHEMA target, fully VALIDATED — same-named table in
+          # other_schema populated with every public.organizations.id; only the
+          # referenced schema deviates.
+          NEG "0015-fk-wrong-schema" "0015_acceptance" "
+            create schema if not exists other_schema;
+            create table other_schema.organizations (id uuid primary key);
+            insert into other_schema.organizations (id) select id from public.organizations;
+            do \$mut\$ declare cn text;
+            begin select conname into cn from pg_constraint where conrelid='public.audit_events'::regclass and contype='f';
+              execute 'alter table public.audit_events drop constraint '||quote_ident(cn); end \$mut\$;
+            alter table public.audit_events add constraint fk_wrong_schema foreign key (org_id) references other_schema.organizations(id) on delete cascade;
+          "
+          NEG "0015-fk-wrong-ondelete" "0015_acceptance" "
+            do \$mut\$ declare cn text;
+            begin select conname into cn from pg_constraint where conrelid='public.audit_events'::regclass and contype='f';
+              execute 'alter table public.audit_events drop constraint '||quote_ident(cn); end \$mut\$;
+            alter table public.audit_events add constraint fk_restrict foreign key (org_id) references public.organizations(id) on delete restrict;
+          "
+          NEG "0015-check-extra" "0015_acceptance" "
+            alter table public.audit_events add constraint check_extra check (length(action) < 500);
+          "
+          NEG "0015-check-missing-target_type" "0015_acceptance" "
+            do \$mut\$ declare cn text;
+            begin
+              select conname into cn from pg_constraint
+              where conrelid='public.audit_events'::regclass and contype='c'
+                and pg_get_constraintdef(oid) ~ 'btrim\\(target_type\\)';
+              execute 'alter table public.audit_events drop constraint '||quote_ident(cn);
+            end \$mut\$;
+          "
+          NEG "0015-check-weak-action" "0015_acceptance" "
+            do \$mut\$ declare cn text;
+            begin
+              select conname into cn from pg_constraint
+              where conrelid='public.audit_events'::regclass and contype='c'
+                and pg_get_constraintdef(oid) ~ 'btrim\\(action\\)';
+              execute 'alter table public.audit_events drop constraint '||quote_ident(cn);
+            end \$mut\$;
+            alter table public.audit_events add constraint action_weak check (btrim(action) is not null);
+          "
+          NEG "0015-check-dup-action-replacing-target_type" "0015_acceptance" "
+            do \$mut\$ declare cn text;
+            begin
+              select conname into cn from pg_constraint
+              where conrelid='public.audit_events'::regclass and contype='c'
+                and pg_get_constraintdef(oid) ~ 'btrim\\(target_type\\)';
+              execute 'alter table public.audit_events drop constraint '||quote_ident(cn);
+            end \$mut\$;
+            alter table public.audit_events add constraint action_dup check (length(btrim(action)) > 0);
+          "
+          NEG "0015-index-third-key" "0015_acceptance" "
+            drop index public.audit_events_org_created_idx;
+            create index audit_events_org_created_idx on public.audit_events (org_id, created_at desc, id);
+          "
+          NEG "0015-index-with-INCLUDE" "0015_acceptance" "
+            drop index public.audit_events_org_created_idx;
+            create index audit_events_org_created_idx on public.audit_events (org_id, created_at desc) include (id);
+          "
+          NEG "0015-index-wrong-direction" "0015_acceptance" "
+            drop index public.audit_events_org_created_idx;
+            create index audit_events_org_created_idx on public.audit_events (org_id desc, created_at asc);
+          "
+          # v7 additions (v8 #1: wrong-referenced-column rebuilt as fully VALIDATED) --------
+          # Alternate UUID column alt_id is populated 1:1 from id, made NOT NULL +
+          # UNIQUE, then the FK is rerouted to organizations(alt_id) and VALIDATED
+          # (every audit_events.org_id equals some organizations.id = alt_id).
+          # Every other FK attribute is preserved; only the referenced COLUMN
+          # deviates, so acceptance=f isolates the wrong-referenced-column check.
+          NEG "0015-fk-wrong-referenced-column" "0015_acceptance" "
+            alter table public.organizations add column alt_id uuid;
+            update public.organizations set alt_id = id;
+            alter table public.organizations alter column alt_id set not null;
+            alter table public.organizations add constraint organizations_alt_id_uniq unique (alt_id);
+            do \$mut\$ declare cn text;
+            begin select conname into cn from pg_constraint where conrelid='public.audit_events'::regclass and contype='f';
+              execute 'alter table public.audit_events drop constraint '||quote_ident(cn); end \$mut\$;
+            alter table public.audit_events add constraint fk_wrong_col foreign key (org_id) references public.organizations(alt_id) on delete cascade;
+          "
+          # v8 #1 (kept from v7 as the ISOLATED convalidated=false proof): the FK
+          # target is fully CORRECT — the ONLY deviation is NOT VALID.
+          NEG "0015-fk-not-valid" "0015_acceptance" "
+            do \$mut\$ declare cn text;
+            begin select conname into cn from pg_constraint where conrelid='public.audit_events'::regclass and contype='f';
+              execute 'alter table public.audit_events drop constraint '||quote_ident(cn); end \$mut\$;
+            alter table public.audit_events add constraint fk_correct_not_valid foreign key (org_id) references public.organizations(id) on delete cascade not valid;
+          "
+          NEG "0015-index-desc-nulls-last" "0015_acceptance" "
+            -- Same shape but the second key is DESC NULLS LAST — indoption[1] becomes 1, not 3.
+            drop index public.audit_events_org_created_idx;
+            create index audit_events_org_created_idx on public.audit_events (org_id, created_at desc nulls last);
+          "
+          # -------- 0016 (roles.description / roles_set_updated_at / roles_org_name_norm_uniq) --------
+          NEG "0016-description-not-null" "0016_acceptance" "
+            -- Normalize any pre-existing NULL descriptions inside the transaction so
+            -- SET NOT NULL can succeed; the ROLLBACK reverts both changes.
+            update public.roles set description = coalesce(description, '');
+            alter table public.roles alter column description set not null;
+          "
+          NEG "0016-description-with-default" "0016_acceptance" "
+            alter table public.roles alter column description set default 'default_text';
+          "
+          NEG "0016-index-wrong-expression" "0016_acceptance" "
+            drop index public.roles_org_name_norm_uniq;
+            create unique index roles_org_name_norm_uniq on public.roles (org_id, lower(name));
+          "
+          NEG "0016-index-third-key" "0016_acceptance" "
+            drop index public.roles_org_name_norm_uniq;
+            create unique index roles_org_name_norm_uniq on public.roles (org_id, lower(btrim(name)), key);
+          "
+          NEG "0016-index-with-INCLUDE" "0016_acceptance" "
+            drop index public.roles_org_name_norm_uniq;
+            create unique index roles_org_name_norm_uniq on public.roles (org_id, lower(btrim(name))) include (key);
+          "
+          NEG "0016-index-non-unique" "0016_acceptance" "
+            drop index public.roles_org_name_norm_uniq;
+            create index roles_org_name_norm_uniq on public.roles (org_id, lower(btrim(name)));
+          "
+          NEG "0016-trigger-statement-level" "0016_acceptance" "
+            drop trigger roles_set_updated_at on public.roles;
+            create trigger roles_set_updated_at before update on public.roles for each statement execute function public.set_updated_at();
+          "
+          NEG "0016-trigger-extra-INSERT" "0016_acceptance" "
+            drop trigger roles_set_updated_at on public.roles;
+            create trigger roles_set_updated_at before insert or update on public.roles for each row execute function public.set_updated_at();
+          "
+          NEG "0016-trigger-extra-DELETE" "0016_acceptance" "
+            drop trigger roles_set_updated_at on public.roles;
+            create trigger roles_set_updated_at before update or delete on public.roles for each row execute function public.set_updated_at();
+          "
+          NEG "0016-trigger-wrong-fn-schema" "0016_acceptance" "
+            create schema if not exists other_fn_schema;
+            create or replace function other_fn_schema.set_updated_at() returns trigger language plpgsql as \$f\$ begin new.updated_at = now(); return new; end \$f\$;
+            drop trigger roles_set_updated_at on public.roles;
+            create trigger roles_set_updated_at before update on public.roles for each row execute function other_fn_schema.set_updated_at();
+          "
+          # v7 additions --------
+          NEG "0016-index-2nd-key-DESC" "0016_acceptance" "
+            -- Second key becomes DESC (indoption[1]=1). v7 rejects that (must be 0).
+            drop index public.roles_org_name_norm_uniq;
+            create unique index roles_org_name_norm_uniq on public.roles (org_id, lower(btrim(name)) desc);
+          "
+          NEG "0016-index-1st-key-DESC-NULLS-FIRST" "0016_acceptance" "
+            -- First key DESC + NULLS FIRST -> indoption[0]=3. v7 rejects that (must be 0).
+            drop index public.roles_org_name_norm_uniq;
+            create unique index roles_org_name_norm_uniq on public.roles (org_id desc nulls first, lower(btrim(name)));
+          "
+          NEG "0016-trigger-extra-with-different-name" "0016_acceptance" "
+            -- Keep the canonical trigger AND add an extra trigger with a DIFFERENT name
+            -- that also calls public.set_updated_at() on public.roles. The v7 exclusivity
+            -- check counts triggers by function OID, so the count becomes 2 -> acceptance=f.
+            create trigger roles_extra_setter before update on public.roles for each row execute function public.set_updated_at();
+          "
+          # v8 #3 additions — the trigger must be in EXACTLY the intended catalog
+          # state; each variant deviates in ONE newly-asserted attribute.
+          NEG "0016-trigger-enable-replica" "0016_acceptance" "
+            -- tgenabled becomes 'R' (fires only in replica mode) — not 'O'.
+            alter table public.roles enable replica trigger roles_set_updated_at;
+          "
+          NEG "0016-trigger-when-false" "0016_acceptance" "
+            -- Correct trigger but with a WHEN qualification -> tgqual is NOT null.
+            drop trigger roles_set_updated_at on public.roles;
+            create trigger roles_set_updated_at before update on public.roles for each row when (false) execute function public.set_updated_at();
+          "
+          NEG "0016-trigger-update-of-column" "0016_acceptance" "
+            -- Correct function/event mask but column-specific UPDATE OF -> tgattr NOT empty.
+            drop trigger roles_set_updated_at on public.roles;
+            create trigger roles_set_updated_at before update of name on public.roles for each row execute function public.set_updated_at();
+          "
+          NEG "0016-trigger-with-argument" "0016_acceptance" "
+            -- Correct trigger but the function is invoked with an argument -> tgnargs=1.
+            drop trigger roles_set_updated_at on public.roles;
+            create trigger roles_set_updated_at before update on public.roles for each row execute function public.set_updated_at('x');
+          "
+          echo "PASS: all 0015/0016 malformed-catalog negatives -> acceptance=f"
+
+      - name: Roll back 0015/0016 (run twice - idempotent, both must pass)
+        run: |
+          psql -v ON_ERROR_STOP=1 -f supabase/validation/0015_0016_rollback.sql
+          psql -v ON_ERROR_STOP=1 -f supabase/validation/0015_0016_rollback.sql
+
+      # Review v4 #5: after rollback (all objects gone) the acceptance queries must
+      # still return exactly 'f' — never NULL, never an exception.
+      - name: acceptance = false on the fully-rolled-back (empty) schema
+        run: |
+          set +e
+          A15=$(psql -At -f supabase/validation/0015_acceptance.sql); RC15=$?
+          A16=$(psql -At -f supabase/validation/0016_acceptance.sql); RC16=$?
+          echo "0015=$A15(rc$RC15) 0016=$A16(rc$RC16)"
+          if [ "$RC15" -ne 0 ] || [ "$RC16" -ne 0 ]; then echo "FAIL: acceptance threw on missing objects"; exit 1; fi
+          if [ "$A15" != "f" ] || [ "$A16" != "f" ]; then echo "FAIL: acceptance expected 'f' on empty schema (got '$A15'/'$A16')"; exit 1; fi
+          echo "PASS: acceptance is boolean-only 'f' on the empty schema"
+
+      # Review v4 #1: the PRE-DATA rollback must NOT drop a pre-existing (unstamped)
+      # description column (only a 0016-stamped one).
+      - name: rollback preserves a pre-existing (unstamped) roles.description
+        run: |
+          set +e
+          psql -v ON_ERROR_STOP=1 -c "alter table public.roles add column description text;"  # no provenance stamp
+          psql -f supabase/validation/0015_0016_rollback.sql >/dev/null 2>&1                    # its col=0 assertion will trip; ignored
+          PRESENT=$(psql -At -c "select count(*) from information_schema.columns where table_schema='public' and table_name='roles' and column_name='description';")
+          if [ "$PRESENT" != "1" ]; then echo "FAIL: rollback dropped a pre-existing unstamped description (present=$PRESENT)"; exit 1; fi
+          echo "PASS: rollback preserved the pre-existing unstamped description"
+          psql -v ON_ERROR_STOP=1 -c "alter table public.roles drop column description;"
+
+  # Membership role_id sync (0017): system-role provisioning for existing AND new
+  # orgs + a BEFORE INSERT/UPDATE trigger that keeps the system role_id pointer in
+  # sync WITHOUT clobbering a custom role_id. Separate throwaway postgres:16.
+  validate-membership-sync:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      PGHOST: localhost
+      PGPORT: "5432"
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGDATABASE: postgres
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Ensure psql client
+        run: psql --version || (sudo apt-get update && sudo apt-get install -y postgresql-client)
+
+      - name: Wait for PostgreSQL
+        run: |
+          for i in $(seq 1 30); do
+            if pg_isready -q; then echo "postgres ready"; exit 0; fi
+            sleep 2
+          done
+          echo "postgres did not become ready"; exit 1
+
+      - name: Build membership-sync harness (prereqs + fixtures)
+        run: psql -v ON_ERROR_STOP=1 -f supabase/validation/0017_harness.sql
+
+      - name: 0017 refuses a non-postgres role
+        run: |
+          if psql -v ON_ERROR_STOP=1 -c "set role authenticated;" -f supabase/migrations/0017_membership_role_id_sync.sql >/dev/null 2>&1; then
+            echo "FAIL: 0017 applied as a non-postgres role"; exit 1
+          fi
+          echo "PASS: 0017 refused a non-postgres role"
+
+      # Review v4 #2: the in-migration drift guard STOPS (before COMMIT) on every
+      # NON-REPAIRABLE drift category. Each case is injected, 0017 is attempted
+      # (must abort), then the injection is removed so the real apply is on a clean
+      # state. (Cross-org/dangling role_id is enforced by the composite FK, so it
+      # cannot be injected here; the guard covers it defensively.)
+      - name: 0017 drift guard rejects each NON-REPAIRABLE drift category
+        run: |
+          set +e
+          ORG='aaaa1111-0000-0000-0000-00000000000a'
+          EMP='11110000-0000-0000-0000-0000000000e1'
+          A1='d0000000-0000-0000-0000-0000000000a1'
+          expect_reject() {
+            if psql -v ON_ERROR_STOP=1 -f supabase/migrations/0017_membership_role_id_sync.sql >/dev/null 2>&1; then
+              echo "FAIL: 0017 applied despite drift [$1]"; exit 1
+            fi
+            echo "PASS: 0017 aborted on drift [$1]"
+          }
+          psql -qc "insert into public.roles (org_id,key,name,is_system) values ('$ORG','superadmin','X',true);"
+          expect_reject "extra-system-role"
+          psql -qc "delete from public.roles where org_id='$ORG' and key='superadmin';"
+          psql -qc "insert into public.roles (org_id,key,name,is_system) values ('$ORG','admin','X',false);"
+          expect_reject "system-key-not-system"
+          psql -qc "delete from public.roles where org_id='$ORG' and key='admin';"
+          psql -qc "insert into public.role_permissions (role_id,permission_key,record_scope) values ('$EMP','billing.manage',null);"
+          expect_reject "extra-grant-on-system-role"
+          psql -qc "delete from public.role_permissions where role_id='$EMP' and permission_key='billing.manage';"
+          psql -qc "update public.organization_memberships set role_id='$EMP' where user_id='$A1' and org_id='$ORG';"
+          expect_reject "mismatched-nonnull-role_id"
+          psql -qc "update public.organization_memberships set role_id=null where user_id='$A1' and org_id='$ORG';"
+          psql -qc "insert into public.roles (org_id,key,name,is_system) values ('$ORG','r_dup','employee',false);"
+          expect_reject "normalized-name-conflict"
+          psql -qc "delete from public.roles where org_id='$ORG' and key='r_dup';"
+          psql -qc "insert into public.roles (org_id,key,name,is_system) values ('$ORG','r_own','Owner',false);"
+          expect_reject "custom-name-reserved"
+          psql -qc "delete from public.roles where org_id='$ORG' and key='r_own';"
+          # Review v6 #6: STOP on system-role display-name drift. The harness pre-seeds
+          # only the 'employee' system role in org A; renaming it away from the canonical
+          # 'Employee' must abort the migration.
+          psql -qc "update public.roles set name='NotEmployee' where org_id='$ORG' and is_system and key='employee';"
+          expect_reject "wrong-system-role-name"
+          psql -qc "update public.roles set name='Employee' where org_id='$ORG' and is_system and key='employee';"
+          echo "PASS: all injectable drift categories rejected"
+
+      - name: Apply 0017 (system-role provisioning + role_id sync)
+        run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/0017_membership_role_id_sync.sql
+
+      - name: Reject duplicate 0017 (no-overload guard must fail)
+        run: |
+          if psql -v ON_ERROR_STOP=1 -f supabase/migrations/0017_membership_role_id_sync.sql >/dev/null 2>&1; then
+            echo "FAIL: re-applying 0017 did not error on existing functions/trigger"; exit 1
+          fi
+          echo "PASS: duplicate 0017 cleanly rejected"
+
+      - name: Verify 0017 (T1-T19)
+        run: psql -v ON_ERROR_STOP=1 -f supabase/validation/0017_verify.sql
+
+      # Review v4 #5/#6: BOOLEAN-ONLY acceptance + the authoritative-cutover preflight.
+      - name: 0017 acceptance + cutover preflight = true (post-apply)
+        run: |
+          set +e
+          A=$(psql -At -f supabase/validation/0017_acceptance.sql)
+          C=$(psql -At -f supabase/validation/authoritative_cutover_preflight.sql)
+          echo "0017_acceptance=$A  cutover_preflight=$C"
+          if [ "$A" != "t" ]; then echo "FAIL: 0017_acceptance expected t, got '$A'"; exit 1; fi
+          if [ "$C" != "t" ]; then echo "FAIL: cutover preflight expected t, got '$C'"; exit 1; fi
+          echo "PASS: 0017 acceptance + cutover preflight both true"
+
+      # Review v6 #5: unrelated trigger on organization_memberships is ALLOWED
+      # (acceptance stays t — the count filter only counts triggers that RUN
+      # public.sync_membership_role_id).
+      - name: Unrelated membership trigger is ALLOWED (0017 acceptance stays t)
+        run: |
+          set +e
+          out=$(psql -At <<'PSQL'
+          begin;
+          create or replace function public._unrelated_trg_fn() returns trigger language plpgsql as $f$ begin return new; end $f$;
+          create trigger _unrelated_trg_1 before insert or update on public.organization_memberships for each row execute function public._unrelated_trg_fn();
+          \i supabase/validation/0017_acceptance.sql
+          rollback;
+          PSQL
+          )
+          V=$(printf '%s\n' "$out" | tr -d '\r' | grep -E '^[tf]$' | tail -1)
+          if [ "$V" != "t" ]; then echo "FAIL: unrelated-trigger expected acceptance=t, got '$V'"; echo "$out"; exit 1; fi
+          echo "PASS: unrelated membership trigger allowed (0017 acceptance stays t)"
+
+      # Review v6 #5/#6: malformed 0017 variants -> acceptance=false. Every mutation
+      # is applied inside a TRANSACTION, then the FULL 0017_acceptance.sql is loaded
+      # via \i, then ROLLBACK preserves the positive state for downstream steps.
+      - name: Malformed-catalog negatives (v6 #5/#6 / v8 #3) — 0017 variants -> acceptance=false
+        run: |
+          set +e
+          NEG_0017 () {
+            local name="$1" mutation="$2"
+            local out rc V
+            # v8 #2: ON_ERROR_STOP=1 + rc verification — an SQL error FAILS the
+            # test; a negative must prove acceptance=f with rc=0.
+            out=$(psql -At -v ON_ERROR_STOP=1 <<PSQL
+          begin;
+          ${mutation}
+          \\i supabase/validation/0017_acceptance.sql
+          rollback;
+          PSQL
+            ); rc=$?
+            V=$(printf '%s\n' "$out" | tr -d '\r' | grep -E '^[tf]$' | tail -1)
+            if [ "$rc" -ne 0 ]; then
+              echo "FAIL: [$name] psql exited rc=$rc (SQL error while proving the negative)"
+              printf 'RAW:\n%s\n' "$out"
+              exit 1
+            fi
+            if [ "$V" != "f" ]; then
+              echo "FAIL: [$name] expected acceptance=f, got '$V' (rc=$rc)"
+              printf 'RAW:\n%s\n' "$out"
+              exit 1
+            fi
+            echo "PASS: [$name] -> acceptance=f (rc=0)"
+          }
+          # Duplicate trigger calling sync_membership_role_id -> count > 1 -> f
+          NEG_0017 "0017-duplicate-sync-trigger" "
+            create trigger organization_memberships_sync_role_id_dup before insert or update on public.organization_memberships for each row execute function public.sync_membership_role_id();
+          "
+          # Wrong system-role display names (v6 #6) -> f
+          NEG_0017 "0017-wrong-name-owner" "
+            update public.roles set name='NotOwner' where is_system and key='owner';
+          "
+          NEG_0017 "0017-wrong-name-admin" "
+            update public.roles set name='SuperManager' where is_system and key='admin';
+          "
+          NEG_0017 "0017-wrong-name-employee" "
+            update public.roles set name='Staff' where is_system and key='employee';
+          "
+          # EXECUTE granted to an intermediate role that authenticated inherits ->
+          # has_function_privilege('authenticated', ...) = true -> acceptance=f (v6 #5).
+          NEG_0017 "0017-execute-via-inherited-role" "
+            do \$mut\$ begin create role role_gateway; exception when duplicate_object then null; end \$mut\$;
+            alter role role_gateway inherit;
+            grant execute on function public.sync_membership_role_id() to role_gateway;
+            grant role_gateway to authenticated;
+          "
+          # Statement-level sync trigger -> tgtype != 23 -> acceptance=f
+          NEG_0017 "0017-sync-trigger-statement-level" "
+            drop trigger organization_memberships_sync_role_id on public.organization_memberships;
+            create trigger organization_memberships_sync_role_id before insert or update on public.organization_memberships for each statement execute function public.sync_membership_role_id();
+          "
+          # Extra DELETE event -> tgtype != 23 -> acceptance=f
+          NEG_0017 "0017-sync-trigger-extra-DELETE" "
+            drop trigger organization_memberships_sync_role_id on public.organization_memberships;
+            create trigger organization_memberships_sync_role_id before insert or update or delete on public.organization_memberships for each row execute function public.sync_membership_role_id();
+          "
+          # Extra TRUNCATE event — TRUNCATE triggers must be FOR EACH STATEMENT in
+          # Postgres, so this creates BOTH row+statement triggers under one CREATE.
+          # The row-level trigger's tgtype still != 23 (contains the composite mask).
+          NEG_0017 "0017-sync-trigger-statement-truncate" "
+            drop trigger organization_memberships_sync_role_id on public.organization_memberships;
+            create trigger organization_memberships_sync_role_id before truncate on public.organization_memberships for each statement execute function public.sync_membership_role_id();
+          "
+          # Same-named function in ANOTHER schema (trigger calls other.sync_...) -> tgfoid mismatch -> f
+          NEG_0017 "0017-same-name-fn-other-schema" "
+            create schema if not exists other_sync;
+            create or replace function other_sync.sync_membership_role_id() returns trigger language plpgsql as \$f\$ begin return new; end \$f\$;
+            drop trigger organization_memberships_sync_role_id on public.organization_memberships;
+            create trigger organization_memberships_sync_role_id before insert or update on public.organization_memberships for each row execute function other_sync.sync_membership_role_id();
+          "
+          # v8 #3 additions — the sync trigger must be in EXACTLY the intended
+          # catalog state; each variant deviates in ONE newly-asserted attribute.
+          NEG_0017 "0017-sync-trigger-enable-replica" "
+            alter table public.organization_memberships enable replica trigger organization_memberships_sync_role_id;
+          "
+          NEG_0017 "0017-sync-trigger-when-false" "
+            drop trigger organization_memberships_sync_role_id on public.organization_memberships;
+            create trigger organization_memberships_sync_role_id before insert or update on public.organization_memberships for each row when (false) execute function public.sync_membership_role_id();
+          "
+          NEG_0017 "0017-sync-trigger-update-of-column" "
+            drop trigger organization_memberships_sync_role_id on public.organization_memberships;
+            create trigger organization_memberships_sync_role_id before insert or update of role on public.organization_memberships for each row execute function public.sync_membership_role_id();
+          "
+          NEG_0017 "0017-sync-trigger-with-argument" "
+            drop trigger organization_memberships_sync_role_id on public.organization_memberships;
+            create trigger organization_memberships_sync_role_id before insert or update on public.organization_memberships for each row execute function public.sync_membership_role_id('x');
+          "
+          echo "PASS: all 0017 malformed-catalog negatives -> acceptance=f"
+
+      - name: cutover preflight = false when an active member holds a CUSTOM role
+        run: |
+          set +e
+          ORG='aaaa1111-0000-0000-0000-00000000000a'
+          C1='11110000-0000-0000-0000-0000000000c1'
+          A1='d0000000-0000-0000-0000-0000000000a1'
+          psql -qc "update public.organization_memberships set role_id='$C1' where user_id='$A1' and org_id='$ORG';"
+          C=$(psql -At -f supabase/validation/authoritative_cutover_preflight.sql); RC=$?
+          if [ "$RC" -ne 0 ] || [ "$C" != "f" ]; then echo "FAIL: cutover preflight expected boolean 'f' with a custom-role member, got '$C' (rc$RC)"; exit 1; fi
+          echo "PASS: cutover preflight = f when an active member holds a custom role"
+          psql -qc "update public.organization_memberships set role_id=null where user_id='$A1' and org_id='$ORG';"
+
+      # Review v5 #1: concurrent provisioning of the SAME brand-new org is race-free
+      # (the advisory xact lock in ensure_org_system_roles serializes it). Two SEPARATE
+      # backends insert the first two memberships of a new org at the same time -> both
+      # succeed, EXACTLY 3 system roles are created (no duplicates), both map correctly.
+      - name: Concurrent new-org provisioning is race-free (advisory lock)
+        run: |
+          set +e
+          ORG='eeee5555-0000-0000-0000-00000000000e'
+          U1='e0000000-0000-0000-0000-0000000000e1'
+          U2='e0000000-0000-0000-0000-0000000000e2'
+          psql -v ON_ERROR_STOP=1 -c "insert into public.organizations (id, org_code, name) values ('$ORG','ORGE','Org E');"
+          ins() { psql -At -v ON_ERROR_STOP=1 -c "insert into public.organization_memberships (user_id, org_id, role, is_active, role_id) values ('$1','$ORG','$2',true,null);" >"$3" 2>&1; echo $? >"$3.rc"; }
+          ins "$U1" owner    /tmp/prov_a &
+          ins "$U2" employee /tmp/prov_b &
+          wait
+          RC1=$(cat /tmp/prov_a.rc 2>/dev/null||echo 99); RC2=$(cat /tmp/prov_b.rc 2>/dev/null||echo 99)
+          echo "rc1=$RC1 rc2=$RC2"; cat /tmp/prov_a /tmp/prov_b
+          if [ "$RC1" != "0" ] || [ "$RC2" != "0" ]; then echo "FAIL: a concurrent membership insert errored"; exit 1; fi
+          N=$(psql -At -c "select count(*) from public.roles where org_id='$ORG' and is_system;")
+          if [ "$N" != "3" ]; then echo "FAIL: expected exactly 3 system roles after concurrent provisioning, got '$N'"; exit 1; fi
+          MAP=$(psql -At -c "select count(*) from public.organization_memberships m join public.roles r on r.id=m.role_id and r.org_id=m.org_id where m.org_id='$ORG' and r.is_system and r.key=m.role::text;")
+          if [ "$MAP" != "2" ]; then echo "FAIL: expected both memberships mapped to matching system roles, got '$MAP'"; exit 1; fi
+          echo "PASS: concurrent new-org provisioning -> exactly 3 system roles, both mapped (race-free)"
+
+      - name: Roll back 0017 (run twice - idempotent, both must pass)
+        run: |
+          psql -v ON_ERROR_STOP=1 -f supabase/validation/0017_rollback.sql
+          psql -v ON_ERROR_STOP=1 -f supabase/validation/0017_rollback.sql
+
+      # Review v4 #5: after rollback (functions + trigger gone) the acceptance query
+      # must still return exactly 'f' — never NULL, never an exception.
+      - name: 0017 acceptance = false after rollback (boolean-only)
+        run: |
+          set +e
+          A=$(psql -At -f supabase/validation/0017_acceptance.sql); RC=$?
+          echo "0017_acceptance=$A (rc$RC)"
+          if [ "$RC" -ne 0 ] || [ "$A" != "f" ]; then echo "FAIL: 0017 acceptance expected boolean 'f' after rollback, got '$A' (rc$RC)"; exit 1; fi
+          echo "PASS: 0017 acceptance = f after rollback (boolean-only)"
+
+  # Review v6 #1: install-time MIGRATION-vs-WRITER race — the SHARE ROW EXCLUSIVE
+  # table lock 0017 takes BEFORE the drift guard blocks legacy enum writers for the
+  # WHOLE transaction (held until COMMIT). Two orderings tested with SEPARATE
+  # PostgreSQL sessions:
+  #
+  #   A. Legacy writer starts first (holds a ROW EXCLUSIVE update in a transaction).
+  #      Migration is BLOCKED trying to acquire SHARE ROW EXCLUSIVE, waits for the
+  #      writer to commit, THEN aborts before COMMIT on the drift the writer left
+  #      (mismatched non-NULL role_id). No inconsistent committed state.
+  #
+  #   B. Migration takes the lock first (proven via a helper txn that takes the
+  #      SAME lock the migration takes — SHARE ROW EXCLUSIVE on the three tables —
+  #      and holds it while a legacy writer waits). Then the real migration is
+  #      applied on a clean state, and a POST-migration enum-only update runs
+  #      through the new trigger and finishes with role and role_id consistent.
+  #
+  # A static grep asserts the migration source actually contains the LOCK statement
+  # (couples the semantics tested here to the actual migration behavior).
+  validate-membership-sync-install-race:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      PGHOST: localhost
+      PGPORT: "5432"
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGDATABASE: postgres
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Ensure psql client
+        run: psql --version || (sudo apt-get update && sudo apt-get install -y postgresql-client)
+
+      - name: Wait for PostgreSQL
+        run: |
+          for i in $(seq 1 30); do
+            if pg_isready -q; then echo "postgres ready"; exit 0; fi
+            sleep 2
+          done
+          echo "postgres did not become ready"; exit 1
+
+      # Review v6 #1: STATIC proof that the migration source actually declares the
+      # SHARE ROW EXCLUSIVE install-time lock on organization_memberships.
+      - name: Migration 0017 contains the SHARE ROW EXCLUSIVE install-time lock (v6 #1)
+        run: |
+          if ! grep -Pzq '(?is)lock\s+table[^;]*organization_memberships[^;]*in\s+share\s+row\s+exclusive\s+mode' supabase/migrations/0017_membership_role_id_sync.sql; then
+            echo "FAIL: 0017 does not contain 'LOCK TABLE ... organization_memberships ... IN SHARE ROW EXCLUSIVE MODE'"
+            grep -n -i 'lock\s\+table' supabase/migrations/0017_membership_role_id_sync.sql || true
+            exit 1
+          fi
+          echo "PASS: 0017 statically declares LOCK TABLE ... IN SHARE ROW EXCLUSIVE MODE on organization_memberships"
+
+      - name: Build membership-sync harness (prereqs + fixtures)
+        run: psql -v ON_ERROR_STOP=1 -f supabase/validation/0017_harness.sql
+
+      # Test A — writer-first. Pre-set a3.role_id to the pre-seeded 'employee'
+      # system role, then a legacy enum-only writer changes role to 'admin' and
+      # HOLDS the tx open via pg_sleep. That creates the (d) drift category —
+      # role='admin' but role_id points at the 'employee' system role. Migration B
+      # attempts the LOCK, WAITS for the writer, then ABORTS before COMMIT on the
+      # drift the writer just left. No inconsistent committed state.
+      - name: Test A - writer-first — legacy writer holds tx; migration WAITS then ABORTS on drift
+        run: |
+          set +e
+          ORG='aaaa1111-0000-0000-0000-00000000000a'
+          EMP='11110000-0000-0000-0000-0000000000e1'
+          A3='d0000000-0000-0000-0000-0000000000a3'
+          psql -v ON_ERROR_STOP=1 -c "update public.organization_memberships set role_id='$EMP' where user_id='$A3' and org_id='$ORG';"
+          # Session A: enum-only update, hold tx open for 8s via pg_sleep.
+          (psql -v ON_ERROR_STOP=1 <<SQL_A > /tmp/writer_A.log 2>&1
+          begin;
+          update public.organization_memberships set role='admin' where user_id='$A3' and org_id='$ORG';
+          select pg_sleep(8);
+          commit;
+          SQL_A
+          ) &
+          WA=$!
+          sleep 2
+          # Session B: apply the migration — must WAIT on LOCK TABLE ... SHARE ROW EXCLUSIVE.
+          (psql -v ON_ERROR_STOP=1 -f supabase/migrations/0017_membership_role_id_sync.sql > /tmp/mig_B.log 2>&1) &
+          MB=$!
+          sleep 3
+          BLOCKED=$(psql -At -c "select count(*) from pg_locks l join pg_class c on c.oid=l.relation join pg_namespace ns on ns.oid=c.relnamespace where ns.nspname='public' and c.relname='organization_memberships' and l.mode='ShareRowExclusiveLock' and not l.granted;")
+          if [ "${BLOCKED:-0}" -lt 1 ]; then
+            echo "FAIL: migration B was NOT blocked (BLOCKED=${BLOCKED:-0})"
+            psql -c "select l.locktype, l.relation::regclass as rel, l.mode, l.granted, a.pid, a.wait_event_type, a.wait_event, a.state, left(a.query, 60) as query from pg_locks l left join pg_stat_activity a on a.pid=l.pid where l.relation is not null;"
+            kill $WA $MB 2>/dev/null
+            exit 1
+          fi
+          echo "PASS: migration B is BLOCKED waiting for writer A (SHARE ROW EXCLUSIVE waiter count=$BLOCKED)"
+          wait $WA; RC_A=$?
+          wait $MB; RC_B=$?
+          echo "rc_A=$RC_A rc_B=$RC_B"
+          echo "--- writer A log ---"; cat /tmp/writer_A.log
+          echo "--- migration B log ---"; cat /tmp/mig_B.log
+          if [ "$RC_A" -ne 0 ]; then echo "FAIL: writer A failed"; exit 1; fi
+          if [ "$RC_B" -eq 0 ]; then echo "FAIL: migration B succeeded despite drift"; exit 1; fi
+          if ! grep -q "NON-REPAIRABLE drift" /tmp/mig_B.log; then echo "FAIL: B did not abort on drift"; exit 1; fi
+          if ! grep -q "does not match its enum" /tmp/mig_B.log; then echo "FAIL: B did not report the specific mismatched-nonnull-role_id drift"; exit 1; fi
+          echo "PASS: Test A — migration waited for the writer, then aborted on the drift the writer left"
+
+      - name: Reset for Test B (a3 back to a valid pre-migration state)
+        run: |
+          psql -v ON_ERROR_STOP=1 -c "update public.organization_memberships set role='employee', role_id=null where user_id='d0000000-0000-0000-0000-0000000000a3' and org_id='aaaa1111-0000-0000-0000-00000000000a';"
+
+      # Test B — v7/v8: REAL migration-first with a CI-only event trigger. Runs the
+      # actual `supabase/migrations/0017_membership_role_id_sync.sql` in one psql
+      # session. A CI-only event trigger fires INSIDE the migration's transaction
+      # on `ddl_command_end` for `CREATE FUNCTION public.ensure_org_system_roles`
+      # — which is executed by the migration AFTER LOCK TABLE ... IN SHARE ROW
+      # EXCLUSIVE MODE has already been acquired and BEFORE COMMIT. The trigger
+      # `pg_sleep`s for 8s, deterministically pausing the migration while the lock
+      # is held. During the pause a legacy enum-only writer runs in ANOTHER
+      # session. v8 #4: the two backends are identified EXPLICITLY via
+      # application_name (PGAPPNAME=avi_v8_migration / avi_v8_legacy_writer), and
+      # every pg_locks probe JOINS pg_stat_activity and pins the backend by that
+      # name — generic counts from unrelated sessions are NOT accepted. When the
+      # sleep ends the migration completes and commits; the writer's UPDATE then
+      # goes through the newly-installed sync_role_id trigger, synchronizing
+      # role_id. The event trigger + helper function live entirely in CI setup —
+      # the production migration file is UNMODIFIED.
+      - name: Test B - real migration-first — event trigger pauses migration in-tx; app-name-pinned writer WAITS then completes; trigger syncs role_id
+        run: |
+          set +e
+          A3='d0000000-0000-0000-0000-0000000000a3'
+          ORG='aaaa1111-0000-0000-0000-00000000000a'
+
+          # --- Install the CI-only pause mechanism (event trigger + helper fn). ---
+          psql -v ON_ERROR_STOP=1 <<'SQL_SETUP'
+          create or replace function public._ci_pause_migration_fn()
+            returns event_trigger language plpgsql as $fn$
+          declare
+            o record;
+          begin
+            for o in
+              select * from pg_event_trigger_ddl_commands()
+              where command_tag = 'CREATE FUNCTION'
+                and object_identity like 'public.ensure_org_system_roles%'
+            loop
+              raise notice 'v8 CI pause: sleeping 8s while migration holds SHARE ROW EXCLUSIVE (obj=%)', o.object_identity;
+              perform pg_sleep(8);
+              return;
+            end loop;
+          end $fn$;
+          drop event trigger if exists _ci_pause_migration_evt;
+          create event trigger _ci_pause_migration_evt on ddl_command_end
+            when tag in ('CREATE FUNCTION')
+            execute function public._ci_pause_migration_fn();
+          SQL_SETUP
+
+          # --- Session M (application_name=avi_v8_migration): run the REAL
+          # migration. It will pause inside its own transaction after acquiring
+          # SHARE ROW EXCLUSIVE and creating the first function. ---
+          (PGAPPNAME=avi_v8_migration psql -v ON_ERROR_STOP=1 -f supabase/migrations/0017_membership_role_id_sync.sql > /tmp/mig_M.log 2>&1) &
+          M=$!
+          sleep 4  # migration: guards -> LOCK TABLE -> drift check -> CREATE FUNCTION -> event trigger pg_sleep
+
+          # --- Session W (application_name=avi_v8_legacy_writer): legacy enum-only
+          # writer. Will block on ROW EXCLUSIVE. ---
+          (PGAPPNAME=avi_v8_legacy_writer psql -v ON_ERROR_STOP=1 -c "update public.organization_memberships set role='admin' where user_id='$A3' and org_id='$ORG';" > /tmp/writer_W.log 2>&1) &
+          W=$!
+          sleep 2
+
+          # v8 #5: unconditional raw lock-evidence dump while both sessions are in
+          # flight (lands in the job log that ships in the review bundle).
+          echo "--- pg_locks x pg_stat_activity evidence (during the in-tx pause) ---"
+          psql -c "select a.application_name, l.locktype, l.relation::regclass as rel, l.mode, l.granted, a.pid, a.wait_event_type, a.wait_event, a.state, left(a.query, 80) as query from pg_locks l join pg_stat_activity a on a.pid = l.pid where l.relation = 'public.organization_memberships'::regclass order by a.application_name, l.mode;"
+
+          # v8 #4: prove THE avi_v8_legacy_writer backend (not any generic session)
+          # waits with an ungranted RowExclusiveLock on public.organization_memberships.
+          BLOCKED_W=$(psql -At -c "select count(*) from pg_locks l join pg_stat_activity a on a.pid = l.pid join pg_class c on c.oid = l.relation join pg_namespace ns on ns.oid = c.relnamespace where ns.nspname='public' and c.relname='organization_memberships' and l.mode='RowExclusiveLock' and not l.granted and a.application_name='avi_v8_legacy_writer';")
+          if [ "$BLOCKED_W" != "1" ]; then
+            echo "FAIL: expected exactly 1 ungranted RowExclusiveLock held by backend avi_v8_legacy_writer, got '$BLOCKED_W'"
+            psql -c "select a.application_name, l.locktype, l.relation::regclass as rel, l.mode, l.granted, a.pid, a.wait_event_type, a.wait_event, a.state, left(a.query, 60) as query from pg_locks l left join pg_stat_activity a on a.pid=l.pid where l.relation is not null;"
+            kill $M $W 2>/dev/null
+            psql -c "drop event trigger if exists _ci_pause_migration_evt; drop function if exists public._ci_pause_migration_fn();" >/dev/null 2>&1
+            exit 1
+          fi
+          echo "PASS: backend application_name=avi_v8_legacy_writer WAITS with RowExclusiveLock not granted on public.organization_memberships (count=$BLOCKED_W)"
+
+          # v8 #4: prove THE avi_v8_migration backend HOLDS the granted
+          # ShareRowExclusiveLock on public.organization_memberships.
+          HOLDS_M=$(psql -At -c "select count(*) from pg_locks l join pg_stat_activity a on a.pid = l.pid join pg_class c on c.oid = l.relation join pg_namespace ns on ns.oid = c.relnamespace where ns.nspname='public' and c.relname='organization_memberships' and l.mode='ShareRowExclusiveLock' and l.granted and a.application_name='avi_v8_migration';")
+          if [ "$HOLDS_M" != "1" ]; then
+            echo "FAIL: expected exactly 1 granted ShareRowExclusiveLock held by backend avi_v8_migration, got '$HOLDS_M'"
+            psql -c "select a.application_name, l.locktype, l.relation::regclass as rel, l.mode, l.granted, a.pid, a.wait_event_type, a.wait_event, a.state, left(a.query, 60) as query from pg_locks l left join pg_stat_activity a on a.pid=l.pid where l.relation is not null;"
+            kill $M $W 2>/dev/null
+            psql -c "drop event trigger if exists _ci_pause_migration_evt; drop function if exists public._ci_pause_migration_fn();" >/dev/null 2>&1
+            exit 1
+          fi
+          echo "PASS: backend application_name=avi_v8_migration HOLDS ShareRowExclusiveLock granted on public.organization_memberships (count=$HOLDS_M)"
+
+          # --- Wait for both to complete. ---
+          wait $M; RC_M=$?
+          wait $W; RC_W=$?
+          echo "rc_M=$RC_M rc_W=$RC_W"
+          echo "--- migration M log (tail) ---"; tail -30 /tmp/mig_M.log
+          echo "--- writer W log ---"; cat /tmp/writer_W.log
+
+          if [ "$RC_M" -ne 0 ]; then
+            echo "FAIL: migration M ended with rc=$RC_M"
+            psql -c "drop event trigger if exists _ci_pause_migration_evt; drop function if exists public._ci_pause_migration_fn();" >/dev/null 2>&1
+            exit 1
+          fi
+          if [ "$RC_W" -ne 0 ]; then
+            echo "FAIL: writer W ended with rc=$RC_W"
+            psql -c "drop event trigger if exists _ci_pause_migration_evt; drop function if exists public._ci_pause_migration_fn();" >/dev/null 2>&1
+            exit 1
+          fi
+
+          # --- Verify the trigger installed by M synced W's role_id to 'admin'. ---
+          KEY=$(psql -At -c "select r.key from public.organization_memberships m join public.roles r on r.id=m.role_id and r.org_id=m.org_id where m.user_id='$A3' and m.org_id='$ORG';")
+          if [ "$KEY" != "admin" ]; then
+            echo "FAIL: after Test B, a3 role_id key expected 'admin', got '$KEY'"
+            psql -c "select m.role, m.role_id, r.key, r.name from public.organization_memberships m left join public.roles r on r.id=m.role_id where m.user_id='$A3' and m.org_id='$ORG';"
+            psql -c "drop event trigger if exists _ci_pause_migration_evt; drop function if exists public._ci_pause_migration_fn();" >/dev/null 2>&1
+            exit 1
+          fi
+          echo "PASS: Test B — real migration-first: rc_M=0 rc_W=0; writer was BLOCKED then completed; trigger synced role_id"
+
+          # --- Drop the CI-only pause mechanism so it does not affect the rest of the job. ---
+          psql -v ON_ERROR_STOP=1 <<'SQL_CLEANUP'
+          drop event trigger if exists _ci_pause_migration_evt;
+          drop function if exists public._ci_pause_migration_fn();
+          SQL_CLEANUP
