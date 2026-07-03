@@ -61,12 +61,14 @@ select coalesce((
   and coalesce((select string_agg(column_name||':'||data_type||':'||is_nullable, ',' order by ordinal_position)
        from information_schema.columns where table_schema='public' and table_name='audit_events')
       = 'id:uuid:NO,org_id:uuid:NO,actor_user_id:uuid:NO,action:text:NO,target_type:text:NO,target_id:uuid:YES,metadata:jsonb:NO,created_at:timestamp with time zone:NO', false)
-  -- ---- exact defaults for id / metadata / created_at ----
-  and coalesce((select column_default like 'gen_random_uuid()%' from information_schema.columns
+  -- ---- EXACT defaults for id / metadata / created_at (v-final: anchored ^...$ so a
+  -- crafted default that merely CONTAINS or is PREFIXED by the expected text — e.g.
+  -- now() + interval '1 day', or '{}'::jsonb || '{...}'::jsonb — cannot false-pass) ----
+  and coalesce((select column_default ~ '^gen_random_uuid\(\)$' from information_schema.columns
        where table_schema='public' and table_name='audit_events' and column_name='id'), false)
-  and coalesce((select column_default like '%''{}''::jsonb%' from information_schema.columns
+  and coalesce((select column_default ~ '^''\{\}''::jsonb$' from information_schema.columns
        where table_schema='public' and table_name='audit_events' and column_name='metadata'), false)
-  and coalesce((select column_default like 'now()%' from information_schema.columns
+  and coalesce((select column_default ~ '^now\(\)$' from information_schema.columns
        where table_schema='public' and table_name='audit_events' and column_name='created_at'), false)
   -- ---- PRIMARY KEY: EXACTLY one PK, EXACTLY one key column, EXACTLY 'id' (v6 #3) ----
   and coalesce((select count(*) from pg_constraint c, t

@@ -1,11 +1,18 @@
--- Rollback rehearsal for 0015 + 0016 — THROWAWAY / PRE-DATA ONLY (review v3 #9).
--- This is the DESTRUCTIVE, full-teardown rollback: it drops the seven functions,
--- the unique index, the roles.description column, AND the audit_events TABLE
--- (losing all audit history). It is valid ONLY on the throwaway CI database, or
--- in Production strictly BEFORE any custom-role / audit DATA exists. For a
--- Production revert AFTER data exists, use the POST-DATA operational rollback in
--- docs/operations/production-migrations/0015-0016-apply-package.md (disable the
--- flags, drop only the callable RPCs, PRESERVE roles/role_permissions/audit data).
+-- ============================================================================
+-- CI THROWAWAY TEARDOWN for 0015 + 0016 — DISPOSABLE DATABASE ONLY.
+-- ============================================================================
+-- This is the UNGUARDED, destructive full teardown used by CI to prove the
+-- objects drop + re-drop idempotently on a scratch database that DELIBERATELY
+-- contains test data (the B1-B24 behavioral suite creates custom roles + audit
+-- rows before this runs). It is intentionally NOT guarded, because its whole job
+-- is to tear the scratch DB down regardless of contents.
+--
+-- ***DO NOT RUN THIS AGAINST ANY DATABASE WITH REAL DATA.*** For a Production
+-- revert use the GUARD-FIRST, DATA-PRESERVING procedure in
+-- docs/operations/production-migrations/0015-0016-apply-package.md (Package B,
+-- PRE-DATA) or review-bundle/.../ROLLBACK-PLAN.md — those RAISE and roll back
+-- BEFORE any DROP if audit_events has rows, roles.description has non-NULL
+-- values, or any custom role exists. This file has NO such guards by design.
 -- Idempotent: re-running is a safe no-op. Asserts everything is gone afterward.
 
 begin;

@@ -647,6 +647,41 @@ jobs:
             grant execute on function public.update_org_role(uuid, uuid, text, text, jsonb, timestamptz) to rm_gateway;
             grant rm_gateway to authenticated;
           "
+          # Final-gate exactness negatives (one property mutated each; each -> f).
+          NEG "0015-default-metadata-mutated" "0015_acceptance" "
+            -- default that CONTAINS '{}'::jsonb as a substring but is not exactly it
+            -- (the OLD LIKE '%''{}''::jsonb%' would false-pass; the anchored regex rejects).
+            alter table public.audit_events alter column metadata set default ('{}'::jsonb - 'k');
+          "
+          NEG "0015-default-created_at-mutated" "0015_acceptance" "
+            -- default now()+interval — prefixed by now() but not exactly now() -> anchored regex must reject.
+            alter table public.audit_events alter column created_at set default (now() + interval '1 day');
+          "
+          NEG "0015-column-target_id-notnull" "0015_acceptance" "
+            -- flip the exact column signature (target_id YES -> NO) -> exact-columns string must reject.
+            update public.audit_events set target_id = gen_random_uuid() where target_id is null;
+            alter table public.audit_events alter column target_id set not null;
+          "
+          NEG "0016-description-wrong-type" "0016_acceptance" "
+            -- description text -> varchar: atttypid<>text -> must reject (isolated type mutation).
+            alter table public.roles alter column description type varchar(500);
+          "
+          NEG "0016-rpc-security-invoker" "0016_acceptance" "
+            -- one RPC flipped to SECURITY INVOKER -> prosecdef assertion must reject.
+            alter function public.create_org_role(uuid,text,text,jsonb) security invoker;
+          "
+          NEG "0016-rpc-owner-changed" "0016_acceptance" "
+            -- one RPC re-owned away from postgres -> proowner assertion must reject.
+            alter function public.delete_org_role(uuid,uuid) owner to authenticated;
+          "
+          NEG "0016-helper-made-definer" "0016_acceptance" "
+            -- a helper flipped to SECURITY DEFINER -> the 'helpers NOT definer' assertion must reject.
+            alter function public.custom_role_grant_check(text,text) security definer;
+          "
+          NEG "0016-rls-policy-added" "0016_acceptance" "
+            -- add an RLS policy to roles -> the 'zero policies' assertion must reject.
+            create policy _rt_probe on public.roles for select using (true);
+          "
           echo "PASS: all 0015/0016 malformed-catalog negatives -> acceptance=f"
 
       - name: Roll back 0015/0016 (run twice - idempotent, both must pass)
@@ -777,6 +812,25 @@ jobs:
             echo "FAIL: re-applying 0017 did not error on existing functions/trigger"; exit 1
           fi
           echo "PASS: duplicate 0017 cleanly rejected"
+
+      # Final-gate Decision A — enforcement locus made EXPLICIT. The harness seeds
+      # u_custom (…c9) as an ACTIVE employee@A whose role_id points at the CUSTOM
+      # role (…c1). 0017 apply deliberately does NOT reject that (its drift guard
+      # only rejects mismatched-SYSTEM / cross-org role_id) — Decision A is enforced
+      # by the ACCEPTANCE/cutover GATE, not by 0017 apply. So on the RAW post-apply
+      # state, 0017_acceptance MUST be f (a real active custom-holder is present),
+      # proving the acceptance detects it rather than the later T-series laundering
+      # it away incidentally. (T9/T14 reassign …c9 to a SYSTEM role, after which the
+      # downstream 'acceptance = t' step observes the clean state.)
+      - name: Decision A — raw post-apply state has an active custom-holder -> acceptance=f
+        run: |
+          set +e
+          CNT=$(psql -At -c "select count(*) from public.organization_memberships m join public.roles r on r.id=m.role_id where r.is_system=false;")
+          A=$(psql -At -f supabase/validation/0017_acceptance.sql)
+          echo "active/inactive custom-holders on raw post-apply state = $CNT ; 0017_acceptance = $A"
+          if [ "${CNT:-0}" -lt 1 ]; then echo "FAIL: expected the harness pre-seeded custom-holder to be present"; exit 1; fi
+          if [ "$A" != "f" ]; then echo "FAIL: 0017_acceptance must be f while a custom-holder exists (Decision A), got '$A'"; exit 1; fi
+          echo "PASS: 0017 apply does not enforce Decision A; the acceptance GATE detects the custom-holder (f). The T-series then reassigns …c9 to a system role."
 
       - name: Verify 0017 (T1-T19)
         run: psql -v ON_ERROR_STOP=1 -f supabase/validation/0017_verify.sql
@@ -918,6 +972,13 @@ jobs:
             update public.organization_memberships
               set is_active=false, role_id='11110000-0000-0000-0000-0000000000c1'
               where user_id='d0000000-0000-0000-0000-0000000000a3' and org_id='aaaa1111-0000-0000-0000-00000000000a';
+          "
+          # Acceptance-level extra-system-role (distinct from the migration drift guard):
+          # inject a 4th system role with an unexpected key -> the 'exactly 3 system roles,
+          # no extras' clause must flip acceptance to f.
+          NEG_0017 "0017-acceptance-extra-system-role" "
+            insert into public.roles (org_id, key, name, is_system)
+            values ('aaaa1111-0000-0000-0000-00000000000a','superadmin','Super',true);
           "
           echo "PASS: all 0017 malformed-catalog negatives -> acceptance=f"
 

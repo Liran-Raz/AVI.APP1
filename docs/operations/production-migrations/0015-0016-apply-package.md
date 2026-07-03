@@ -173,10 +173,34 @@ audit failure) is proven on real PostgreSQL by the CI job `validate-role-managem
 (`supabase/validation/0015_0016_*`). In the Production SQL Editor there is no
 end-user JWT (`auth.uid()` null), so the RPCs return forbidden/0-rows.
 
-### Rollback — two phases (review v3 #9)
-**A. PRE-DATA (no custom-role/audit data yet) — lossless full revert:**
+### Rollback — two phases (review v3 #9; GUARD-FIRST, data-preserving)
+**A. PRE-DATA — GUARD-FIRST lossless full revert.** The transaction RAISES and
+rolls back BEFORE the first destructive statement if any data would be lost:
 ```sql
 begin;
+-- ---- DATA-PRESERVATION GUARDS (run FIRST; RAISE before any DROP) ----
+do $$
+begin
+  -- G2: never drop non-NULL description data.
+  if exists (select 1 from public.roles where description is not null) then
+    raise exception 'ROLLBACK ABORTED (G2): roles.description has non-NULL values';
+  end if;
+  -- G3: never tear down while custom roles exist.
+  if exists (select 1 from public.roles where is_system = false) then
+    raise exception 'ROLLBACK ABORTED (G3): custom roles exist (is_system=false)';
+  end if;
+  -- G5: the description column, if present, must be 0016-stamped (else STOP for review).
+  if exists (select 1 from information_schema.columns
+             where table_schema='public' and table_name='roles' and column_name='description')
+     and not exists (select 1 from pg_description d
+               join pg_class c on c.oid=d.objoid
+               join pg_attribute a on a.attrelid=c.oid and a.attnum=d.objsubid
+               where c.oid='public.roles'::regclass and a.attname='description'
+                 and d.description='avi:0016 roles.description') then
+    raise exception 'ROLLBACK ABORTED (G5): roles.description is not 0016-stamped';
+  end if;
+end $$;
+-- ---- destructive teardown (only reached when all guards pass) ----
   drop function if exists public.create_org_role(uuid, text, text, jsonb);
   drop function if exists public.update_org_role(uuid, uuid, text, text, jsonb, timestamptz);
   drop function if exists public.delete_org_role(uuid, uuid);
@@ -185,15 +209,13 @@ begin;
   drop function if exists public.validate_custom_role_payload(jsonb);
   drop function if exists public.custom_role_grant_check(text, text);
   drop index if exists public.roles_org_name_norm_uniq;
-  -- Drop description ONLY if 0016 created it (provenance stamp) — never a
-  -- pre-existing column (review v4 #1).
   do $$ begin
     if exists (select 1 from pg_description d
                join pg_class c on c.oid=d.objoid
                join pg_attribute a on a.attrelid=c.oid and a.attnum=d.objsubid
                where c.oid='public.roles'::regclass and a.attname='description'
                  and d.description='avi:0016 roles.description') then
-      alter table public.roles drop column description;
+      alter table public.roles drop column description;   -- guaranteed all-NULL by G2
     end if;
   end $$;
   notify pgrst, 'reload schema';

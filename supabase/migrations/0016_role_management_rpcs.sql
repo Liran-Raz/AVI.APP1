@@ -513,6 +513,17 @@ notify pgrst, 'reload schema';
 commit;
 
 -- ============================================================
--- VERIFICATION + ROLLBACK: see supabase/validation/0015_0016_verify.sql and
--- 0015_0016_rollback.sql, and docs/operations/production-migrations/.
+-- VERIFICATION: supabase/validation/0015_0016_verify.sql (CI, throwaway DB).
+--
+-- ROLLBACK — use the GUARD-FIRST, DATA-PRESERVING production procedure in
+-- docs/operations/production-migrations/0015-0016-apply-package.md (Package B,
+-- PRE-DATA) or review-bundle/.../ROLLBACK-PLAN.md. Those RAISE and roll back
+-- BEFORE any DROP if audit_events has rows, roles.description has non-NULL
+-- values, or any custom role / membership->custom-role exists.
+--
+-- NOTE: supabase/validation/0015_0016_rollback.sql is a CI THROWAWAY teardown
+-- for a disposable database only — it is intentionally UNguarded so CI can
+-- verify the objects drop + re-drop idempotently on a scratch DB that holds
+-- test data. DO NOT run it against a database with real data; use the guarded
+-- production procedure above instead.
 -- ============================================================

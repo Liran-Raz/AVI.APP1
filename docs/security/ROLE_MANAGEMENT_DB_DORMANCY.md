@@ -86,12 +86,14 @@ do $$ begin
   end if;
 end $$;
 grant execute on function public.list_org_roles(uuid) to authenticated;
+notify pgrst, 'reload schema';   -- refresh PostgREST's function-ACL cache promptly
 commit;
 ```
 
 Then (and only then) set `ROLES_MANAGEMENT_UI=1` in Vercel. Order matters: DB
 first, flag second — the flag without the grant produces a broken screen, never an
-exposure.
+exposure. The `notify pgrst` makes PostgREST reflect the new EXECUTE ACL without
+waiting for its periodic cache refresh.
 
 ### Gate R2 — write enablement
 
@@ -107,6 +109,7 @@ grant execute on function public.create_org_role(uuid, text, text, jsonb) to aut
 grant execute on function public.update_org_role(uuid, uuid, text, text, jsonb, timestamptz) to authenticated;
 grant execute on function public.delete_org_role(uuid, uuid) to authenticated;
 grant execute on function public.duplicate_org_role(uuid, uuid, text) to authenticated;
+notify pgrst, 'reload schema';   -- refresh PostgREST's function-ACL cache promptly
 commit;
 ```
 
