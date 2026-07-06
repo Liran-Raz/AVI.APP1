@@ -151,4 +151,13 @@ select coalesce((
        cross join (values ('anon'),('authenticated')) r(role)
        cross join (values ('SELECT'),('INSERT'),('UPDATE'),('DELETE'),('TRUNCATE'),('REFERENCES'),('TRIGGER')) p(priv)
        where c.oid=t.oid), true)
+  -- ---- Blocker 1: service_role has NO effective SELECT/INSERT/UPDATE/DELETE on
+  -- audit_events. Supabase's service_role holds ALL by default privilege; 0016's
+  -- explicit REVOKE is what denies it. Joined to pg_roles so the file stays
+  -- catalog-safe where service_role is absent (no rows -> coalesce true). ----
+  and coalesce((select bool_and(not has_table_privilege(sr.oid, c.oid, p.priv))
+       from pg_class c, t
+       join pg_roles sr on sr.rolname = 'service_role'
+       cross join (values ('SELECT'),('INSERT'),('UPDATE'),('DELETE')) p(priv)
+       where c.oid=t.oid), true)
 ), false) as all_checks_passed;

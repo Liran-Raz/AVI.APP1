@@ -90,7 +90,10 @@ begin
   end if;
 end $$;
 
--- T3: custom no-clobber by backfill — the custom holder keeps its custom role_id.
+-- T3: the one-time backfill only fills NULL role_id, so APPLY does not touch the
+-- grandfathered custom holder (…c9 keeps …c1 immediately post-apply). The trigger
+-- REJECTS new custom writes (see T-DA*) and HEALS this stale pointer on the next
+-- write to the row (T8); the acceptance/cutover gates flag it until then.
 do $$
 begin
   if (select role_id from public.organization_memberships
@@ -151,22 +154,27 @@ begin
   where user_id='d0000000-0000-0000-0000-0000000000a2' and org_id='aaaa1111-0000-0000-0000-00000000000a';
 end $$;
 
--- T8: CUSTOM no-clobber on enum change — changing the enum role of a custom-role
--- membership must NOT overwrite its custom role_id.
+-- T8 (Decision A): an enum change on a membership that still holds a stale CUSTOM
+-- role_id (the grandfathered …c9 seed) must NOT preserve it — the trigger DERIVES
+-- the enum's system role. …c9 goes employee -> admin, so role_id must become the
+-- org-A ADMIN system role (never the custom …c1).
 do $$
+declare v_admin uuid; v_after uuid;
 begin
+  select id into v_admin from public.roles
+    where org_id='aaaa1111-0000-0000-0000-00000000000a' and is_system and key='admin';
   update public.organization_memberships set role='admin'
   where user_id='d0000000-0000-0000-0000-0000000000c9' and org_id='aaaa1111-0000-0000-0000-00000000000a';
-  if (select role_id from public.organization_memberships
-      where user_id='d0000000-0000-0000-0000-0000000000c9' and org_id='aaaa1111-0000-0000-0000-00000000000a')
-     <> '11110000-0000-0000-0000-0000000000c1' then
-    raise exception 'T8 FAIL: enum change clobbered the custom role_id';
+  select role_id into v_after from public.organization_memberships
+    where user_id='d0000000-0000-0000-0000-0000000000c9' and org_id='aaaa1111-0000-0000-0000-00000000000a';
+  if v_after <> v_admin then
+    raise exception 'T8 FAIL: enum change did not heal the stale custom role_id to the admin system role (got %)', v_after;
   end if;
 end $$;
 
--- T9: a VALID explicit custom -> system change is honored — but ONLY when the
--- chosen system role's key MATCHES the enum (strict trigger, #5). c9 is enum=admin
--- (from T8); assigning the 'admin' system role is valid.
+-- T9: explicitly assigning the enum-matching SYSTEM role is honored (idempotent
+-- with T8's heal). c9 is enum=admin (from T8); assigning the 'admin' system role
+-- is valid and remains admin.
 do $$
 declare v_admin uuid;
 begin
@@ -180,7 +188,8 @@ begin
   end if;
 end $$;
 
--- T10: cross-org role_id is rejected by the composite FK.
+-- T10: cross-org role_id is rejected (the trigger raises 23503 before the
+-- composite FK would). foreign_key_violation (23503) is caught either way.
 do $$
 declare v_b_owner uuid;
 begin
@@ -300,8 +309,122 @@ begin
   if v_key is distinct from 'employee' then raise exception 'T18 FAIL: inactive membership role_id not mapped (key=%)', v_key; end if;
 end $$;
 
+-- ============================================================
+-- DECISION A behavioral tests (final-gate Blocker 2). The TRIGGER — not merely the
+-- acceptance gate — must make the WRITE ITSELF fail. Custom role …c1 (org A,
+-- is_system=false) is the target. Each write is attempted in a subblock so the
+-- expected exception does not abort the script; then we prove nothing persisted
+-- (no custom pointer) and that a valid enum write lands on the system role.
+-- ============================================================
+
+-- T-DA1: ACTIVE INSERT with a same-org CUSTOM role_id -> rejected (23514); no row persists.
+do $$
+declare v_uid uuid := 'da000000-0000-0000-0000-0000000000d1'; v_cnt int;
+begin
+  begin
+    insert into public.organization_memberships (user_id, org_id, role, is_active, role_id)
+    values (v_uid, 'aaaa1111-0000-0000-0000-00000000000a', 'employee', true,
+            '11110000-0000-0000-0000-0000000000c1');
+    raise exception 'T-DA1 FAIL: active INSERT of a custom role_id was accepted';
+  exception when sqlstate '23514' then null; end;  -- Decision A rejection
+  select count(*) into v_cnt from public.organization_memberships where user_id=v_uid;
+  if v_cnt <> 0 then raise exception 'T-DA1 FAIL: a row persisted despite rejection (n=%)', v_cnt; end if;
+end $$;
+
+-- T-DA2: INACTIVE INSERT with a same-org CUSTOM role_id -> rejected (23514) too
+-- (is_active is not consulted); no row persists.
+do $$
+declare v_uid uuid := 'da000000-0000-0000-0000-0000000000d2'; v_cnt int;
+begin
+  begin
+    insert into public.organization_memberships (user_id, org_id, role, is_active, role_id)
+    values (v_uid, 'aaaa1111-0000-0000-0000-00000000000a', 'employee', false,
+            '11110000-0000-0000-0000-0000000000c1');
+    raise exception 'T-DA2 FAIL: inactive INSERT of a custom role_id was accepted';
+  exception when sqlstate '23514' then null; end;
+  select count(*) into v_cnt from public.organization_memberships where user_id=v_uid;
+  if v_cnt <> 0 then raise exception 'T-DA2 FAIL: a row persisted despite rejection (n=%)', v_cnt; end if;
+end $$;
+
+-- T-DA3: ACTIVE UPDATE to a same-org CUSTOM role_id -> rejected (23514); role_id
+-- unchanged and still a SYSTEM role. Subject u_emp (…a3); pin its enum to employee
+-- for a clean, self-contained subject.
+do $$
+declare v_emp uuid := 'd0000000-0000-0000-0000-0000000000a3';
+        v_org uuid := 'aaaa1111-0000-0000-0000-00000000000a';
+        v_before uuid; v_after uuid; v_is_system boolean;
+begin
+  update public.organization_memberships set role='employee' where user_id=v_emp and org_id=v_org;
+  select role_id into v_before from public.organization_memberships where user_id=v_emp and org_id=v_org;
+  begin
+    update public.organization_memberships set role_id='11110000-0000-0000-0000-0000000000c1'
+    where user_id=v_emp and org_id=v_org;
+    raise exception 'T-DA3 FAIL: active UPDATE to a custom role_id was accepted';
+  exception when sqlstate '23514' then null; end;
+  select role_id into v_after from public.organization_memberships where user_id=v_emp and org_id=v_org;
+  if v_after is distinct from v_before then raise exception 'T-DA3 FAIL: role_id changed despite rejection'; end if;
+  select r.is_system into v_is_system from public.roles r where r.id=v_after;
+  if v_is_system is distinct from true then raise exception 'T-DA3 FAIL: role_id is not a system role after rejection'; end if;
+end $$;
+
+-- T-DA4: INACTIVE UPDATE to a same-org CUSTOM role_id -> rejected (23514) too.
+do $$
+declare v_emp uuid := 'd0000000-0000-0000-0000-0000000000a3';
+        v_org uuid := 'aaaa1111-0000-0000-0000-00000000000a';
+        v_after uuid; v_is_system boolean;
+begin
+  update public.organization_memberships set is_active=false where user_id=v_emp and org_id=v_org;
+  begin
+    update public.organization_memberships set role_id='11110000-0000-0000-0000-0000000000c1'
+    where user_id=v_emp and org_id=v_org;
+    raise exception 'T-DA4 FAIL: inactive UPDATE to a custom role_id was accepted';
+  exception when sqlstate '23514' then null; end;
+  select role_id into v_after from public.organization_memberships where user_id=v_emp and org_id=v_org;
+  select r.is_system into v_is_system from public.roles r where r.id=v_after;
+  if v_is_system is distinct from true then raise exception 'T-DA4 FAIL: inactive row left with a non-system role_id'; end if;
+  update public.organization_memberships set is_active=true where user_id=v_emp and org_id=v_org;  -- restore
+end $$;
+
+-- T-DA5: a stale CUSTOM pointer is NOT preserved by a later UPDATE — the trigger
+-- HEALS it to the enum's system role. Inject the Decision-A-violating state by
+-- TEMPORARILY disabling the trigger (the only way to reach it), then an
+-- enum-consistent write must overwrite it with the employee system role.
+do $$
+declare v_emp uuid := 'd0000000-0000-0000-0000-0000000000a3';
+        v_org uuid := 'aaaa1111-0000-0000-0000-00000000000a';
+        v_after uuid; v_is_system boolean;
+begin
+  alter table public.organization_memberships disable trigger organization_memberships_sync_role_id;
+  update public.organization_memberships set role_id='11110000-0000-0000-0000-0000000000c1'
+    where user_id=v_emp and org_id=v_org;                     -- inject stale custom pointer (bypass)
+  alter table public.organization_memberships enable trigger organization_memberships_sync_role_id;
+  update public.organization_memberships set role='employee' where user_id=v_emp and org_id=v_org;  -- heal
+  select role_id into v_after from public.organization_memberships where user_id=v_emp and org_id=v_org;
+  select r.is_system into v_is_system from public.roles r where r.id=v_after;
+  if v_is_system is distinct from true then raise exception 'T-DA5 FAIL: stale custom pointer was not healed to a system role'; end if;
+  if v_after <> (select id from public.roles where org_id=v_org and is_system and key='employee') then
+    raise exception 'T-DA5 FAIL: heal did not target the employee system role';
+  end if;
+end $$;
+
+-- T-DA6: a valid enum write ends on the matching SYSTEM role (positive control).
+do $$
+declare v_uid uuid := 'da000000-0000-0000-0000-0000000000d6';
+        v_org uuid := 'aaaa1111-0000-0000-0000-00000000000a'; v_key text; v_is_system boolean;
+begin
+  insert into public.organization_memberships (user_id, org_id, role, is_active, role_id)
+  values (v_uid, v_org, 'admin', true, null);
+  select r.is_system, r.key into v_is_system, v_key
+  from public.organization_memberships m join public.roles r on r.id=m.role_id
+  where m.user_id=v_uid and m.org_id=v_org;
+  if v_is_system is distinct from true or v_key <> 'admin' then
+    raise exception 'T-DA6 FAIL: valid enum write did not land on the admin system role (is_system=%, key=%)', v_is_system, v_key;
+  end if;
+  delete from public.organization_memberships where user_id=v_uid and org_id=v_org;  -- keep parity clean
+end $$;
+
 -- T19: re-run the EXACT per-org system-grant parity over ALL orgs, now including
 -- the orgs provisioned mid-test (C from T4, D from T15) (#6).
 do $$ begin perform pg_temp._check_all_org_parity(); end $$;
 
-select 'ALL 0017 CHECKS PASSED (T1-T19)' as result;
+select 'ALL 0017 CHECKS PASSED (T1-T19 + Decision-A behavioral T-DA1..T-DA6)' as result;

@@ -17,11 +17,18 @@ was applied, while the product feature was nominally "off".
 ## The decision
 
 **The still-unapplied migration 0016 was modified in place** so that the five RPCs
-are created **DB-dormant**: `REVOKE ALL … FROM PUBLIC, anon, authenticated` and **no
-grant to any caller role**. Only the function owner (`postgres`) can execute them,
-which is exactly what the validation harnesses use. A direct PostgREST call by any
-signed-in user — including an Owner — fails with SQLSTATE `42501` (permission
-denied) **before the function body runs**.
+(and the two helper functions) are created **DB-dormant**: `REVOKE ALL … FROM
+PUBLIC, anon, authenticated, service_role` and **no grant to any caller role** —
+plus `REVOKE ALL` on the three package tables (`roles`, `role_permissions`,
+`audit_events`) **from `service_role`** (final-gate Blocker 1). Only the function
+owner (`postgres`) can execute the RPCs, which is exactly what the validation
+harnesses use. A direct PostgREST call by any signed-in user — including an Owner —
+fails with SQLSTATE `42501` (permission denied) **before the function body runs**,
+and even the privileged `service_role` backend key is denied on the entire
+role-management surface. (`service_role` has `BYPASSRLS`, but that bypasses only
+row-level security policies — never table/function `GRANT`s — so the explicit
+`REVOKE` is authoritative.) Hardening is object-scoped to the 0015–0017 package;
+there is **no** global `ALTER DEFAULT PRIVILEGES`.
 
 `list_org_roles` (read) is dormant too: with `ROLES_MANAGEMENT_UI` off nothing
 consumes it, so dormant read access is *not necessary*, and the simplest safe state
@@ -54,21 +61,31 @@ After 0015 → 0016 → 0017 are applied, `supabase/validation/0016_acceptance.s
 
 - exactly 5 RPCs + 2 helpers, exact signatures, no overloads, owner `postgres`,
   `SECURITY DEFINER` (RPCs), `search_path=''`;
-- **no effective EXECUTE** for `authenticated` or `anon` on any of the 7 functions —
-  `has_function_privilege` is used, so a grant inherited **through any intermediate
-  role** also fails the check;
+- **no effective EXECUTE** for `authenticated`, `anon` OR `service_role` on any of
+  the 7 functions — `has_function_privilege` is used, so a grant inherited **through
+  any intermediate role** also fails the check (Blocker 1);
 - **no direct catalog ACL entry** for `PUBLIC(0)` / `anon` / `authenticated` on any
   of the 7;
+- **`service_role` holds no SELECT/INSERT/UPDATE/DELETE** on `roles` /
+  `role_permissions` / `audit_events` — proven both by `has_table_privilege` and by
+  real `SET ROLE service_role` writes returning `permission denied` (Blocker 1);
 - `roles` / `role_permissions` / `audit_events` remain RLS-on, zero policies, zero
   anon/authenticated grants (fail-closed since 0011/0015);
-- Decision A: **no membership — active or inactive — has a `role_id` resolving to a
-  role with `is_system = false`** (checked in `0017_acceptance.sql`, the extended
+- Decision A — enforced by the **0017 trigger** (`sync_membership_role_id` RAISEs
+  `23514` on any INSERT/UPDATE that assigns a custom `role_id`, active or inactive)
+  AND audited as state: **no membership has a `role_id` resolving to a role with
+  `is_system = false`** (checked in `0017_acceptance.sql`, the extended
   `authoritative_cutover_preflight.sql`, and the apply-gate preflights/postflights).
 
-Because writes are DB-dormant, no custom role can come into existence; because no
-custom role exists, no membership can point at one; because the tables are
-fail-closed, no direct table write can bypass this. Decision A is thus enforced by
-construction *and* independently verified by the STOP checks.
+Two independent layers enforce Decision A. **Write-time:** the 0017 trigger REJECTS
+(`23514`) any attempt to point a membership `role_id` at a custom role — the write
+itself fails, identically for active and inactive rows, and a stale custom pointer
+is healed to the enum's system role rather than preserved. **State-audit:**
+`0017_acceptance.sql` / `authoritative_cutover_preflight.sql` return false if any
+membership ever resolves to `is_system=false`, catching even a grandfathered
+pointer. In this dormant window writes are additionally blocked at the RPC layer, so
+no custom role can even come into existence — but Decision A no longer *depends* on
+that: it is a hard, trigger-enforced invariant on the membership table.
 
 ## Activation (future hard gates — each its own PR + review + operator apply)
 
