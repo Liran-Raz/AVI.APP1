@@ -7,12 +7,21 @@
 -- direct table grants, no RLS policies. DEPENDS ON 0015 (audit_events) — each
 -- mutation writes an audit row IN THE SAME TRANSACTION.
 --
--- HARDENING (review #4/#5/#6/#7/#10):
+-- HARDENING (review #4/#5/#6/#7/#10 + final-gate DB-DORMANCY):
 --   * CREATE FUNCTION (never CREATE OR REPLACE) + no-overload guards: a duplicate
 --     apply FAILS cleanly rather than silently replacing a security function.
 --   * Apply-as-postgres asserted; owners are postgres; search_path '' pinned;
---     objects fully qualified; no dynamic SQL; REVOKE PUBLIC/anon; GRANT only
---     authenticated; no direct table grants.
+--     objects fully qualified; no dynamic SQL; no direct table grants.
+--   * DB-LEVEL DORMANCY (final-gate Blocker 1): EXECUTE on ALL FIVE RPCs AND both
+--     helpers is revoked from PUBLIC, anon, authenticated AND service_role; ALL
+--     table privileges on the 3 package tables (roles, role_permissions,
+--     audit_events) are revoked from service_role. A Vercel flag cannot prevent
+--     direct PostgREST calls and service_role has BYPASSRLS, so the OFF state is
+--     enforced in the database itself, for every role — the app never uses the
+--     service_role key. Hardening is object-scoped (no global ALTER DEFAULT
+--     PRIVILEGES). Enablement is a separate versioned rollout migration (grant
+--     execute), reversible by the matching revoke. See
+--     docs/security/ROLE_MANAGEMENT_DB_DORMANCY.md.
 --   * Absence/shape guards: audit_events must exist (0015) with the expected
 --     columns; the functions + unique index must be absent; roles.description, if
 --     present, must be text — else STOP.
@@ -121,7 +130,7 @@ as $$
       )
   )
 $$;
-revoke all on function public.custom_role_grant_check(text, text) from public, anon, authenticated;
+revoke all on function public.custom_role_grant_check(text, text) from public, anon, authenticated, service_role;
 
 -- ============================================================
 -- validate_custom_role_payload(jsonb) — full DB-side payload validation. Raises
@@ -162,7 +171,7 @@ begin
     seen := array_append(seen, btrim(v_key));
   end loop;
 end $$;
-revoke all on function public.validate_custom_role_payload(jsonb) from public, anon, authenticated;
+revoke all on function public.validate_custom_role_payload(jsonb) from public, anon, authenticated, service_role;
 
 -- ============================================================
 -- create_org_role — create a custom role + grants (validated). Owner-only.
@@ -482,23 +491,61 @@ begin
     order by r.is_system desc, lower(r.name) asc, rp.permission_key asc;
 end $$;
 
--- ---- Execute surface: authenticated only on the 5 RPCs. PUBLIC/anon cannot. ----
-revoke all on function public.create_org_role(uuid, text, text, jsonb) from public, anon;
-grant execute on function public.create_org_role(uuid, text, text, jsonb) to authenticated;
-revoke all on function public.update_org_role(uuid, uuid, text, text, jsonb, timestamptz) from public, anon;
-grant execute on function public.update_org_role(uuid, uuid, text, text, jsonb, timestamptz) to authenticated;
-revoke all on function public.delete_org_role(uuid, uuid) from public, anon;
-grant execute on function public.delete_org_role(uuid, uuid) to authenticated;
-revoke all on function public.duplicate_org_role(uuid, uuid, text) from public, anon;
-grant execute on function public.duplicate_org_role(uuid, uuid, text) to authenticated;
-revoke all on function public.list_org_roles(uuid) from public, anon;
-grant execute on function public.list_org_roles(uuid) to authenticated;
+-- ---- Execute surface: DORMANT (DB-level gate). ----
+-- NO role may execute ANY of the 5 RPCs: EXECUTE is revoked from PUBLIC, anon
+-- AND authenticated (owner postgres can always run them, which is what the
+-- validation harness uses). This is deliberate defense-in-depth: the Vercel
+-- flags (ROLES_MANAGEMENT_UI / ROLES_MANAGEMENT_WRITE) gate only the app
+-- routes — they CANNOT stop a signed-in user from invoking an RPC directly
+-- through PostgREST. With this revoke the capability is dormant AT THE
+-- DATABASE, independent of any environment variable.
+--
+-- ENABLEMENT is a separate, versioned, auditable, reversible rollout
+-- migration (see docs/security/ROLE_MANAGEMENT_DB_DORMANCY.md):
+--   * UI/read gate:  grant execute on public.list_org_roles(uuid) to authenticated;
+--   * Write gate:    grant execute on the 4 write RPCs to authenticated;
+-- and each is reversed by the matching REVOKE. Until such a migration is
+-- applied, authenticated receives SQLSTATE 42501 (permission denied) before
+-- the function body ever runs.
+revoke all on function public.create_org_role(uuid, text, text, jsonb) from public, anon, authenticated, service_role;
+revoke all on function public.update_org_role(uuid, uuid, text, text, jsonb, timestamptz) from public, anon, authenticated, service_role;
+revoke all on function public.delete_org_role(uuid, uuid) from public, anon, authenticated, service_role;
+revoke all on function public.duplicate_org_role(uuid, uuid, text) from public, anon, authenticated, service_role;
+revoke all on function public.list_org_roles(uuid) from public, anon, authenticated, service_role;
+
+-- ---- service_role: DB-DORMANT for the role-management surface too (final-gate
+-- Blocker 1). Supabase's service_role has BYPASSRLS and, via the project's
+-- default privileges, would otherwise hold ALL on new tables + EXECUTE on new
+-- functions. Decision A + DB-dormancy require that NOBODY — not even the
+-- privileged backend role — can reach the role-management objects until a
+-- deliberate, versioned enablement migration. We harden ONLY the 0015-0017
+-- package objects, object-by-object; we do NOT touch the project's global
+-- ALTER DEFAULT PRIVILEGES. EXECUTE was revoked from service_role on all 5 RPCs
+-- + both helpers above; here we also revoke every table privilege on the 3
+-- package tables. The app never uses the service_role key (audit-verified), so
+-- this changes no runtime path — it closes a privileged bypass of the dormant
+-- surface. (roles/role_permissions are from 0011; audit_events from 0015 —
+-- both already applied/created before 0016 runs.)
+revoke all on table public.roles            from service_role;
+revoke all on table public.role_permissions from service_role;
+revoke all on table public.audit_events     from service_role;
 
 notify pgrst, 'reload schema';
 
 commit;
 
 -- ============================================================
--- VERIFICATION + ROLLBACK: see supabase/validation/0015_0016_verify.sql and
--- 0015_0016_rollback.sql, and docs/operations/production-migrations/.
+-- VERIFICATION: supabase/validation/0015_0016_verify.sql (CI, throwaway DB).
+--
+-- ROLLBACK — use the GUARD-FIRST, DATA-PRESERVING production procedure in
+-- docs/operations/production-migrations/0015-0016-apply-package.md (Package B,
+-- PRE-DATA) or review-bundle/.../ROLLBACK-PLAN.md. Those RAISE and roll back
+-- BEFORE any DROP if audit_events has rows, roles.description has non-NULL
+-- values, or any custom role / membership->custom-role exists.
+--
+-- NOTE: supabase/validation/0015_0016_rollback.sql is a CI THROWAWAY teardown
+-- for a disposable database only — it is intentionally UNguarded so CI can
+-- verify the objects drop + re-drop idempotently on a scratch DB that holds
+-- test data. DO NOT run it against a database with real data; use the guarded
+-- production procedure above instead.
 -- ============================================================

@@ -5,15 +5,20 @@
 -- review: after the one-time 0013 backfill, NEW or role-CHANGED memberships kept
 -- role_id NULL (bootstrap_org / accept_invitation / updateRole set only the enum;
 -- no trigger). This migration makes role_id self-maintaining for the SYSTEM-role
--- model, for BOTH existing and FUTURE organizations, WITHOUT clobbering a future
--- CUSTOM role_id assignment.
+-- model, for BOTH existing and FUTURE organizations, and ENFORCES Decision A in
+-- the database: a Custom role can NEVER be assigned to a membership.
 --
 -- SYSTEM vs CUSTOM role identification:
 --   * SYSTEM role  = roles.is_system = true (owner/admin/employee, key = enum).
 --   * CUSTOM role  = roles.is_system = false (created via 0016 management RPCs).
--- The trigger only manages the SYSTEM-role POINTER. A membership whose role_id
--- points at a CUSTOM role is never auto-overwritten by an enum change; moving
--- back to a system role is an EXPLICIT, validated role_id change.
+-- DECISION A (final-gate Blocker 2): custom roles are permission-set definitions
+-- ONLY; they are NOT assignable to organization_memberships. The trigger treats
+-- role_id as a DERIVED pointer to the enum's SYSTEM role: it REJECTS (raises) any
+-- write that explicitly supplies a custom / cross-org / dangling / wrong-system
+-- role_id, and otherwise DERIVES the enum's system role — overwriting (never
+-- preserving) any stale custom pointer. Enforcement is identical for ACTIVE and
+-- INACTIVE memberships. The acceptance / cutover-preflight gates are a second,
+-- state-audit layer that also rejects a pre-existing/grandfathered custom pointer.
 --
 -- WHAT THIS DOES (all idempotent / concurrency-safe):
 --   1. ensure_org_system_roles(org) — SECURITY DEFINER. Idempotently creates the
@@ -32,14 +37,14 @@
 --   * INSERT, role_id NULL            -> the same-org system role for the enum.
 --   * INSERT/UPDATE, explicit role_id of ANOTHER org / dangling -> RAISE (23503).
 --   * INSERT/UPDATE, explicit SYSTEM role_id whose key <> enum   -> RAISE (23514).
---   * INSERT/UPDATE, explicit same-org CUSTOM role_id            -> honored.
+--   * INSERT/UPDATE, explicit same-org CUSTOM role_id -> RAISE (23514) — Decision A.
 --   * UPDATE, role_id explicitly set to NULL -> mapped to the enum system role
 --                                               (return-to-system; never left NULL).
---   * UPDATE, role_id unchanged, OLD = NULL/SYSTEM/dangling -> re-sync to the enum
---                                               system role.
---   * UPDATE, role_id unchanged, OLD = CUSTOM  -> left untouched (never clobbered).
+--   * UPDATE, role_id unchanged (OLD = NULL/SYSTEM/CUSTOM/dangling) -> DERIVED to
+--                                               the enum system role; a stale
+--                                               CUSTOM pointer is NOT preserved.
 --   * Defense in depth: the composite FK (role_id, org_id) (0011) also rejects
---     cross-org / dangling assignments.
+--     cross-org / dangling assignments; the trigger raises first, deterministically.
 --
 -- INSTALL-TIME RACE (review v6 #1): the per-org advisory lock in
 -- ensure_org_system_roles only serializes CONCURRENT PROVISIONING after this
@@ -349,9 +354,10 @@ set search_path = ''
 as $$
 declare
   v_sys_id uuid;       -- the same-org SYSTEM role whose key = NEW.role
-  v_org uuid;          -- org of an explicitly-supplied NEW.role_id
-  v_is_system boolean; -- is_system of an explicitly-supplied / OLD role
-  v_key text;          -- key of an explicitly-supplied role
+  v_provided uuid;     -- the role_id this write EXPLICITLY supplies (else NULL -> derive)
+  v_org uuid;          -- org of v_provided
+  v_is_system boolean; -- is_system of v_provided
+  v_key text;          -- key of v_provided
 begin
   -- Provision the org's system roles + grants when the SPECIFIC role for the
   -- enum is missing (NOT only when the org has ZERO system roles). Idempotent.
@@ -372,59 +378,51 @@ begin
       using errcode = '23503';
   end if;
 
+  -- DECISION A (final-gate Blocker 2) — ENFORCED BY THE DB ITSELF. A Custom role
+  -- (is_system=false) can NEVER be assigned to a membership: role_id is a DERIVED
+  -- pointer to the enum's SYSTEM role, nothing else. First classify what THIS
+  -- write EXPLICITLY supplies as a role_id:
+  --   * INSERT                       -> the inserted role_id (NULL = derive).
+  --   * UPDATE that CHANGES role_id  -> the new role_id.
+  --   * UPDATE that leaves role_id   -> NULL (derive/heal; a stale CUSTOM or
+  --                                     dangling pointer is NOT preserved).
   if TG_OP = 'INSERT' then
-    -- NULL role_id -> the same-org system role for the enum (never left NULL).
-    if NEW.role_id is null then
-      NEW.role_id := v_sys_id;
-      return NEW;
-    end if;
-    -- Explicit role_id: must belong to this org; a SYSTEM role's key must == enum.
-    select r.org_id, r.is_system, r.key into v_org, v_is_system, v_key
-    from public.roles r where r.id = NEW.role_id;
-    if v_org is null or v_org <> NEW.org_id then
-      raise exception
-        'sync_membership_role_id: role_id % is not a role of org %', NEW.role_id, NEW.org_id
-        using errcode = '23503';
-    end if;
-    if v_is_system and v_key <> NEW.role::text then
-      raise exception
-        'sync_membership_role_id: system role_id % (key %) does not match enum %',
-        NEW.role_id, v_key, NEW.role using errcode = '23514';
-    end if;
-    return NEW;  -- valid: a key-matched system role, or a same-org custom role
+    v_provided := NEW.role_id;
+  elsif NEW.role_id is distinct from OLD.role_id then
+    v_provided := NEW.role_id;
+  else
+    v_provided := null;
   end if;
 
-  -- TG_OP = 'UPDATE'
-  if NEW.role_id is distinct from OLD.role_id then
-    -- Explicit change. NULL means "return to the enum system role" — never NULL.
-    if NEW.role_id is null then
-      NEW.role_id := v_sys_id;
-      return NEW;
-    end if;
+  -- An explicitly-supplied role_id that is NOT the enum's own system role is
+  -- validated and REJECTED LOUDLY — never silently rewritten. is_active is never
+  -- consulted, so the rule is identical for ACTIVE and INACTIVE memberships.
+  if v_provided is not null and v_provided is distinct from v_sys_id then
     select r.org_id, r.is_system, r.key into v_org, v_is_system, v_key
-    from public.roles r where r.id = NEW.role_id;
-    if v_org is null or v_org <> NEW.org_id then
+    from public.roles r where r.id = v_provided;
+    if v_org is null then
       raise exception
-        'sync_membership_role_id: role_id % is not a role of org %', NEW.role_id, NEW.org_id
-        using errcode = '23503';
-    end if;
-    if v_is_system and v_key <> NEW.role::text then
+        'sync_membership_role_id: role_id % does not exist', v_provided
+        using errcode = '23503';                      -- dangling
+    elsif v_org <> NEW.org_id then
+      raise exception
+        'sync_membership_role_id: role_id % is not a role of org %', v_provided, NEW.org_id
+        using errcode = '23503';                      -- cross-org
+    elsif v_is_system = false then
+      raise exception
+        'sync_membership_role_id: custom roles cannot be assigned to a membership (Decision A): role_id %',
+        v_provided using errcode = '23514';           -- Decision A: CUSTOM rejected
+    else
       raise exception
         'sync_membership_role_id: system role_id % (key %) does not match enum %',
-        NEW.role_id, v_key, NEW.role using errcode = '23514';
+        v_provided, v_key, NEW.role using errcode = '23514';  -- wrong system role
     end if;
-    return NEW;  -- valid: a key-matched system role, or a same-org custom role
   end if;
 
-  -- role_id unchanged by this UPDATE: preserve a CUSTOM pointer; otherwise
-  -- (SYSTEM / NULL / dangling) re-sync to the same-org system role for the enum.
-  if OLD.role_id is not null then
-    select r.is_system into v_is_system
-    from public.roles r where r.id = OLD.role_id;
-    if v_is_system is not null and v_is_system = false then
-      return NEW;  -- custom: never clobbered
-    end if;
-  end if;
+  -- Not explicitly supplied (or supplied == the enum's own system role): DERIVE
+  -- the pointer to the enum's system role. This OVERWRITES any stale custom /
+  -- dangling pointer, so a Custom pointer can never survive a write and role_id
+  -- is never left NULL.
   NEW.role_id := v_sys_id;
   return NEW;
 end $$;

@@ -10,10 +10,10 @@
 | Field | Value |
 |---|---|
 | Path | `supabase/migrations/0017_membership_role_id_sync.sql` |
-| Git blob | `0dbca46b5c0e7c40bbb9d1b7ff6f5f88c660d145` |
-| SHA-256 (LF-canonical) | `f9295b622afa8bb19893fda7b7e7e43f06b299a48d19228ce4a96be4b31a14f4` |
-| Bytes (LF-canonical) | 26241 |
-| Lines | 490 |
+| Git blob | `ff1e8aba379fc2040040905ea803ee105a2b96b6` |
+| SHA-256 (LF-canonical) | `3fed49c5ca3f86ffaaf6c60c1ac31bfbfc1f10456da76582f0c7e3c0e4e43ac4` |
+| Bytes (LF-canonical) | 26893 |
+| Lines | 488 |
 
 The 0017 migration file was last changed for v6 (LOCK TABLE ... IN SHARE ROW
 EXCLUSIVE MODE + system-role name-drift check) and is UNCHANGED in v7 and v8 —
@@ -53,14 +53,16 @@ those rounds' scope is CI + acceptance + docs only.
   different orgs use different keys (no cross-org contention). Defense in depth
   ALONGSIDE the install-time table lock. CI proves two concurrent first memberships
   of a new org yield exactly 3 system roles, both mapped.
-- `sync_membership_role_id()` BEFORE INSERT/UPDATE trigger — **strict rules**
-  (review v3 #5): provisions when the SPECIFIC enum role is missing; maps a NULL
-  `role_id` to the enum's system role (never leaves NULL); a `role_id := NULL`
-  update returns to the enum system role; an explicit SYSTEM `role_id` whose key
-  != the enum is REJECTED (23514); a cross-org / dangling `role_id` is REJECTED
-  (23503, plus the composite FK); an explicit same-org CUSTOM `role_id` is honored;
-  on an unchanged update a CUSTOM pointer is preserved and a SYSTEM/NULL one is
-  re-synced.
+- `sync_membership_role_id()` BEFORE INSERT/UPDATE trigger — **strict rules +
+  Decision A (final-gate Blocker 2)**: provisions when the SPECIFIC enum role is
+  missing; maps a NULL `role_id` to the enum's system role (never leaves NULL); a
+  `role_id := NULL` update returns to the enum system role; an explicit SYSTEM
+  `role_id` whose key != the enum is REJECTED (23514); a cross-org / dangling
+  `role_id` is REJECTED (23503, plus the composite FK); an explicit same-org CUSTOM
+  `role_id` is **REJECTED (23514) — Decision A**, identically for ACTIVE and INACTIVE
+  memberships; on an unchanged update the pointer is DERIVED to the enum system role
+  — a stale CUSTOM pointer is **healed, never preserved**. The write itself fails;
+  `0017_acceptance` / `authoritative_cutover_preflight` are a second state-audit layer.
 - Seeds every existing org + backfills any NULL `role_id`.
 - **Drift guard (review v4 #2, extended v6 #6):** an in-migration guard ABORTS
   before COMMIT on any NON-REPAIRABLE drift (extra/undefined system role; extra
@@ -76,7 +78,7 @@ CI proof: `validate-membership-sync` (T1–T19 + drift-category rejection + bool
 acceptance + cutover preflight + missing-object=false) on throwaway PostgreSQL —
 non-postgres-apply + duplicate-apply rejection; exact per-org system-role/grant
 parity (both directions); backfill; new-org-via-trigger; partial-org provisioning;
-enum re-sync; deactivate; custom no-clobber; valid + mismatched explicit changes;
+enum re-sync; deactivate; Decision-A custom rejection (active+inactive INSERT/UPDATE via T-DA behavioral); valid + mismatched explicit changes;
 explicit-NULL remap; wrong-org custom / cross-org / dangling rejection; inactive
 mapping; rollback ×2.
 
@@ -280,21 +282,45 @@ select
   as all_checks_passed;
 ```
 
-## Authoritative-cutover preflight (review v4 #6 — a SEPARATE later gate)
+## Authoritative-cutover preflight (review v4 #6 + final-gate Decision A — a SEPARATE later gate)
 BEFORE enabling `DB_ROLE_AUTHORITATIVE`, run
 `supabase/validation/authoritative_cutover_preflight.sql`; it MUST return `t`. Under
-Decision A custom roles are NOT assignable to members, so if any ACTIVE membership
-resolves to a CUSTOM role the resolver fails closed and denies that user — the cutover
-must STOP.
+Decision A custom roles are NOT assignable to members, so if ANY membership — ACTIVE
+OR INACTIVE — resolves to a CUSTOM role the cutover must STOP: an active one would be
+denied by the fail-closed resolver, and an inactive one could be reactivated into that
+same denial. (The 0017 acceptance file also asserts this Decision A invariant.)
 ```
 psql -At -f supabase/validation/authoritative_cutover_preflight.sql   # expect exactly: t
 ```
 
 ## Rollback — two phases (do NOT destroy data post-use)
 
-### A. PRE-DATA rollback (safe/lossless — before relying on role_id)
+### A. PRE-DATA rollback (safe/lossless — before relying on role_id) — GUARD-FIRST
 ```sql
 begin;
+-- S3 IDENTITY/PROVENANCE (final-gate rollback provenance): require BOTH 0017
+-- functions AND the EXACT sync trigger before any DROP; a missing / partial /
+-- foreign state must RAISE, never be dropped. G4 refuses teardown while any
+-- membership points at a custom role (Decision A).
+do $$
+begin
+  if exists (select 1 from public.organization_memberships m
+             join public.roles r on r.id = m.role_id where r.is_system = false) then
+    raise exception 'ROLLBACK ABORTED (G4): a membership points at a custom role (Decision A) — refusing teardown';
+  end if;
+  if to_regprocedure('public.sync_membership_role_id()') is null
+     or to_regprocedure('public.ensure_org_system_roles(uuid)') is null then
+    raise exception 'ROLLBACK ABORTED (S3/identity): a 0017 function is missing — refusing to DROP a partial state';
+  end if;
+  if not exists (
+    select 1 from pg_trigger t join pg_class c on c.oid=t.tgrelid join pg_namespace n on n.oid=c.relnamespace
+    where n.nspname='public' and c.relname='organization_memberships'
+      and t.tgname='organization_memberships_sync_role_id'
+      and t.tgfoid = to_regprocedure('public.sync_membership_role_id()')
+      and t.tgtype = 23 and not t.tgisinternal) then
+    raise exception 'ROLLBACK ABORTED (S3/identity): the exact sync trigger is not present (name/fn/tgtype=23) — refusing to DROP a foreign trigger';
+  end if;
+end $$;
   drop trigger if exists organization_memberships_sync_role_id on public.organization_memberships;
   drop function if exists public.sync_membership_role_id();
   drop function if exists public.ensure_org_system_roles(uuid);

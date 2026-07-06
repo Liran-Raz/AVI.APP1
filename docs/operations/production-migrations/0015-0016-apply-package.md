@@ -88,10 +88,11 @@ drop `audit_events`** — that destroys audit history.
 | Field | Value |
 |---|---|
 | Path | `supabase/migrations/0016_role_management_rpcs.sql` |
-| Git blob | `9517d03b08e58dd146c625e2f8439336d7ea0d70` |
-| SHA-256 | `30a35c262e6e32055d9d9c8f5736d753dfb355ce9158bc3c9997a6577bfaa7f9` |
-| Bytes / lines | 21237 / 504 |
-| Functions | 5 SECURITY DEFINER RPCs (`create/update/delete/duplicate/list_org_role`) + 2 immutable helpers (`custom_role_grant_check`, `validate_custom_role_payload`, non-SECURITY-DEFINER, REVOKEd from public/anon/authenticated) |
+| Git blob | `7277f4792bf09bb5399cf33b4fdbe80caf92bdd8` |
+| SHA-256 (LF) | `c24d4d05589af5beaa5e53f73bd3cd8ee061f595bd4b31d74c9e92b72577beec` |
+| Bytes (LF) / lines | 24490 / 551 |
+| Functions | 5 SECURITY DEFINER RPCs (`create/update/delete/duplicate/list_org_role`) + 2 immutable helpers (`custom_role_grant_check`, `validate_custom_role_payload`, non-SECURITY-DEFINER) — **ALL SEVEN DB-DORMANT: EXECUTE revoked from PUBLIC, anon, authenticated AND `service_role` (Blocker 1); enablement is a separate versioned rollout migration (see `docs/security/ROLE_MANAGEMENT_DB_DORMANCY.md`)** |
+| service_role (Blocker 1) | `REVOKE ALL … FROM service_role` on all 7 functions AND on the 3 package tables (`roles`, `role_permissions`, `audit_events`). `service_role` has `BYPASSRLS`, which bypasses only RLS — never table/function GRANTs — so the explicit REVOKE is authoritative. Object-scoped only; NO global `ALTER DEFAULT PRIVILEGES`. |
 | Also | `roles.description` (text; STRICT single-creator — guarded ABSENT + provenance-stamped `avi:0016 roles.description`) + UNIQUE index `roles_org_name_norm_uniq (org_id, lower(btrim(name)))` |
 | Semantics | `CREATE FUNCTION` / `ADD COLUMN` (no `OR REPLACE` / no `IF NOT EXISTS`) + absence guards; single-apply, a re-apply is REJECTED. Audit snapshots read the PERSISTED, normalized, ordered grants. |
 
@@ -153,8 +154,11 @@ It proves, exactly: the **3** tables (`roles`, `role_permissions`, `audit_events
 with RLS on, zero policies, no direct (relacl) ACL, and no effective PUBLIC/anon/
 authenticated privilege of ANY of the 7 types; **exactly 7** functions across the 7 names
 (no overloads, none missing) with the exact signatures; owner=postgres; SECURITY DEFINER
-on the 5 RPCs only (not the 2 helpers); pinned empty `search_path` on the 5; `authenticated`
-EXECUTE only on the 5, `anon`/PUBLIC on none; the exact unique index `roles_org_name_norm_uniq`
+on the 5 RPCs only (not the 2 helpers); pinned empty `search_path` on the 5; **DB-DORMANT
+EXECUTE surface — NO effective EXECUTE for `authenticated` OR `anon` on ANY of the 7
+(`has_function_privilege`, which also catches grants inherited through an intermediate
+role) and NO direct catalog ACL entry for PUBLIC(0)/anon/authenticated**; the exact
+unique index `roles_org_name_norm_uniq`
 (unique, `(org_id, lower(btrim(name)))`); `roles.description` = text + the provenance stamp;
 and the `roles_set_updated_at` trigger (BEFORE UPDATE, calls `set_updated_at`). Cardinality
 is asserted by explicit counts (=3 tables, =7 functions), NOT `bool_and` over "found" rows.
@@ -170,10 +174,53 @@ audit failure) is proven on real PostgreSQL by the CI job `validate-role-managem
 (`supabase/validation/0015_0016_*`). In the Production SQL Editor there is no
 end-user JWT (`auth.uid()` null), so the RPCs return forbidden/0-rows.
 
-### Rollback — two phases (review v3 #9)
-**A. PRE-DATA (no custom-role/audit data yet) — lossless full revert:**
+### Rollback — two phases (review v3 #9; GUARD-FIRST, data-preserving)
+**A. PRE-DATA — GUARD-FIRST lossless full revert.** The transaction RAISES and
+rolls back BEFORE the first destructive statement if any data would be lost:
 ```sql
 begin;
+-- ---- DATA-PRESERVATION GUARDS (run FIRST; RAISE before any DROP) ----
+do $$
+begin
+  -- G2: never drop non-NULL description data.
+  if exists (select 1 from public.roles where description is not null) then
+    raise exception 'ROLLBACK ABORTED (G2): roles.description has non-NULL values';
+  end if;
+  -- G3: never tear down while custom roles exist.
+  if exists (select 1 from public.roles where is_system = false) then
+    raise exception 'ROLLBACK ABORTED (G3): custom roles exist (is_system=false)';
+  end if;
+  -- G5: the description column, if present, must be 0016-stamped (else STOP for review).
+  if exists (select 1 from information_schema.columns
+             where table_schema='public' and table_name='roles' and column_name='description')
+     and not exists (select 1 from pg_description d
+               join pg_class c on c.oid=d.objoid
+               join pg_attribute a on a.attrelid=c.oid and a.attnum=d.objsubid
+               where c.oid='public.roles'::regclass and a.attname='description'
+                 and d.description='avi:0016 roles.description') then
+    raise exception 'ROLLBACK ABORTED (G5): roles.description is not 0016-stamped';
+  end if;
+  -- S2 IDENTITY/PROVENANCE (final-gate rollback provenance): prove the FULL 0016
+  -- object set is present and is EXACTLY the 0016 objects before any DROP — a
+  -- missing / partial / foreign state must RAISE, never be dropped.
+  if (select count(*) from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+      where n.nspname='public' and p.proname in
+        ('create_org_role','update_org_role','delete_org_role','duplicate_org_role',
+         'list_org_roles','custom_role_grant_check','validate_custom_role_payload')) <> 7
+     or to_regprocedure('public.create_org_role(uuid,text,text,jsonb)') is null
+     or to_regprocedure('public.update_org_role(uuid,uuid,text,text,jsonb,timestamp with time zone)') is null
+     or to_regprocedure('public.delete_org_role(uuid,uuid)') is null
+     or to_regprocedure('public.duplicate_org_role(uuid,uuid,text)') is null
+     or to_regprocedure('public.list_org_roles(uuid)') is null
+     or to_regprocedure('public.custom_role_grant_check(text,text)') is null
+     or to_regprocedure('public.validate_custom_role_payload(jsonb)') is null
+     or to_regclass('public.roles_org_name_norm_uniq') is null
+     or not exists (select 1 from information_schema.columns
+         where table_schema='public' and table_name='roles' and column_name='description') then
+    raise exception 'ROLLBACK ABORTED (S2/identity): the full 0016 object set (7 functions + unique index + description column) is not present — refusing to DROP a missing/partial/foreign state';
+  end if;
+end $$;
+-- ---- destructive teardown (only reached when all guards pass) ----
   drop function if exists public.create_org_role(uuid, text, text, jsonb);
   drop function if exists public.update_org_role(uuid, uuid, text, text, jsonb, timestamptz);
   drop function if exists public.delete_org_role(uuid, uuid);
@@ -182,15 +229,13 @@ begin;
   drop function if exists public.validate_custom_role_payload(jsonb);
   drop function if exists public.custom_role_grant_check(text, text);
   drop index if exists public.roles_org_name_norm_uniq;
-  -- Drop description ONLY if 0016 created it (provenance stamp) — never a
-  -- pre-existing column (review v4 #1).
   do $$ begin
     if exists (select 1 from pg_description d
                join pg_class c on c.oid=d.objoid
                join pg_attribute a on a.attrelid=c.oid and a.attnum=d.objsubid
                where c.oid='public.roles'::regclass and a.attname='description'
                  and d.description='avi:0016 roles.description') then
-      alter table public.roles drop column description;
+      alter table public.roles drop column description;   -- guaranteed all-NULL by G2
     end if;
   end $$;
   notify pgrst, 'reload schema';

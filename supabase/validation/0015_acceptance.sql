@@ -61,12 +61,14 @@ select coalesce((
   and coalesce((select string_agg(column_name||':'||data_type||':'||is_nullable, ',' order by ordinal_position)
        from information_schema.columns where table_schema='public' and table_name='audit_events')
       = 'id:uuid:NO,org_id:uuid:NO,actor_user_id:uuid:NO,action:text:NO,target_type:text:NO,target_id:uuid:YES,metadata:jsonb:NO,created_at:timestamp with time zone:NO', false)
-  -- ---- exact defaults for id / metadata / created_at ----
-  and coalesce((select column_default like 'gen_random_uuid()%' from information_schema.columns
+  -- ---- EXACT defaults for id / metadata / created_at (v-final: anchored ^...$ so a
+  -- crafted default that merely CONTAINS or is PREFIXED by the expected text — e.g.
+  -- now() + interval '1 day', or '{}'::jsonb || '{...}'::jsonb — cannot false-pass) ----
+  and coalesce((select column_default ~ '^gen_random_uuid\(\)$' from information_schema.columns
        where table_schema='public' and table_name='audit_events' and column_name='id'), false)
-  and coalesce((select column_default like '%''{}''::jsonb%' from information_schema.columns
+  and coalesce((select column_default ~ '^''\{\}''::jsonb$' from information_schema.columns
        where table_schema='public' and table_name='audit_events' and column_name='metadata'), false)
-  and coalesce((select column_default like 'now()%' from information_schema.columns
+  and coalesce((select column_default ~ '^now\(\)$' from information_schema.columns
        where table_schema='public' and table_name='audit_events' and column_name='created_at'), false)
   -- ---- PRIMARY KEY: EXACTLY one PK, EXACTLY one key column, EXACTLY 'id' (v6 #3) ----
   and coalesce((select count(*) from pg_constraint c, t
@@ -149,4 +151,10 @@ select coalesce((
        cross join (values ('anon'),('authenticated')) r(role)
        cross join (values ('SELECT'),('INSERT'),('UPDATE'),('DELETE'),('TRUNCATE'),('REFERENCES'),('TRIGGER')) p(priv)
        where c.oid=t.oid), true)
+  -- NOTE (Blocker 1): service_role denial on audit_events is REVOKED in 0016 (which
+  -- also revokes it on roles/role_permissions), so it is asserted by 0016_acceptance
+  -- — NOT here. 0015 alone does not revoke service_role, so this file (the 0015
+  -- postflight, which runs BEFORE 0016) must not assert it, or it would fail on the
+  -- Supabase default grant to service_role. audit_events is empty + dormant in the
+  -- gap between 0015 and 0016, and no app path uses the service_role key.
 ), false) as all_checks_passed;
