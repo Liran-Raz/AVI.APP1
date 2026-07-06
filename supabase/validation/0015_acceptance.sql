@@ -151,13 +151,10 @@ select coalesce((
        cross join (values ('anon'),('authenticated')) r(role)
        cross join (values ('SELECT'),('INSERT'),('UPDATE'),('DELETE'),('TRUNCATE'),('REFERENCES'),('TRIGGER')) p(priv)
        where c.oid=t.oid), true)
-  -- ---- Blocker 1: service_role has NO effective SELECT/INSERT/UPDATE/DELETE on
-  -- audit_events. Supabase's service_role holds ALL by default privilege; 0016's
-  -- explicit REVOKE is what denies it. Joined to pg_roles so the file stays
-  -- catalog-safe where service_role is absent (no rows -> coalesce true). ----
-  and coalesce((select bool_and(not has_table_privilege(sr.oid, c.oid, p.priv))
-       from pg_class c, t
-       join pg_roles sr on sr.rolname = 'service_role'
-       cross join (values ('SELECT'),('INSERT'),('UPDATE'),('DELETE')) p(priv)
-       where c.oid=t.oid), true)
+  -- NOTE (Blocker 1): service_role denial on audit_events is REVOKED in 0016 (which
+  -- also revokes it on roles/role_permissions), so it is asserted by 0016_acceptance
+  -- — NOT here. 0015 alone does not revoke service_role, so this file (the 0015
+  -- postflight, which runs BEFORE 0016) must not assert it, or it would fail on the
+  -- Supabase default grant to service_role. audit_events is empty + dormant in the
+  -- gap between 0015 and 0016, and no app path uses the service_role key.
 ), false) as all_checks_passed;
