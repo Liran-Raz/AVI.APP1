@@ -205,3 +205,102 @@ export async function sendInvitationEmail(
     html,
   });
 }
+
+// ============================================================
+// Bug report notification email (DEV-002)
+// ============================================================
+
+export type SendBugReportNotificationInput = {
+  toEmail: string;
+  orgName: string;
+  reporterName: string;
+  reporterEmail: string;
+  description: string;
+  attemptedAction: string | null;
+  pageUrl: string;
+  consoleErrorCount: number;
+  failedRequestCount: number;
+  actionTrailCount: number;
+};
+
+// Lean summary email — counts only, not the full client_logs payload. The
+// complete report (including the raw logs) lives in the bug_reports row;
+// this email is just the "something came in, go look" ping.
+export async function sendBugReportNotificationEmail(
+  input: SendBugReportNotificationInput,
+): Promise<void> {
+  const subject = `דיווח תקלה חדש מ-${input.orgName}`;
+
+  const text = [
+    `דיווח תקלה חדש התקבל במערכת:`,
+    "",
+    `משרד: ${input.orgName}`,
+    `דווח ע"י: ${input.reporterName} (${input.reporterEmail})`,
+    `עמוד: ${input.pageUrl}`,
+    "",
+    `תיאור:`,
+    input.description,
+    input.attemptedAction ? "" : null,
+    input.attemptedAction ? `מה ניסה לעשות: ${input.attemptedAction}` : null,
+    "",
+    `לוגים מצורפים: ${input.consoleErrorCount} שגיאות קונסולה, ${input.failedRequestCount} בקשות שנכשלו, ${input.actionTrailCount} פעולות אחרונות.`,
+    "הפירוט המלא נמצא בטבלת bug_reports ב-Supabase.",
+    "",
+    "AVI.APP",
+  ]
+    .filter((line) => line !== null)
+    .join("\n");
+
+  const html = `
+<!doctype html>
+<html lang="he" dir="rtl">
+  <body style="font-family: Arial, Helvetica, sans-serif; background: #f7f9fb; padding: 24px; margin: 0;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+      <tr>
+        <td>
+          <table role="presentation" align="center" cellpadding="0" cellspacing="0" style="max-width: 560px; background: #ffffff; border-radius: 16px; padding: 32px; box-shadow: 0 4px 20px rgba(10,25,47,0.05);">
+            <tr><td>
+              <h1 style="margin: 0 0 12px 0; color: #191c1e; font-size: 22px;">דיווח תקלה חדש</h1>
+              <p style="margin: 0 0 24px 0; color: #44474d; font-size: 14px;">
+                מ-<strong>${escapeHtml(input.orgName)}</strong>, ע"י ${escapeHtml(input.reporterName)}
+                (<span dir="ltr">${escapeHtml(input.reporterEmail)}</span>)
+              </p>
+              <table role="presentation" cellpadding="0" cellspacing="0" style="width: 100%; border: 1px solid #c5c6cd; border-radius: 12px; padding: 16px; margin-bottom: 16px;">
+                <tr><td style="padding: 4px 0;">
+                  <p style="margin: 0; color: #44474d; font-size: 12px;">עמוד</p>
+                  <p style="margin: 0; color: #191c1e; font-size: 14px;" dir="ltr">${escapeHtml(input.pageUrl)}</p>
+                </td></tr>
+                <tr><td style="padding: 12px 0 4px 0;">
+                  <p style="margin: 0; color: #44474d; font-size: 12px;">תיאור</p>
+                  <p style="margin: 0; color: #191c1e; font-size: 14px; white-space: pre-wrap;">${escapeHtml(input.description)}</p>
+                </td></tr>
+                ${
+                  input.attemptedAction
+                    ? `<tr><td style="padding: 12px 0 4px 0;">
+                  <p style="margin: 0; color: #44474d; font-size: 12px;">מה ניסה לעשות</p>
+                  <p style="margin: 0; color: #191c1e; font-size: 14px; white-space: pre-wrap;">${escapeHtml(input.attemptedAction)}</p>
+                </td></tr>`
+                    : ""
+                }
+              </table>
+              <p style="margin: 0; color: #75777e; font-size: 12px;">
+                ${input.consoleErrorCount} שגיאות קונסולה · ${input.failedRequestCount} בקשות שנכשלו · ${input.actionTrailCount} פעולות אחרונות.
+                הפירוט המלא בטבלת <span dir="ltr">bug_reports</span> ב-Supabase.
+              </p>
+              <p style="margin: 32px 0 0 0; color: #75777e; font-size: 12px;">AVI.APP</p>
+            </td></tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>
+`;
+
+  await getEmailAdapter().send({
+    to: input.toEmail,
+    subject,
+    text,
+    html,
+  });
+}

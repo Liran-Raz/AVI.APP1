@@ -55,6 +55,50 @@ export type Database = {
           },
         ]
       }
+      bug_reports: {
+        Row: {
+          attempted_action: string | null
+          client_logs: Json
+          created_at: string
+          description: string
+          id: string
+          org_id: string
+          page_url: string
+          reporter_user_id: string
+          user_agent: string | null
+        }
+        Insert: {
+          attempted_action?: string | null
+          client_logs?: Json
+          created_at?: string
+          description: string
+          id?: string
+          org_id: string
+          page_url: string
+          reporter_user_id: string
+          user_agent?: string | null
+        }
+        Update: {
+          attempted_action?: string | null
+          client_logs?: Json
+          created_at?: string
+          description?: string
+          id?: string
+          org_id?: string
+          page_url?: string
+          reporter_user_id?: string
+          user_agent?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "bug_reports_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       client_contacts: {
         Row: {
           client_id: string

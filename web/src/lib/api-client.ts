@@ -49,6 +49,7 @@ import type {
   DuplicateRolePayload,
   UpdateRolePayload,
 } from "@/server/validators/roles.schema";
+import type { CreateBugReportPayload } from "@/server/validators/bug-reports.schema";
 
 // Re-export DTOs so client components have one stable import path.
 export type { ClientDTO } from "@/server/services/clients.service";
@@ -95,6 +96,11 @@ export type {
   InviteSignupPayload,
   AssignableRole,
 } from "@/server/validators/team.schema";
+
+export type {
+  CreateBugReportPayload,
+  ClientLogsPayload,
+} from "@/server/validators/bug-reports.schema";
 
 export type { RoleDTO, RoleGrantDTO } from "@/server/services/roles.service";
 export type {
@@ -395,6 +401,11 @@ export const apiClient = {
     delete: (id: string) => deleteJson<{ id: string }>(`/api/roles/${id}`),
     duplicate: (sourceId: string, input: DuplicateRolePayload) =>
       postJson<RoleDTO>(`/api/roles/${sourceId}/duplicate`, input),
+  },
+  bugReports: {
+    // "מצאת תקלה?" (DEV-002). Any signed-in member may submit.
+    submit: (input: CreateBugReportPayload) =>
+      postJson<{ submitted: true }>("/api/bug-reports", input),
   },
   invite: {
     // Accept a pending invitation. The caller must have an active
