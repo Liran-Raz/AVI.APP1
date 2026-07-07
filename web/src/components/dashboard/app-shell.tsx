@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 
 import { NotificationBell } from "@/components/notifications/notification-bell";
+import { ReportBugButton } from "@/components/bug-report/report-bug-button";
 
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -148,6 +149,7 @@ export function AppShell({
           </div>
 
           <div className="flex items-center gap-2 mr-auto">
+            <ReportBugButton />
             <NotificationBell />
 
             <DropdownMenu>
