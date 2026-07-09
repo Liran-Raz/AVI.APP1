@@ -210,14 +210,30 @@ class SupabaseAuthAdapter implements AuthAdapter {
       password: input.password,
     });
     if (error) {
+      const code = (error as { code?: string }).code;
       console.error("[supabase-auth.updatePassword] error", {
         status: error.status,
+        code,
         message: error.message,
       });
       if (error.status === 401) {
         throw new UnauthorizedError("Session expired or invalid");
       }
       if (error.status === 422) {
+        // Supabase rejects a new password identical to the current one
+        // (error code `same_password`). Surface a STABLE machine reason in
+        // `details` so the UI can render a clear, localized message instead
+        // of the raw English provider text (which otherwise reaches the
+        // user unexplained).
+        const isSamePassword =
+          code === "same_password" ||
+          /different from the old password/i.test(error.message);
+        if (isSamePassword) {
+          throw new ValidationError(
+            "New password must be different from the current password",
+            { reason: "same_password" },
+          );
+        }
         throw new ValidationError(error.message);
       }
       throw new AppError("INTERNAL_ERROR", "Could not update password");

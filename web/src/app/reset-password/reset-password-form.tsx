@@ -9,11 +9,27 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ApiError, apiClient } from "@/lib/api-client";
 
+// The server (Supabase) is the only party that knows the current password,
+// so "you chose the same password" can only be detected AFTER submit. The
+// adapter tags that case with a stable `details.reason` so we can show a
+// clear Hebrew message here instead of the raw English provider text.
+function isSamePasswordError(err: ApiError): boolean {
+  return (
+    typeof err.details === "object" &&
+    err.details !== null &&
+    (err.details as { reason?: unknown }).reason === "same_password"
+  );
+}
+
 export function ResetPasswordForm() {
   const router = useRouter();
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [loading, setLoading] = useState(false);
+  // Set when the server reports the new password equals the current one.
+  // Cleared as soon as the user edits the password (see onChange), so the
+  // indicator never lingers once they type something different.
+  const [sameAsCurrent, setSameAsCurrent] = useState(false);
 
   // Client-side mismatch indicator — purely for UX. The server validates
   // the match too (`resetPasswordSchema.refine`), so a hostile client
@@ -27,6 +43,7 @@ export function ResetPasswordForm() {
       return;
     }
     setLoading(true);
+    setSameAsCurrent(false);
     try {
       await apiClient.auth.resetPassword({ password, confirmPassword });
       toast.success("הסיסמה עודכנה.");
@@ -39,6 +56,10 @@ export function ResetPasswordForm() {
         // to ask for a fresh link.
         if (err.code === "UNAUTHORIZED") {
           toast.error("הקישור לאיפוס לא תקף או פג תוקף. בקש קישור חדש.");
+        } else if (isSamePasswordError(err)) {
+          // Persistent inline indicator + toast so the reason is obvious.
+          setSameAsCurrent(true);
+          toast.error("הסיסמה החדשה חייבת להיות שונה מהסיסמה הנוכחית");
         } else {
           toast.error(err.message);
         }
@@ -59,11 +80,23 @@ export function ResetPasswordForm() {
           id="password"
           type="password"
           value={password}
-          onChange={(e) => setPassword(e.target.value)}
+          onChange={(e) => {
+            setPassword(e.target.value);
+            // Once they change the password, the "same as current"
+            // indicator is stale — clear it immediately.
+            if (sameAsCurrent) setSameAsCurrent(false);
+          }}
           minLength={8}
           required
+          aria-invalid={sameAsCurrent || undefined}
         />
-        <p className="text-xs text-muted-foreground">לפחות 8 תווים</p>
+        {sameAsCurrent ? (
+          <p className="text-xs text-destructive">
+            הסיסמה החדשה חייבת להיות שונה מהסיסמה הנוכחית
+          </p>
+        ) : (
+          <p className="text-xs text-muted-foreground">לפחות 8 תווים</p>
+        )}
       </div>
       <div className="space-y-2">
         <Label htmlFor="confirmPassword">אישור סיסמה</Label>
