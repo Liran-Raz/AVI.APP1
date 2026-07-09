@@ -31,8 +31,10 @@
 | DEV-001 | הפעלת דגלי ניהול תפקידים מותאמים (R1 קריאה / R2 כתיבה) | פיתוח | P3 | נדחה | 2026-07-06 | ראה פירוט מלא למטה. תשתית ה-DB כבר קיימת ומאומתת ב-Production (מיגרציות 0015-0017), 100% דורמנטית. Liran בחר לעצור בשלב הזה ולא להפעיל. |
 | DEV-002 | לחצן "מצאת תקלה?" בתוכנה + פופ-אפ דיווח + לוגים | פיתוח | P2 | **הושלם** | 2026-07-06 | [PR #41](https://github.com/Liran-Raz/AVI.APP1/pull/41) ממוזג (`ca0ba6b`), מיגרציה 0018 חיה ב-Production, `BUG_REPORT_NOTIFY_EMAIL` מוגדר, deploy אומת (2026-07-07). כפתור גלוי בכל מסכי הדשבורד. |
 | DEV-003 | Authoritative Cutover — שיוך תפקידים מותאמים בפועל לעובדים | פיתוח גדול | לא מדורג | נדחה | 2026-07-06 | פרויקט נפרד מ-DEV-001. דורש שינוי ב-Decision A (שנעל כרגע שתפקיד מותאם לא ניתן לשיוך), UI חדש במסך "צוות", מעבר מנוע ההרשאות ל-DB, RLS policies. לא תוכנן, לא התחיל. |
+| DEV-004 | `RESEND_API_KEY`/`MAIL_FROM` לא קיימים ב-Vercel Production — כל שליחת מייל אמיתית נכשלת | באג (תשתית) | P1 | **הושלם** | 2026-07-07 | **נפתר 2026-07-09.** דומיין `aviapp1.com` נרכש (Cloudflare) וחובר: Vercel primary=`www.aviapp1.com`, Resend Verified (שליחה דרך `send.aviapp1.com`). שורש הבעיה = ENV, לא קוד: `RESEND_API_KEY` חסר/שבור ב-runtime → הדבקה מחדש + אימות `MAIL_FROM` + **Redeploy**. אומת בפרודקשן: דיווח-תקלה + הזמנת-צוות — שני המיילים מגיעים בפועל, `From: AVI.APP <noreply@aviapp1.com>`. ראה פירוט מלא למטה. |
+| DEV-005 | Supabase Auth Custom SMTP דרך Resend + תיקון `reset-password`/`confirm_failed` | באג + תשתית | P2 | לתכנון | 2026-07-09 | ראה פירוט מלא למטה. מיילי ה-Auth (אימות הרשמה / איפוס סיסמה) עדיין יוצאים מ-`supabase.io` ולא מ-Resend, וכפופים ל-rate limit נמוך (429). בנוסף קליק על קישור איפוס מוביל ל-`confirm_failed` — אבחון קיים (חוסר `token_hash` בקישור / template ברירת-מחדל, או token שפג עקב 429). נדחה במפורש ע"י Liran כמשימה נפרדת. |
 
-*(אין כרגע באגים פתוחים מתועדים. כשיתגלה באג — הוא נכנס לכאן עם `DEV-XXX` חדש.)*
+*(פריטים נוספים ייכנסו כאן עם `DEV-XXX` חדש.)*
 
 ---
 
@@ -156,6 +158,104 @@ Vercel/אין לי אישור למזג בעצמי):**
 
 ---
 
+### DEV-004 — `RESEND_API_KEY`/`MAIL_FROM` לא מוגדרים ב-Production (באג תשתית)
+
+**איך התגלה:** Liran שלח דיווח-תקלה אמיתי דרך הכפתור החדש (DEV-002) ולא קיבל מייל
+התראה. אבחון: הדיווח **כן נשמר** בטבלת `bug_reports` (הוכיח שהקוד/RLS/validator
+תקינים), אבל לוג ה-Runtime ב-Vercel הראה `[bug-reports.service] notification email
+send failed { category: 'config_error' }`. `category: 'config_error'` הוא
+`EmailConfigError` — נזרק **רק** כש-`RESEND_API_KEY`/`MAIL_FROM` חסרים/ריקים בסביבה
+פרוסה (`web/src/server/email/email.ts`, `makeUnconfiguredEmailAdapter`). אושר סופית:
+חיפוש ישיר ב-Vercel → Environment Variables עבור `RESEND` ו-`MAIL_FROM` — **אפס
+תוצאות לשניהם**.
+
+**היקף הפגיעה — לא רק DEV-002:**
+- **הזמנות צוות** (`team.service.ts inviteMember`) — עוברות **דרך אותו מנגנון שליחה
+  בדיוק** (`getEmailAdapter()`). כל הזמנה עד עכשיו כנראה נכשלה בשליחת המייל בפועל.
+  יש כאן belt-and-suspenders מכוון מעבודת האבטחה הקודמת (F7, "email fail-loud"): ה-UI
+  **כן** מציג אזהרה כתומה "ההזמנה נוצרה אך המייל לא נשלח — העתק/י את הקישור ושלח/י
+  ידנית" — כלומר שום הזמנה לא אבדה, אבל יכול להיות שאף מייל הזמנה אמיתי לא יצא
+  מעולם והמנהלים תמיד העתיקו קישור ידנית מבלי לשים לב לסיבה.
+- **דיווחי תקלה** (DEV-002) — נכשל **בשקט מוחלט** (best-effort בכוונה, לא חוסם את
+  המשתמש) — אין שום אזהרה גלויה, רק הדיווח עצמו שנשמר.
+
+**זה לא באג בקוד.** שני מסלולי השליחה עובדים בדיוק כמו שתוכננו (fail-loud בפנים,
+best-effort/מוצג-בכנות כלפי חוץ) — זה פשוט צעד תשתית (חשבון Resend + אימות דומיין +
+2 משתני סביבה) שמעולם לא הושלם ב-Production. **היה כבר מתועד כ"פתוח" בעבודת
+F7/Stage 4 של האבטחה** (בדיקת-שמות-בלבד ב-Vercel לפני כמה שבועות) — ועכשיו יש אישור
+התנהגותי ישיר שהוא עדיין פתוח.
+
+**איך לתקן (Liran, לא קוד):**
+1. חשבון ב-[Resend](https://resend.com).
+2. אימות דומיין שליחה (Resend נותן רשומות DNS להוספה).
+3. יצירת API key ב-Resend.
+4. ב-Vercel → Environment Variables → Production: להוסיף `RESEND_API_KEY` (המפתח)
+   ו-`MAIL_FROM` (כתובת מהדומיין המאומת, למשל `AVI.APP <noreply@yourdomain.com>`).
+5. לבדוק מחדש: לשלוח הזמנת-צוות בדיקה + דיווח-תקלה בדיקה, לוודא ששניהם מגיעים בפועל.
+
+**עדיפות:** P1 — יש עקיפה ידנית להזמנות (קישור להעתקה), אז זו לא תקלה חוסמת-לגמרי,
+אבל זו פונקציונליות ליבה (מיילים אמיתיים) שלא עובדת מאז ומעולם ב-Production.
+
+**✅ פתרון (2026-07-09):**
+1. נרכש דומיין `aviapp1.com` ב-Cloudflare. חובר ל-Vercel: primary =
+   `https://www.aviapp1.com`, שורש `aviapp1.com` → 308 → `www`, כתובת ה-Vercel
+   הישנה (`avi-app-1.vercel.app`) נשמרה בכוונה.
+2. Supabase Auth → Site URL עודכן ל-`https://www.aviapp1.com`; ה-Redirect URLs
+   כוללים כעת גם את הדומיין החדש (root + www) לצד הישן.
+3. Resend → דומיין `aviapp1.com` במצב **Verified** (שליחה בפועל דרך תת-הדומיין
+   `send.aviapp1.com`; `Signed by: aviapp1.com`).
+4. Vercel Production env: `NEXT_PUBLIC_SITE_URL=https://www.aviapp1.com`,
+   `MAIL_FROM=AVI.APP <noreply@aviapp1.com>`, `RESEND_API_KEY=re_…`.
+5. **שורש הבעיה היה ENV, לא קוד** (הקוד עבד בדיוק כמתוכנן — fail-loud כש-
+   `RESEND_API_KEY`/`MAIL_FROM` חסרים ב-runtime; הסימפטום `config_error` הוכיח
+   ערך **נעדר**, לא מעוות). התיקון: הדבקה מחדש של `RESEND_API_KEY` ב-Vercel +
+   אימות `MAIL_FROM` + **Redeploy** (הזרקת ה-env נכנסת לתוקף רק בדפלוי חדש — זה
+   הצעד שהכי קל לפספס).
+
+**אימות בפרודקשן:**
+- **דיווח-תקלה:** Resend Logs `POST /emails → 200`; המייל הגיע ל-Gmail;
+  `From: AVI.APP <noreply@aviapp1.com>`.
+- **הזמנת-צוות:** המייל הגיע בפועל; `From: AVI.APP <noreply@aviapp1.com>`;
+  קישור ההזמנה מצביע ל-`https://www.aviapp1.com/invite/accept`.
+
+שני מסלולי המיילים הקריטיים (bug reports + team invitations) עובדים ב-Production.
+
+---
+
+### DEV-005 — Supabase Auth Custom SMTP + `reset-password`/`confirm_failed`
+
+**רקע:** לאחר סגירת DEV-004, מיילי ה-**אפליקציה** (דיווח-תקלה, הזמנת-צוות) יוצאים
+דרך Resend מהדומיין המאומת. אבל מיילי ה-**Auth** של Supabase (אימות הרשמה, איפוס
+סיסמה) עדיין נשלחים דרך ה-SMTP המובנה של Supabase (`noreply@mail.app.supabase.io`),
+שכפוף ל-rate limit נמוך מאוד — נצפה `429 email rate limit exceeded` בבדיקות.
+
+**באג נלווה — `reset-password` → `confirm_failed`:** קליק על קישור איפוס סיסמה
+מוביל ל-`aviapp1.com/login?error=confirm_failed`. אבחון (מ-code review):
+`web/src/app/auth/confirm/route.ts` דורש פרמטר `token_hash` + `type` ב-query
+ומאמת דרך `verifyOtp({ token_hash })`. שני חשודים:
+- **(A מבני)** תבנית מייל ה-Reset של Supabase היא ברירת-מחדל (`{{ .ConfirmationURL }}`)
+  → הקישור חוזר כ-`?code=` (PKCE) או `#access_token` (hash שהשרת לא רואה), **לא**
+  כ-`token_hash` → `/auth/confirm` נכשל מיד. אם זה המצב — כל איפוס סיסמה שבור.
+- **(B חולף)** ה-`429` אומר שהבקשה האחרונה לא שלחה מייל חדש → נלחץ קישור **ישן**
+  שפג/נוצל.
+
+**איך להכריע בין A ל-B:** להוסיף (ב-PR ממוקד) לוג בטוח בנתיב הכשל של
+`/auth/confirm` שמתעד `{ hasTokenHash, type, hasCode }` (booleans + `type` בלבד,
+בלי ערכי token) — `hasTokenHash:false` בקליק איפוס = חשוד A מאושר.
+
+**הפתרון האמיתי לטווח ארוך:** לחבר **Supabase Auth → Custom SMTP → Resend** —
+מעביר את כל מיילי ה-Auth לדומיין `aviapp1.com` (במקום `supabase.io`), מבטל את
+ה-rate limit, ומאפשר גם תבניות מייל בעברית. אם החשוד הוא A, נדרש בנוסף תיקון
+תבנית/route.
+
+**סטטוס:** נדחה במפורש ע"י Liran כמשימה נפרדת (לא לערבב עם סגירת DEV-004).
+**הערת עדיפות:** אם יתברר שזה חשוד A (איפוס סיסמה שבור לחלוטין) — שווה להעלות ל-P1.
+
+**נלווה (P3):** סביבת **staging** נפרדת עתידית (Vercel Preview עם env משלו) לבדיקת
+מיילים/Auth בלי לגעת ב-Production.
+
+---
+
 ## היסטוריית שינויים
 
 - **2026-07-06** — יצירת המסמך. תיעוד ראשוני של 3 פריטים: DEV-001 (הפעלת דגלים,
@@ -176,3 +276,23 @@ Vercel/אין לי אישור למזג בעצמי):**
 - **2026-07-07** — DEV-002: **הושלם.** `BUG_REPORT_NOTIFY_EMAIL` הוגדר ב-Vercel;
   PR #41 מוזג (`ca0ba6b`); Vercel Production deploy אומת (health/login 200,
   tasks 307-לא-מאומת, ללא 5xx). הכפתור חי בכל מסכי הדשבורד.
+- **2026-07-07** — **DEV-004 נפתח.** Liran דיווח שלא קיבל מייל על דיווח-תקלה אמיתי
+  ששלח. אבחון משותף (טבלת `bug_reports` → יש שורה, תקין; Vercel Runtime Logs →
+  `category: 'config_error'`; חיפוש ב-Environment Variables → `RESEND`/`MAIL_FROM`
+  אפס תוצאות) גילה ש-`RESEND_API_KEY`/`MAIL_FROM` מעולם לא הוגדרו ב-Production —
+  משפיע גם על הזמנות צוות, לא רק דיווחי-תקלה. P1, ממתין ל-Liran (חשבון Resend +
+  אימות דומיין + 2 משתני סביבה).
+- **2026-07-09** — **DEV-004 הושלם.** נרכש דומיין `aviapp1.com` (Cloudflare),
+  חובר ל-Vercel (`www.aviapp1.com` primary, root→www 308), Supabase Site URL +
+  Redirect URLs עודכנו, Resend Verified (שליחה דרך `send.aviapp1.com`).
+  שורש הבעיה היה ENV ולא קוד: הדבקה מחדש של `RESEND_API_KEY` + אימות `MAIL_FROM`
+  + **Redeploy**. אומת בפרודקשן — דיווח-תקלה + הזמנת-צוות: שני המיילים מגיעים
+  בפועל (`From: AVI.APP <noreply@aviapp1.com>`, קישור הזמנה → `www.aviapp1.com`).
+  בסשן זה נוסחו ואז שוחזרו (revert) שני לוגים אבחוניים ב-`email.ts` +
+  `auth/confirm/route.ts` — לא נדרשו בסוף (הבעיה הייתה ENV); עץ העבודה נותר נקי,
+  ללא commit/push של קוד.
+- **2026-07-09** — **DEV-005 נפתח.** לאחר סגירת DEV-004: מיילי ה-Auth של
+  Supabase עדיין מ-`supabase.io` (rate limit 429) + באג `reset-password`
+  `confirm_failed` (אבחון: חוסר `token_hash` בקישור / template ברירת-מחדל).
+  הפתרון = Supabase Custom SMTP דרך Resend + תיקון confirm-flow. נדחה ע"י Liran
+  כמשימה נפרדת. P2 (אולי P1 אם איפוס-סיסמה שבור לחלוטין).
