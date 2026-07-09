@@ -123,6 +123,16 @@ export async function exchangeOAuthCode(code: string): Promise<void> {
   await authAdapter.exchangeOAuthCode(code);
 }
 
+// Email-link (PKCE) code exchange. Under the PKCE flow that @supabase/ssr
+// uses by default, Supabase's default email template returns the user to
+// /auth/confirm with a `?code=` (the same shape as the OAuth callback),
+// NOT a `token_hash`. The code-for-session exchange is identical to
+// OAuth's, so we reuse the adapter's exchange behind a neutrally-named
+// function so the confirm route reads honestly.
+export async function exchangeEmailLinkCode(code: string): Promise<void> {
+  await authAdapter.exchangeOAuthCode(code);
+}
+
 export type VerifyEmailOtpInput = {
   tokenHash: string;
   type: EmailOtpType;

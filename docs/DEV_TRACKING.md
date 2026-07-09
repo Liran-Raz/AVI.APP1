@@ -32,7 +32,8 @@
 | DEV-002 | לחצן "מצאת תקלה?" בתוכנה + פופ-אפ דיווח + לוגים | פיתוח | P2 | **הושלם** | 2026-07-06 | [PR #41](https://github.com/Liran-Raz/AVI.APP1/pull/41) ממוזג (`ca0ba6b`), מיגרציה 0018 חיה ב-Production, `BUG_REPORT_NOTIFY_EMAIL` מוגדר, deploy אומת (2026-07-07). כפתור גלוי בכל מסכי הדשבורד. |
 | DEV-003 | Authoritative Cutover — שיוך תפקידים מותאמים בפועל לעובדים | פיתוח גדול | לא מדורג | נדחה | 2026-07-06 | פרויקט נפרד מ-DEV-001. דורש שינוי ב-Decision A (שנעל כרגע שתפקיד מותאם לא ניתן לשיוך), UI חדש במסך "צוות", מעבר מנוע ההרשאות ל-DB, RLS policies. לא תוכנן, לא התחיל. |
 | DEV-004 | `RESEND_API_KEY`/`MAIL_FROM` לא קיימים ב-Vercel Production — כל שליחת מייל אמיתית נכשלת | באג (תשתית) | P1 | **הושלם** | 2026-07-07 | **נפתר 2026-07-09.** דומיין `aviapp1.com` נרכש (Cloudflare) וחובר: Vercel primary=`www.aviapp1.com`, Resend Verified (שליחה דרך `send.aviapp1.com`). שורש הבעיה = ENV, לא קוד: `RESEND_API_KEY` חסר/שבור ב-runtime → הדבקה מחדש + אימות `MAIL_FROM` + **Redeploy**. אומת בפרודקשן: דיווח-תקלה + הזמנת-צוות — שני המיילים מגיעים בפועל, `From: AVI.APP <noreply@aviapp1.com>`. ראה פירוט מלא למטה. |
-| DEV-005 | Supabase Auth Custom SMTP דרך Resend + תיקון `reset-password`/`confirm_failed` | באג + תשתית | P2 | לתכנון | 2026-07-09 | ראה פירוט מלא למטה. מיילי ה-Auth (אימות הרשמה / איפוס סיסמה) עדיין יוצאים מ-`supabase.io` ולא מ-Resend, וכפופים ל-rate limit נמוך (429). בנוסף קליק על קישור איפוס מוביל ל-`confirm_failed` — אבחון קיים (חוסר `token_hash` בקישור / template ברירת-מחדל, או token שפג עקב 429). נדחה במפורש ע"י Liran כמשימה נפרדת. |
+| DEV-005 | תיקון `reset-password` → `confirm_failed` (זרימת אימות קישור) | באג | P1 | בתהליך | 2026-07-09 | תוקן בקוד 2026-07-09: `/auth/confirm` מטפל כעת גם ב-`?code=` (PKCE, ברירת-המחדל של `@supabase/ssr`) וגם ב-`token_hash`, בדיוק כמו `/auth/callback`. + פונקציית שירות `exchangeEmailLinkCode` + 8 בדיקות. ראה פירוט למטה. **ממתין לאימות ידני בפרודקשן** (קליק על קישור-איפוס אמיתי) + המלצה להחליף תבנית מייל ל-`token_hash` לחוסן cross-device. |
+| DEV-006 | Supabase Auth Custom SMTP דרך Resend (מיילי Auth + מגבלת 429) | תשתית | P2 | נדחה | 2026-07-09 | פוצל מ-DEV-005. מיילי ה-Auth (אימות הרשמה / איפוס סיסמה) עדיין יוצאים מ-`supabase.io` ולא מ-Resend, וכפופים ל-rate limit נמוך (429 בבדיקות). הפתרון = לחבר Supabase → Custom SMTP → Resend (מעביר את מיילי ה-Auth לדומיין `aviapp1.com` + מבטל את ה-429 + מאפשר תבניות בעברית). נדחה במפורש ע"י Liran. |
 
 *(פריטים נוספים ייכנסו כאן עם `DEV-XXX` חדש.)*
 
@@ -222,34 +223,48 @@ F7/Stage 4 של האבטחה** (בדיקת-שמות-בלבד ב-Vercel לפני 
 
 ---
 
-### DEV-005 — Supabase Auth Custom SMTP + `reset-password`/`confirm_failed`
+### DEV-005 — תיקון `reset-password` → `confirm_failed`
 
-**רקע:** לאחר סגירת DEV-004, מיילי ה-**אפליקציה** (דיווח-תקלה, הזמנת-צוות) יוצאים
-דרך Resend מהדומיין המאומת. אבל מיילי ה-**Auth** של Supabase (אימות הרשמה, איפוס
-סיסמה) עדיין נשלחים דרך ה-SMTP המובנה של Supabase (`noreply@mail.app.supabase.io`),
+**הבעיה:** קליק על קישור איפוס-סיסמה הוביל ל-`aviapp1.com/login?error=confirm_failed`
+במקום למסך "הגדרת סיסמה חדשה" — כלומר משתמש ששכח סיסמה לא יכל לאפס אותה.
+
+**שורש הבעיה (מאושר מבנית):** `@supabase/ssr` עובד ב-**PKCE flow** כברירת מחדל, אז
+קישור האיפוס חוזר ל-`/auth/confirm` עם `?code=`. אבל הראוט ידע לטפל **רק** ב-
+`token_hash` (`verifyOtp`), לא מצא אותו, וקפץ מיד ל-`confirm_failed`. הראוט התאום
+`/auth/callback` כבר טיפל ב-`?code=` (OAuth) — הייתה כאן אי-עקביות בין השניים.
+
+**✅ תוקן בקוד (2026-07-09):**
+- `web/src/app/auth/confirm/route.ts` — מטפל כעת ב-**שני** הפורמטים: `?code=`
+  (PKCE → `exchangeCodeForSession`) **וגם** `token_hash`+`type` (OTP → `verifyOtp`,
+  ללא שינוי). + לוג אבחון בטוח בנתיב הכשל (בלי ערכי token/code).
+- `web/src/server/services/auth.service.ts` — פונקציה `exchangeEmailLinkCode`
+  (provider-agnostic).
+- `web/src/app/auth/confirm/route.test.ts` — 8 בדיקות (code/token_hash/כשלים/
+  ברירת-מחדל/חסימת open-redirect). מכלול: tsc/lint/316 בדיקות/build ירוקים.
+
+**⚠️ מגבלת PKCE + המלצה משלימה:** PKCE דורש שהקליק על הקישור יהיה מאותו דפדפן שבו
+התבקש האיפוס (cookie זמני) — עובד "אותו מכשיר", **נכשל cross-device**. הפתרון
+היציב יותר (ללא קוד, ב-Dashboard): לשנות את **תבנית מייל האיפוס** ב-Supabase
+לפורמט `token_hash` שמצביע ל-`/auth/confirm` — הראוט **כבר תומך בזה** (הנתיב השני),
+אז זה עובד גם cross-device ללא שינוי קוד נוסף.
+
+**סטטוס:** קוד ממוזג; **ממתין לאימות ידני בפרודקשן** (קליק על קישור-איפוס אמיתי
+אחרי deploy). המלצה: להחליף גם את התבנית ל-`token_hash`.
+
+---
+
+### DEV-006 — Supabase Auth Custom SMTP דרך Resend
+
+**רקע:** אחרי DEV-004, מיילי ה-**אפליקציה** (דיווח-תקלה, הזמנת-צוות) יוצאים דרך
+Resend מהדומיין המאומת. אבל מיילי ה-**Auth** של Supabase (אימות הרשמה, איפוס סיסמה)
+עדיין נשלחים דרך ה-SMTP המובנה של Supabase (`noreply@mail.app.supabase.io`),
 שכפוף ל-rate limit נמוך מאוד — נצפה `429 email rate limit exceeded` בבדיקות.
 
-**באג נלווה — `reset-password` → `confirm_failed`:** קליק על קישור איפוס סיסמה
-מוביל ל-`aviapp1.com/login?error=confirm_failed`. אבחון (מ-code review):
-`web/src/app/auth/confirm/route.ts` דורש פרמטר `token_hash` + `type` ב-query
-ומאמת דרך `verifyOtp({ token_hash })`. שני חשודים:
-- **(A מבני)** תבנית מייל ה-Reset של Supabase היא ברירת-מחדל (`{{ .ConfirmationURL }}`)
-  → הקישור חוזר כ-`?code=` (PKCE) או `#access_token` (hash שהשרת לא רואה), **לא**
-  כ-`token_hash` → `/auth/confirm` נכשל מיד. אם זה המצב — כל איפוס סיסמה שבור.
-- **(B חולף)** ה-`429` אומר שהבקשה האחרונה לא שלחה מייל חדש → נלחץ קישור **ישן**
-  שפג/נוצל.
-
-**איך להכריע בין A ל-B:** להוסיף (ב-PR ממוקד) לוג בטוח בנתיב הכשל של
-`/auth/confirm` שמתעד `{ hasTokenHash, type, hasCode }` (booleans + `type` בלבד,
-בלי ערכי token) — `hasTokenHash:false` בקליק איפוס = חשוד A מאושר.
-
-**הפתרון האמיתי לטווח ארוך:** לחבר **Supabase Auth → Custom SMTP → Resend** —
+**הפתרון:** לחבר **Supabase Auth → Custom SMTP → Resend** (Dashboard, ללא קוד):
 מעביר את כל מיילי ה-Auth לדומיין `aviapp1.com` (במקום `supabase.io`), מבטל את
-ה-rate limit, ומאפשר גם תבניות מייל בעברית. אם החשוד הוא A, נדרש בנוסף תיקון
-תבנית/route.
+ה-rate limit, ומאפשר גם תבניות מייל בעברית.
 
-**סטטוס:** נדחה במפורש ע"י Liran כמשימה נפרדת (לא לערבב עם סגירת DEV-004).
-**הערת עדיפות:** אם יתברר שזה חשוד A (איפוס סיסמה שבור לחלוטין) — שווה להעלות ל-P1.
+**סטטוס:** נדחה במפורש ע"י Liran כמשימה נפרדת (פוצל מ-DEV-005).
 
 **נלווה (P3):** סביבת **staging** נפרדת עתידית (Vercel Preview עם env משלו) לבדיקת
 מיילים/Auth בלי לגעת ב-Production.
@@ -296,3 +311,9 @@ F7/Stage 4 של האבטחה** (בדיקת-שמות-בלבד ב-Vercel לפני 
   `confirm_failed` (אבחון: חוסר `token_hash` בקישור / template ברירת-מחדל).
   הפתרון = Supabase Custom SMTP דרך Resend + תיקון confirm-flow. נדחה ע"י Liran
   כמשימה נפרדת. P2 (אולי P1 אם איפוס-סיסמה שבור לחלוטין).
+- **2026-07-09** — **DEV-005 תוקן בקוד + פוצל.** אושר שזה חשוד A (מבני): `/auth/confirm`
+  טיפל רק ב-`token_hash`, בעוד PKCE (ברירת-המחדל של `@supabase/ssr`) מחזיר `?code=`.
+  תיקון: הראוט מטפל כעת בשני הפורמטים (`code` + `token_hash`), + `exchangeEmailLinkCode`
+  בשירות + 8 בדיקות route. הועלה ל-P1 (איפוס-סיסמה חוסם משתמש). ממתין לאימות ידני
+  בפרודקשן + המלצה להחליף תבנית מייל ל-`token_hash` (חוסן cross-device). חלק ה-Custom
+  SMTP פוצל ל-**DEV-006** (נדחה), יחד עם הערת ה-staging (P3).
