@@ -33,7 +33,7 @@
 | DEV-003 | Authoritative Cutover — שיוך תפקידים מותאמים בפועל לעובדים | פיתוח גדול | לא מדורג | נדחה | 2026-07-06 | פרויקט נפרד מ-DEV-001. דורש שינוי ב-Decision A (שנעל כרגע שתפקיד מותאם לא ניתן לשיוך), UI חדש במסך "צוות", מעבר מנוע ההרשאות ל-DB, RLS policies. לא תוכנן, לא התחיל. |
 | DEV-004 | `RESEND_API_KEY`/`MAIL_FROM` לא קיימים ב-Vercel Production — כל שליחת מייל אמיתית נכשלת | באג (תשתית) | P1 | **הושלם** | 2026-07-07 | **נפתר 2026-07-09.** דומיין `aviapp1.com` נרכש (Cloudflare) וחובר: Vercel primary=`www.aviapp1.com`, Resend Verified (שליחה דרך `send.aviapp1.com`). שורש הבעיה = ENV, לא קוד: `RESEND_API_KEY` חסר/שבור ב-runtime → הדבקה מחדש + אימות `MAIL_FROM` + **Redeploy**. אומת בפרודקשן: דיווח-תקלה + הזמנת-צוות — שני המיילים מגיעים בפועל, `From: AVI.APP <noreply@aviapp1.com>`. ראה פירוט מלא למטה. |
 | DEV-005 | תיקון `reset-password` → `confirm_failed` (זרימת אימות קישור) | באג | P1 | **הושלם** | 2026-07-09 | **אומת בפרודקשן 2026-07-09** (קליק על קישור-איפוס אמיתי → מסך "הגדרת סיסמה חדשה" → סיסמה עודכנה → סיסמה ישנה כבר לא עובדת). הפתרון: (א) `/auth/confirm` מטפל כעת גם ב-`?code=` (PKCE) וגם ב-`token_hash` ([PR #43](https://github.com/Liran-Raz/AVI.APP1/pull/43)); (ב) עודכנה תבנית Reset Password ב-Supabase לפורמט `token_hash`; (ג) אימות ידני מקצה-לקצה. ראה פירוט למטה. |
-| DEV-006 | Supabase Auth Custom SMTP דרך Resend (מיילי Auth + מגבלת 429) | תשתית | P2 | בתהליך | 2026-07-09 | פוצל מ-DEV-005. מיילי ה-Auth (אימות הרשמה / איפוס סיסמה) יוצאים מ-`supabase.io` וכפופים ל-rate limit נמוך (429). הפתרון = Supabase → Custom SMTP → Resend (מעביר את מיילי ה-Auth לדומיין `aviapp1.com` + מבטל את ה-429). **2026-07-09: Liran ביקש להתחיל; מדריך Dashboard סופק — ממתין לביצוע ידני + אימות.** עבודת Dashboard בלבד, ללא קוד. |
+| DEV-006 | Supabase Auth Custom SMTP דרך Resend (מיילי Auth + מגבלת 429) | תשתית | P2 | **הושלם** | 2026-07-09 | **אומת בפרודקשן 2026-07-09.** חובר דרך אינטגרציית Resend↔Supabase הרשמית (Sender `noreply@aviapp1.com`). הוכחה: מייל איפוס-סיסמה הגיע כעת מ-`AVI.APP <noreply@aviapp1.com>` (לא מ-`supabase.io`) + `POST /emails → 200` ב-Resend Logs. עבודת Dashboard בלבד, ללא קוד. כל מיילי ה-Auth יוצאים כעת מ-`aviapp1.com`, מגבלת ה-429 בוטלה. |
 | DEV-007 | חיווי ויזואלי כשמזינים באיפוס את אותה סיסמה נוכחית | UX/באג | P2 | **הושלם** | 2026-07-09 | **אומת בפרודקשן 2026-07-09** ([PR #44](https://github.com/Liran-Raz/AVI.APP1/pull/44)). Supabase דוחה סיסמה זהה, ועד עכשיו זה הוצג כ-toast חולף באנגלית. תוקן: השרת מסמן `details.reason="same_password"`, והטופס מציג חיווי אדום קבוע בעברית ("הסיסמה החדשה חייבת להיות שונה מהסיסמה הנוכחית") + מסגרת אדומה + ניקוי בעריכה. +5 בדיקות. |
 
 *(פריטים נוספים ייכנסו כאן עם `DEV-XXX` חדש.)*
@@ -274,9 +274,12 @@ Resend מהדומיין המאומת. אבל מיילי ה-**Auth** של Supabas
 - Sender email: `noreply@aviapp1.com` (חייב מהדומיין המאומת) · Sender name: `AVI.APP`.
 - קיצור דרך: אינטגרציית **Resend↔Supabase** הרשמית ממלאת את הכל אוטומטית.
 
-**סטטוס:** 2026-07-09 — Liran ביקש להתחיל. מדריך Dashboard מלא סופק (אינטגרציה
-אוטומטית או הזנה ידנית + העלאת ה-rate limits + בדיקה). ממתין לביצוע ידני + אימות
-בפרודקשן (בקשת איפוס/הרשמה → מייל מגיע מ-`aviapp1.com`, לא מ-`supabase.io`).
+**סטטוס:** ✅ **הושלם ואומת בפרודקשן (2026-07-09).** חובר דרך אינטגרציית
+Resend↔Supabase הרשמית (Project=AVI.APP1, domain=aviapp1.com, API key
+"Supabase Integration", Sender=`noreply@aviapp1.com`). **הוכחה:** מייל
+איפוס-סיסמה הגיע מ-`AVI.APP <noreply@aviapp1.com>` (במקום `supabase.io`), ו-Resend
+Logs הראה `POST /emails → 200` על אותו מייל. כל מיילי ה-Auth (אימות הרשמה, איפוס
+סיסמה) יוצאים כעת מהדומיין `aviapp1.com`, ומגבלת ה-429 של Supabase בוטלה.
 
 **נלווה (P3):** סביבת **staging** נפרדת עתידית (Vercel Preview עם env משלו) לבדיקת
 מיילים/Auth בלי לגעת ב-Production.
@@ -369,3 +372,8 @@ Resend מהדומיין המאומת. אבל מיילי ה-**Auth** של Supabas
   Dashboard מלא (אינטגרציית Resend↔Supabase / הזנת SMTP ידנית: `smtp.resend.com:465`,
   user `resend`, pass = מפתח Resend, sender `noreply@aviapp1.com`) + העלאת rate limits
   + בדיקה. ללא קוד. ממתין לביצוע ידני של Liran + אימות (מייל Auth מגיע מ-`aviapp1.com`).
+- **2026-07-09** — **DEV-006 הושלם ואומת בפרודקשן.** Liran חיבר Custom SMTP דרך
+  אינטגרציית Resend↔Supabase הרשמית. אומת: מייל איפוס-סיסמה הגיע מ-`AVI.APP
+  <noreply@aviapp1.com>` (לא `supabase.io`) + `POST /emails → 200` ב-Resend Logs.
+  **כל מיילי המערכת (אפליקציה + Auth) יוצאים כעת מ-`aviapp1.com`; מגבלת 429 בוטלה.**
+  סיפור המיילים הושלם במלואו.
