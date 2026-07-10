@@ -94,17 +94,17 @@ export function AppShell({
   return (
     <div className="flex flex-1 min-h-screen">
       {/* Sidebar (desktop) */}
-      <aside className="hidden md:flex flex-col w-64 border-l border-border bg-sidebar">
-        <div className="h-16 flex items-center gap-2 px-4 border-b border-border">
-          <div className="size-9 rounded-lg bg-primary text-primary-foreground flex items-center justify-center font-bold">
+      <aside className="hidden md:flex flex-col w-64 border-l border-white/10 glass-sidebar text-sidebar-foreground">
+        <div className="h-16 flex items-center gap-2 px-4 border-b border-white/10">
+          <div className="size-9 rounded-lg bg-primary text-primary-foreground flex items-center justify-center font-bold shadow-[0_8px_18px_-6px_rgba(2,106,255,0.6)]">
             א
           </div>
           <div className="flex flex-col min-w-0">
-            <span className="font-bold text-sm">AVI.APP</span>
+            <span className="font-bold text-sm text-white">AVI.APP</span>
             {memberships.length > 1 && activeOrgId ? (
               <OfficeSwitcher offices={memberships} activeOrgId={activeOrgId} />
             ) : (
-              <span className="text-xs text-muted-foreground truncate">
+              <span className="text-xs text-sidebar-foreground/80 truncate">
                 {organization.name}
               </span>
             )}
@@ -120,8 +120,8 @@ export function AppShell({
                 className={cn(
                   "flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors",
                   active
-                    ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
-                    : "text-sidebar-foreground hover:bg-sidebar-accent/50",
+                    ? "bg-sidebar-primary text-sidebar-primary-foreground font-medium nav-active-glow"
+                    : "text-sidebar-foreground hover:bg-white/5 hover:text-white",
                 )}
               >
                 <item.icon className="size-4" />
@@ -130,9 +130,9 @@ export function AppShell({
             );
           })}
         </nav>
-        <div className="border-t border-border p-3">
-          <div className="text-xs text-muted-foreground px-1">
-            קוד משרד: <span className="font-mono">{organization.org_code}</span>
+        <div className="border-t border-white/10 p-3">
+          <div className="text-xs text-sidebar-foreground/70 px-1">
+            קוד משרד: <span className="font-mono text-white/90">{organization.org_code}</span>
           </div>
         </div>
       </aside>
@@ -140,7 +140,7 @@ export function AppShell({
       {/* Main */}
       <div className="flex-1 flex flex-col">
         {/* Top bar */}
-        <header className="h-16 border-b border-border bg-background flex items-center justify-between px-4 md:px-6">
+        <header className="h-16 border-b border-border glass-topbar flex items-center justify-between px-4 md:px-6 sticky top-0 z-30">
           <div className="md:hidden flex items-center gap-2">
             <div className="size-8 rounded-lg bg-primary text-primary-foreground flex items-center justify-center font-bold text-sm">
               א
@@ -191,7 +191,7 @@ export function AppShell({
 
         {/* Mobile bottom nav */}
         <nav
-          className="md:hidden order-last border-t border-border bg-background grid sticky bottom-0"
+          className="md:hidden order-last border-t border-border glass-mobilenav grid sticky bottom-0 z-30"
           style={{
             gridTemplateColumns: `repeat(${navItems.length}, minmax(0, 1fr))`,
           }}

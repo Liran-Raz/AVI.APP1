@@ -112,7 +112,7 @@ export function ClientDetail({ client, initialContacts, capabilities }: Props) {
       </div>
 
       {/* Client header */}
-      <div className="border border-border rounded-lg bg-card shadow-card p-6 mb-6">
+      <div className="border border-border rounded-lg glass-card shadow-card p-6 mb-6">
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div className="flex items-start gap-4">
             <div className="size-12 rounded-lg bg-primary/10 text-primary flex items-center justify-center font-bold text-lg">
@@ -175,7 +175,7 @@ export function ClientDetail({ client, initialContacts, capabilities }: Props) {
         </div>
 
         {contacts.length === 0 ? (
-          <div className="border border-dashed border-border rounded-lg bg-card p-10 text-center">
+          <div className="border border-dashed border-border rounded-lg glass-card shadow-card p-10 text-center">
             <div className="size-10 mx-auto rounded-full bg-primary/10 text-primary flex items-center justify-center mb-3">
               <UserSquare2 className="size-5" />
             </div>
@@ -228,10 +228,8 @@ function ContactCard({
   return (
     <div
       className={cn(
-        "group rounded-lg border bg-card shadow-card p-4 space-y-2",
-        contact.isPrimary
-          ? "border-primary/40 bg-primary/[0.02]"
-          : "border-border",
+        "group rounded-lg border glass-card shadow-card p-4 space-y-2",
+        contact.isPrimary ? "border-primary/40" : "border-border",
       )}
     >
       <div className="flex items-start justify-between gap-2">

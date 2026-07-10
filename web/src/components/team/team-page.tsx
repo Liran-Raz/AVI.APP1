@@ -39,6 +39,7 @@ import {
   type MemberDTO,
 } from "@/lib/api-client";
 import { hasCapability, PERMISSIONS, type Capability } from "@/lib/capabilities";
+import { cn } from "@/lib/utils";
 
 import { InviteDialog } from "./invite-dialog";
 
@@ -66,6 +67,41 @@ function initials(fullName: string): string {
   return (parts[0]?.[0] ?? "") + (parts[1]?.[0] ?? "");
 }
 
+// Per-row action permissions. These are relational invariants (owner
+// protection, only-owner-promotes-to-admin) that a flat capability can't
+// express; the server enforces them regardless. Computed once per member so
+// the desktop table row and the mobile card behave identically.
+type RowPerms = {
+  isSelf: boolean;
+  canChangeRole: boolean;
+  canDeactivate: boolean;
+  showMenu: boolean;
+};
+
+function rowPerms(
+  m: MemberDTO,
+  currentUserId: string,
+  currentUserRole: Role,
+  canManage: boolean,
+): RowPerms {
+  const isSelf = m.id === currentUserId;
+  const isOwner = m.role === "owner";
+  // owner can act on any row except self; admin can act on employees, not
+  // owners; nobody can change their own role / deactivate self.
+  const canChangeRole =
+    canManage &&
+    !isSelf &&
+    (currentUserRole === "owner" ||
+      (currentUserRole === "admin" && !isOwner));
+  const canDeactivate =
+    canManage &&
+    !isSelf &&
+    m.isActive &&
+    (currentUserRole === "owner" ||
+      (currentUserRole === "admin" && !isOwner));
+  return { isSelf, canChangeRole, canDeactivate, showMenu: canChangeRole || canDeactivate };
+}
+
 export function TeamPage({
   initialItems,
   currentUserId,
@@ -81,10 +117,7 @@ export function TeamPage({
   const [inviteOpen, setInviteOpen] = useState(false);
   const [busyMemberId, setBusyMemberId] = useState<string | null>(null);
 
-  // Flat capability hint (display only; server is authoritative). The
-  // per-row relational rules below (owner-protection, only-owner-promotes-
-  // to-admin) still use currentUserRole — they are relational invariants that
-  // a flat capability cannot express; the server enforces them regardless.
+  // Flat capability hint (display only; server is authoritative).
   const canManage = hasCapability(capabilities, PERMISSIONS.TEAM_INVITE);
 
   // Sort: self first, then owners, admins, employees, by createdAt within group.
@@ -184,140 +217,95 @@ export function TeamPage({
         )}
       </div>
 
-      <div className="border border-border rounded-lg bg-card overflow-hidden">
-        {members.length === 0 ? (
-          <EmptyState
-            canManage={canManage}
-            onInvite={() => setInviteOpen(true)}
-          />
-        ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>שם</TableHead>
-                <TableHead>אימייל</TableHead>
-                <TableHead>תפקיד</TableHead>
-                <TableHead>סטטוס</TableHead>
-                <TableHead className="w-[40px]"></TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {sortedMembers.map((m) => {
-                const isSelf = m.id === currentUserId;
-                const isOwner = m.role === "owner";
-                // Permissions for actions on this row:
-                //  - owner can act on any row except self for role change
-                //  - admin can act on employees, cannot touch owners
-                //  - nobody can change their own role / deactivate self
-                const canChangeRole =
-                  canManage &&
-                  !isSelf &&
-                  (currentUserRole === "owner" ||
-                    (currentUserRole === "admin" && !isOwner));
-                const canDeactivate =
-                  canManage &&
-                  !isSelf &&
-                  m.isActive &&
-                  (currentUserRole === "owner" ||
-                    (currentUserRole === "admin" && !isOwner));
-                const showMenu = canChangeRole || canDeactivate;
+      {members.length === 0 ? (
+        <div className="border border-border rounded-lg glass-card shadow-card overflow-hidden">
+          <EmptyState canManage={canManage} onInvite={() => setInviteOpen(true)} />
+        </div>
+      ) : (
+        <>
+          {/* Desktop: table (md and up). */}
+          <div className="hidden md:block border border-border rounded-lg glass-card shadow-card overflow-hidden">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>שם</TableHead>
+                  <TableHead>אימייל</TableHead>
+                  <TableHead>תפקיד</TableHead>
+                  <TableHead>סטטוס</TableHead>
+                  <TableHead className="w-[40px]"></TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {sortedMembers.map((m) => {
+                  const perms = rowPerms(m, currentUserId, currentUserRole, canManage);
+                  return (
+                    <TableRow key={m.id} className={!m.isActive ? "opacity-60" : ""}>
+                      <TableCell className="font-medium">
+                        <div className="flex items-center gap-3">
+                          <Avatar className="size-8">
+                            <AvatarFallback className="bg-primary/10 text-primary text-xs font-medium">
+                              {initials(m.fullName)}
+                            </AvatarFallback>
+                          </Avatar>
+                          <span>
+                            {m.fullName}
+                            {perms.isSelf && (
+                              <span className="text-muted-foreground text-xs"> (אני)</span>
+                            )}
+                          </span>
+                        </div>
+                      </TableCell>
+                      <TableCell dir="ltr" className="text-start">
+                        {m.email}
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="outline" className="gap-1">
+                          {roleIcon(m.role)}
+                          {ROLE_LABEL[m.role]}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        {m.isActive ? (
+                          <Badge variant="secondary">פעיל</Badge>
+                        ) : (
+                          <Badge variant="outline">לא פעיל</Badge>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <MemberActionsMenu
+                          member={m}
+                          perms={perms}
+                          busy={busyMemberId === m.id}
+                          onChangeRole={handleChangeRole}
+                          onDeactivate={handleDeactivate}
+                        />
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </div>
 
-                return (
-                  <TableRow key={m.id} className={!m.isActive ? "opacity-60" : ""}>
-                    <TableCell className="font-medium">
-                      <div className="flex items-center gap-3">
-                        <Avatar className="size-8">
-                          <AvatarFallback className="bg-primary/10 text-primary text-xs font-medium">
-                            {initials(m.fullName)}
-                          </AvatarFallback>
-                        </Avatar>
-                        <span>
-                          {m.fullName}
-                          {isSelf && (
-                            <span className="text-muted-foreground text-xs"> (אני)</span>
-                          )}
-                        </span>
-                      </div>
-                    </TableCell>
-                    <TableCell dir="ltr" className="text-start">
-                      {m.email}
-                    </TableCell>
-                    <TableCell>
-                      <Badge
-                        variant="outline"
-                        className="gap-1"
-                      >
-                        {roleIcon(m.role)}
-                        {ROLE_LABEL[m.role]}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      {m.isActive ? (
-                        <Badge variant="secondary">פעיל</Badge>
-                      ) : (
-                        <Badge variant="outline">לא פעיל</Badge>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      {showMenu && (
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              aria-label={`פעולות עבור ${m.fullName}`}
-                              disabled={busyMemberId === m.id}
-                            >
-                              {busyMemberId === m.id ? (
-                                <Loader2 className="size-4 animate-spin" />
-                              ) : (
-                                <MoreHorizontal className="size-4" />
-                              )}
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end" className="w-48">
-                            <DropdownMenuLabel className="text-xs text-muted-foreground">
-                              שינוי תפקיד
-                            </DropdownMenuLabel>
-                            {canChangeRole && m.role !== "admin" && (
-                              <DropdownMenuItem
-                                onClick={() => handleChangeRole(m, "admin")}
-                              >
-                                <ShieldCheck className="size-4" />
-                                הפוך למנהל
-                              </DropdownMenuItem>
-                            )}
-                            {canChangeRole && m.role !== "employee" && (
-                              <DropdownMenuItem
-                                onClick={() => handleChangeRole(m, "employee")}
-                              >
-                                <User className="size-4" />
-                                הפוך לעובד
-                              </DropdownMenuItem>
-                            )}
-                            {canDeactivate && (
-                              <>
-                                <DropdownMenuSeparator />
-                                <DropdownMenuItem
-                                  onClick={() => handleDeactivate(m)}
-                                  className="text-destructive focus:text-destructive"
-                                >
-                                  <UserMinus className="size-4" />
-                                  הסר מהמשרד
-                                </DropdownMenuItem>
-                              </>
-                            )}
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      )}
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-            </TableBody>
-          </Table>
-        )}
-      </div>
+          {/* Mobile: stacked cards (below md). Everything the table shows —
+              incl. the actions menu — stays reachable in portrait. */}
+          <div className="md:hidden space-y-3">
+            {sortedMembers.map((m) => {
+              const perms = rowPerms(m, currentUserId, currentUserRole, canManage);
+              return (
+                <MemberCard
+                  key={m.id}
+                  member={m}
+                  perms={perms}
+                  busy={busyMemberId === m.id}
+                  onChangeRole={handleChangeRole}
+                  onDeactivate={handleDeactivate}
+                />
+              );
+            })}
+          </div>
+        </>
+      )}
 
       {canManage && (
         <InviteDialog
@@ -327,6 +315,135 @@ export function TeamPage({
           canInviteAsAdmin={currentUserRole === "owner"}
         />
       )}
+    </div>
+  );
+}
+
+// Shared actions dropdown — used by both the desktop table row and the
+// mobile card so role-change / deactivate behave identically. Renders
+// nothing when the viewer has no permitted action on this member.
+function MemberActionsMenu({
+  member,
+  perms,
+  busy,
+  onChangeRole,
+  onDeactivate,
+}: {
+  member: MemberDTO;
+  perms: RowPerms;
+  busy: boolean;
+  onChangeRole: (m: MemberDTO, role: AssignableRole) => void;
+  onDeactivate: (m: MemberDTO) => void;
+}) {
+  if (!perms.showMenu) return null;
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label={`פעולות עבור ${member.fullName}`}
+          disabled={busy}
+        >
+          {busy ? (
+            <Loader2 className="size-4 animate-spin" />
+          ) : (
+            <MoreHorizontal className="size-4" />
+          )}
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-48">
+        <DropdownMenuLabel className="text-xs text-muted-foreground">
+          שינוי תפקיד
+        </DropdownMenuLabel>
+        {perms.canChangeRole && member.role !== "admin" && (
+          <DropdownMenuItem onClick={() => onChangeRole(member, "admin")}>
+            <ShieldCheck className="size-4" />
+            הפוך למנהל
+          </DropdownMenuItem>
+        )}
+        {perms.canChangeRole && member.role !== "employee" && (
+          <DropdownMenuItem onClick={() => onChangeRole(member, "employee")}>
+            <User className="size-4" />
+            הפוך לעובד
+          </DropdownMenuItem>
+        )}
+        {perms.canDeactivate && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              onClick={() => onDeactivate(member)}
+              className="text-destructive focus:text-destructive"
+            >
+              <UserMinus className="size-4" />
+              הסר מהמשרד
+            </DropdownMenuItem>
+          </>
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+// Mobile row rendered as a self-contained card (portrait-friendly).
+function MemberCard({
+  member: m,
+  perms,
+  busy,
+  onChangeRole,
+  onDeactivate,
+}: {
+  member: MemberDTO;
+  perms: RowPerms;
+  busy: boolean;
+  onChangeRole: (m: MemberDTO, role: AssignableRole) => void;
+  onDeactivate: (m: MemberDTO) => void;
+}) {
+  return (
+    <div
+      className={cn(
+        "rounded-lg border border-border glass-card shadow-card p-4",
+        !m.isActive && "opacity-60",
+      )}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-center gap-3 min-w-0">
+          <Avatar className="size-9">
+            <AvatarFallback className="bg-primary/10 text-primary text-xs font-medium">
+              {initials(m.fullName)}
+            </AvatarFallback>
+          </Avatar>
+          <div className="min-w-0">
+            <p className="font-medium truncate">
+              {m.fullName}
+              {perms.isSelf && (
+                <span className="text-muted-foreground text-xs"> (אני)</span>
+              )}
+            </p>
+            <p className="text-xs text-muted-foreground truncate" dir="ltr">
+              {m.email}
+            </p>
+          </div>
+        </div>
+        <MemberActionsMenu
+          member={m}
+          perms={perms}
+          busy={busy}
+          onChangeRole={onChangeRole}
+          onDeactivate={onDeactivate}
+        />
+      </div>
+      <div className="flex items-center gap-2 mt-3">
+        <Badge variant="outline" className="gap-1">
+          {roleIcon(m.role)}
+          {ROLE_LABEL[m.role]}
+        </Badge>
+        {m.isActive ? (
+          <Badge variant="secondary">פעיל</Badge>
+        ) : (
+          <Badge variant="outline">לא פעיל</Badge>
+        )}
+      </div>
     </div>
   );
 }

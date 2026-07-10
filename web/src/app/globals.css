@@ -199,13 +199,17 @@
     outline-color: var(--ring);
   }
 
-  /* Subtle mesh gradient in viewport corners — Aether "infinite
-     digital space" effect. Fixed so it doesn't scroll with content. */
+  /* "Calm Liquid Glass" field — a soft, STATIC navy+blue gradient the
+     frosted shell/panels sit on. No animation (this is an all-day work
+     tool: legibility + low fatigue first). Fixed so it doesn't scroll.
+     Only affects the authenticated app — marketing/auth render inside the
+     isolated `.mkt` wrapper which paints its own opaque background. */
   body {
     background-color: var(--background);
     background-image:
-      radial-gradient(at 0% 0%, hsla(213, 100%, 50%, 0.05) 0px, transparent 50%),
-      radial-gradient(at 100% 100%, hsla(240, 100%, 21%, 0.05) 0px, transparent 50%);
+      radial-gradient(1200px 620px at 100% -6%, rgba(37, 99, 235, 0.10), transparent 60%),
+      radial-gradient(1000px 720px at -8% 108%, rgba(13, 28, 50, 0.09), transparent 58%),
+      radial-gradient(760px 560px at 50% 116%, rgba(56, 189, 248, 0.07), transparent 60%);
     background-attachment: fixed;
     color: var(--foreground);
     font-family: var(--font-sans);
@@ -239,5 +243,58 @@
   /* Level-2 shadow (modals, dropdowns). */
   .shadow-overlay {
     box-shadow: 0 20px 40px rgba(10, 25, 47, 0.12);
+  }
+
+  /* ============================================================
+     Liquid Glass — internal app "Calm" surfaces.
+     The frosted CHROME (sidebar / topbar / mobile nav / column
+     panels) is translucent over the body gradient; CONTENT cards
+     stay near-opaque so financial data reads razor-sharp. Values
+     mirror the marketing Liquid Glass system but calmer (no aurora).
+     ============================================================ */
+
+  /* Frosted top bar — light glass over the calm field. */
+  .glass-topbar {
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.82), rgba(255, 255, 255, 0.62));
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+    backdrop-filter: blur(20px) saturate(180%);
+  }
+
+  /* Frosted mobile bottom nav. */
+  .glass-mobilenav {
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.72), rgba(255, 255, 255, 0.86));
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+    backdrop-filter: blur(20px) saturate(180%);
+  }
+
+  /* Deep navy liquid-glass sidebar. Values track --sidebar (#0d1c32);
+     kept mostly opaque so the navy stays deep, with a top highlight. */
+  .glass-sidebar {
+    background: linear-gradient(180deg, rgba(13, 28, 50, 0.92), rgba(10, 18, 29, 0.96));
+    -webkit-backdrop-filter: blur(22px) saturate(150%);
+    backdrop-filter: blur(22px) saturate(150%);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07);
+  }
+
+  /* Translucent panel that wraps groups of content cards (kanban
+     columns, list containers) — glass, but lets the field show through. */
+  .glass-column {
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.60), rgba(255, 255, 255, 0.44));
+    -webkit-backdrop-filter: blur(16px) saturate(140%);
+    backdrop-filter: blur(16px) saturate(140%);
+    box-shadow: var(--shadow-md, 0 12px 32px -8px rgba(15, 23, 41, 0.16)), inset 0 1px 0 rgba(255, 255, 255, 0.7);
+  }
+
+  /* Near-opaque content card — legibility first, a whisper of glass. */
+  .glass-card {
+    background: rgba(255, 255, 255, 0.97);
+    -webkit-backdrop-filter: blur(6px);
+    backdrop-filter: blur(6px);
+  }
+
+  /* Active navigation pill — electric-blue glow (matches the approved
+     Tasks preview). Used on the sidebar's current route. */
+  .nav-active-glow {
+    box-shadow: 0 8px 20px -8px rgba(2, 106, 255, 0.75), inset 0 1px 0 rgba(255, 255, 255, 0.28);
   }
 }
