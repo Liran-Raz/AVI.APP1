@@ -36,7 +36,7 @@
 | DEV-006 | Supabase Auth Custom SMTP דרך Resend (מיילי Auth + מגבלת 429) | תשתית | P2 | **הושלם** | 2026-07-09 | **אומת בפרודקשן 2026-07-09.** חובר דרך אינטגרציית Resend↔Supabase הרשמית (Sender `noreply@aviapp1.com`). הוכחה: מייל איפוס-סיסמה הגיע כעת מ-`AVI.APP <noreply@aviapp1.com>` (לא מ-`supabase.io`) + `POST /emails → 200` ב-Resend Logs. עבודת Dashboard בלבד, ללא קוד. כל מיילי ה-Auth יוצאים כעת מ-`aviapp1.com`, מגבלת ה-429 בוטלה. |
 | DEV-007 | חיווי ויזואלי כשמזינים באיפוס את אותה סיסמה נוכחית | UX/באג | P2 | **הושלם** | 2026-07-09 | **אומת בפרודקשן 2026-07-09** ([PR #44](https://github.com/Liran-Raz/AVI.APP1/pull/44)). Supabase דוחה סיסמה זהה, ועד עכשיו זה הוצג כ-toast חולף באנגלית. תוקן: השרת מסמן `details.reason="same_password"`, והטופס מציג חיווי אדום קבוע בעברית ("הסיסמה החדשה חייבת להיות שונה מהסיסמה הנוכחית") + מסגרת אדומה + ניקוי בעריכה. +5 בדיקות. |
 | DEV-008 | עיצוב "Liquid Glass" (Calm) ל-UI הפנימי + תיקון רספונסיביות נייד | עיצוב/פיתוח | P2 | **הושלם** | 2026-07-10 | **חי בייצור** ([PR #49](https://github.com/Liran-Raz/AVI.APP1/pull/49), main `8fc343c`, Vercel deploy=success, GET smoke ירוק). שלד זכוכית (sidebar/topbar דביק/mobile-nav) + כל עמודי הדשבורד. **תיקון באג:** טבלאות צוות+לקוחות נחתכו בנייד → פריסה כפולה (טבלה בדסקטופ / כרטיסים בנייד). אף טוקן צבע לא שונה; בידוד `.mkt` מוכח (`:root --accent` = `#e6e8ea`). Round 1 מתוך redesign פנימי מתמשך. |
-| DEV-009 | מסך הגדרות (`/settings`) — פרופיל · אבטחה · משרד · התראות | פיתוח | P2 | בתהליך | 2026-07-10 | **חלק 1 נבנה + אושר ב-QA (Liran).** פרופיל (עריכת שם/טלפון), אבטחה (שינוי סיסמה **עם אימות סיסמה נוכחית**), משרד (עריכה לבעלים + קוד להעתקה) — **ללא מיגרציה** (מדיניות RLS `users update own profile` / `owner can update own org` כבר קיימות). סוגר את באג ה-404 בניווט (`/settings` → 307 במקום 404). tsc/lint/build ירוקים. **חלק 2 (העדפות התראות) נבנה — ממתין להחלת מיגרציה 0019 (ידני, Dashboard) + QA + מיזוג.** |
+| DEV-009 | מסך הגדרות (`/settings`) — פרופיל · אבטחה · משרד · התראות | פיתוח | P2 | **הושלם** | 2026-07-10 | **חי בייצור — שני החלקים.** חלק 1 ([PR #51](https://github.com/Liran-Raz/AVI.APP1/pull/51), `59177d2`): פרופיל (שם/טלפון), אבטחה (סיסמה **עם אימות נוכחית**), משרד (עריכה לבעלים + קוד) — ללא מיגרציה (RLS קיים). סוגר את באג ה-404 (`/settings`→307). חלק 2 ([PR #52](https://github.com/Liran-Raz/AVI.APP1/pull/52), `24412cd`): טאב התראות + מיגרציה **0019** (`profiles.notification_prefs jsonb`) — **הוחלה+אומתה ע"י Liran ב-Dashboard**; טוגל "מייל בשיוך משימה" מצומד ל-`sendAssignmentEmailIfNeeded`. GET smoke ירוק. (הערת דפלוי: build המיזוג נכשל אצל Vercel בשלב clone — חולף; retrigger ב-`670f671` = success.) |
 
 *(פריטים נוספים ייכנסו כאן עם `DEV-XXX` חדש.)*
 
@@ -395,8 +395,13 @@ notificationPrefs`/`updateNotificationPrefs` · טוגל `Switch` (רכיב `ui/
 **נדחה:** תרגום שדות ל-EN; לוגו/ח.פ. למשרד; 2FA/ניתוק-מכשירים; מעבר-משרד בתוך המסך;
 השתקת התראות בפעמון (trigger-level).
 
-**סטטוס:** חלק 1 חי בייצור ([PR #51](https://github.com/Liran-Raz/AVI.APP1/pull/51)). חלק 2
-נבנה + מקומפל, ממתין להחלת מיגרציה 0019 ידנית → QA → מיזוג.
+**סטטוס:** ✅ **הושלם — שני החלקים חיים בייצור (2026-07-10).** חלק 1
+([PR #51](https://github.com/Liran-Raz/AVI.APP1/pull/51), `59177d2`) + חלק 2
+([PR #52](https://github.com/Liran-Raz/AVI.APP1/pull/52), `24412cd`); מיגרציה 0019
+הוחלה+אומתה ע"י Liran ב-Dashboard; GET smoke ירוק. **הערת דפלוי:** build המיזוג של חלק 2
+נכשל אצל Vercel בשלב ה-clone (תקלת תשתית חולפת, "try rebuilding") — הקוד תקין (build
+מקומי + כל בדיקות ה-CI כולל `validate-migrations` היו ירוקים); retrigger ע"י empty commit
+`670f671` → build תקין. **לקח:** כשל Vercel בשלב clone = חולף, redeploy — לא לחפש בקוד.
 
 ---
 
@@ -483,3 +488,12 @@ notificationPrefs`/`updateNotificationPrefs` · טוגל `Switch` (רכיב `ui/
   השכבתית. `tsc`/`lint`/`build` ירוקים, `/settings`→307, API→401, אפס שגיאות. QA ידני
   אושר ע"י Liran ("בדקתי וזה נראה טוב - יש אישור"). ענף `feat/settings-screen`. חלק 2
   (העדפות התראות + מיגרציה 0019) יתחיל בהמשך.
+- **2026-07-10** — **DEV-009 הושלם — חלק 2 (התראות) חי בייצור.** מיגרציה `0019`
+  (`profiles.notification_prefs jsonb`, additive, בלי policy חדש) **הוחלה+אומתה ע"י Liran
+  ב-Supabase Dashboard** (`information_schema` → `jsonb | NO | '{}'::jsonb`). קוד חלק 2
+  ([PR #52](https://github.com/Liran-Raz/AVI.APP1/pull/52)) מוזג ע"י Claude לפי אישור Liran
+  ("תמזג יש אישור"): טאב התראות + `ui/switch.tsx` + `GET/PATCH /api/me/notification-prefs`
+  + הצמדת מייל שיוך-משימה ל-`emailOnTaskAssignment`. **build המיזוג נכשל אצל Vercel בשלב
+  clone (תקלת תשתית חולפת — הקוד תקין: build מקומי + כל CI ירוקים); retrigger ב-empty
+  commit `670f671` → success.** GET smoke ירוק (`/settings` 307, כל settings-APIs 401,
+  `/api/me/notification-prefs` 401). **מסך ההגדרות המלא (4 טאבים) חי על `www.aviapp1.com`.**
