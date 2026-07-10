@@ -1,9 +1,12 @@
 import "server-only";
 
 import { createSupabaseServerClient } from "@/server/db/supabase";
+import type { Database } from "@/server/db/database.types";
 import type { Organization } from "@/server/db/domain.types";
 
 // Organization repository — only place that talks to `organizations`.
+
+type OrganizationUpdate = Database["public"]["Tables"]["organizations"]["Update"];
 
 export async function findById(orgId: string): Promise<Organization | null> {
   const supabase = await createSupabaseServerClient();
@@ -27,4 +30,24 @@ export async function findByIds(ids: string[]): Promise<Organization[]> {
     .select("*")
     .in("id", ids);
   return (data as unknown as Organization[]) ?? [];
+}
+
+// Update office details. The write relies on the RLS policy
+// "owner can update own org" (0003/0009), so a non-owner update returns no
+// row (→ null). The SERVICE gates owner explicitly too and restricts `patch`
+// to editable columns (name / email / phone / address) — org_code is never
+// passed here.
+export async function update(
+  orgId: string,
+  patch: OrganizationUpdate,
+): Promise<Organization | null> {
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("organizations")
+    .update(patch as never)
+    .eq("id", orgId)
+    .select("*")
+    .maybeSingle();
+  if (error) throw error;
+  return (data as unknown as Organization | null) ?? null;
 }

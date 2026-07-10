@@ -6,7 +6,11 @@ import type {
   OAuthProvider,
 } from "@/server/auth/auth.adapter";
 import { sanitizeNextPath } from "@/server/auth/redirect";
-import { ConflictError } from "@/server/errors/app-error";
+import {
+  ConflictError,
+  UnauthorizedError,
+  ValidationError,
+} from "@/server/errors/app-error";
 import { env } from "@/server/env";
 
 // Auth service — the only consumer of AuthAdapter for sign-in/up/out,
@@ -183,4 +187,40 @@ export type ResetPasswordInput = {
 // or expired by the time we get here.
 export async function resetPassword(input: ResetPasswordInput): Promise<void> {
   await authAdapter.updatePassword({ password: input.password });
+}
+
+export type ChangePasswordInput = {
+  email: string;
+  currentPassword: string;
+  newPassword: string;
+};
+
+// Change the password of the currently-authenticated user from Settings.
+// Unlike the recovery-link reset, this VERIFIES the current password first by
+// re-authenticating (Supabase has no "verify password" primitive), so a
+// walk-up attacker at an unlocked screen can't silently change it. A wrong
+// current password surfaces a stable `{ reason: "wrong_current_password" }`
+// detail so the form can render a clear, field-specific message.
+export async function changePassword(input: ChangePasswordInput): Promise<void> {
+  try {
+    // Re-auth with the same user. On success this refreshes the active
+    // session (same identity); on a wrong password the adapter throws
+    // UnauthorizedError and the session is left untouched.
+    await authAdapter.signIn({
+      email: input.email,
+      password: input.currentPassword,
+    });
+  } catch (err) {
+    if (err instanceof UnauthorizedError) {
+      throw new ValidationError("Current password is incorrect", {
+        reason: "wrong_current_password",
+      });
+    }
+    throw err;
+  }
+
+  // Set the new password on the (same) active session. The adapter maps
+  // Supabase's `same_password` 422 to a { reason: "same_password" } detail —
+  // though the validator already rejects new === current before we get here.
+  await authAdapter.updatePassword({ password: input.newPassword });
 }
