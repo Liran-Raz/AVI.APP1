@@ -37,6 +37,14 @@
 | DEV-007 | חיווי ויזואלי כשמזינים באיפוס את אותה סיסמה נוכחית | UX/באג | P2 | **הושלם** | 2026-07-09 | **אומת בפרודקשן 2026-07-09** ([PR #44](https://github.com/Liran-Raz/AVI.APP1/pull/44)). Supabase דוחה סיסמה זהה, ועד עכשיו זה הוצג כ-toast חולף באנגלית. תוקן: השרת מסמן `details.reason="same_password"`, והטופס מציג חיווי אדום קבוע בעברית ("הסיסמה החדשה חייבת להיות שונה מהסיסמה הנוכחית") + מסגרת אדומה + ניקוי בעריכה. +5 בדיקות. |
 | DEV-008 | עיצוב "Liquid Glass" (Calm) ל-UI הפנימי + תיקון רספונסיביות נייד | עיצוב/פיתוח | P2 | **הושלם** | 2026-07-10 | **חי בייצור** ([PR #49](https://github.com/Liran-Raz/AVI.APP1/pull/49), main `8fc343c`, Vercel deploy=success, GET smoke ירוק). שלד זכוכית (sidebar/topbar דביק/mobile-nav) + כל עמודי הדשבורד. **תיקון באג:** טבלאות צוות+לקוחות נחתכו בנייד → פריסה כפולה (טבלה בדסקטופ / כרטיסים בנייד). אף טוקן צבע לא שונה; בידוד `.mkt` מוכח (`:root --accent` = `#e6e8ea`). Round 1 מתוך redesign פנימי מתמשך. |
 | DEV-009 | מסך הגדרות (`/settings`) — פרופיל · אבטחה · משרד · התראות | פיתוח | P2 | **הושלם** | 2026-07-10 | **חי בייצור — שני החלקים.** חלק 1 ([PR #51](https://github.com/Liran-Raz/AVI.APP1/pull/51), `59177d2`): פרופיל (שם/טלפון), אבטחה (סיסמה **עם אימות נוכחית**), משרד (עריכה לבעלים + קוד) — ללא מיגרציה (RLS קיים). סוגר את באג ה-404 (`/settings`→307). חלק 2 ([PR #52](https://github.com/Liran-Raz/AVI.APP1/pull/52), `24412cd`): טאב התראות + מיגרציה **0019** (`profiles.notification_prefs jsonb`) — **הוחלה+אומתה ע"י Liran ב-Dashboard**; טוגל "מייל בשיוך משימה" מצומד ל-`sendAssignmentEmailIfNeeded`. GET smoke ירוק. (הערת דפלוי: build המיזוג נכשל אצל Vercel בשלב clone — חולף; retrigger ב-`670f671` = success.) |
+| DEV-010 | תרגום שדות טפסים ל-EN (login/signup/onboarding) | UX/i18n | P3 | ממתין | 2026-07-11 | כרגע רק מסגרת השיווק דו-לשונית; תוויות שדות הטפסים העובדים נשארות עברית גם ב-EN. **ללא מיגרציה** — עבודת i18n זהירה על טפסים חיים (לא לשבור פונקציונליות). |
+| DEV-011 | בלוק ציטוט לקוח אמיתי בנחיתה | שיווק/תוכן | P3 | ממתין | 2026-07-11 | תלוי-תוכן: דורש ציטוט אמיתי ממשרד השותף של Liran. מיקום מוכן בעיצוב הנחיתה. ללא מיגרציה. |
+| DEV-012 | לוגו + ח.פ./מספר עוסק למשרד (בהגדרות) | פיתוח | P3 | ממתין | 2026-07-11 | הרחבת טאב "משרד" ב-`/settings`. **דורש מיגרציה** (עמודות חדשות ב-`organizations`: `logo_url`, `business_number`) + העלאת קובץ ללוגו (Supabase Storage — משטח חדש). |
+| DEV-013 | אימות דו-שלבי (2FA) | אבטחה | P3 | ממתין | 2026-07-11 | רלוונטי-אבטחה (נתונים פיננסיים — יכול לעלות ל-P2). דרך Supabase Auth MFA (TOTP) + UI הרשמה/אימות בטאב "אבטחה". קונפיג Supabase + קוד. |
+| DEV-014 | השתקת התראות בפעמון (in-app) לפי העדפה | פיתוח | P3 | ממתין | 2026-07-11 | משלים את DEV-009 חלק 2 (שם רק המייל ניתן לכיבוי). התראות הפעמון נוצרות ע"י trigger ב-DB → **דורש מיגרציה** (עדכון `notify_on_task_assignment` לבדוק `notification_prefs`) או סינון בקריאה. |
+| DEV-015 | סביבת staging (Vercel Preview עם env משלה) | תשתית/DevX | P3 | ממתין | 2026-07-11 | לבדוק מיילים/Auth/מיגרציות בלי לגעת ב-Production. ערכה התחדד ב-DEV-009 (QA של חלק 2 דרש להחיל מיגרציה על prod-DB לפני בדיקה) + כשל build ה-Vercel. קונפיג Vercel/Supabase, בלי קוד מהותי. |
+| DEV-016 | `<noscript>` fallback לנחיתה | תשתית/נגישות | P3 | ממתין | 2026-07-11 | ה-`.reveal`/hero מתחילים מוסתרים ונחשפים ב-JS → בלי JS הדף כמעט ריק. Google מריץ JS (SEO תקין), אבל fallback חסין יותר. ללא מיגרציה. |
+| DEV-017 | הפעלת Google OAuth (קונפיג בלבד) | תשתית | P3 | ממתין | 2026-07-11 | **הקוד כבר מוכן** (`/api/auth/oauth/google`, זרימת PKCE). דרוש: OAuth client ב-Google Cloud + הדבקה ב-Supabase Dashboard (provider toggle). **ללא שינוי קוד.** |
 
 *(פריטים נוספים ייכנסו כאן עם `DEV-XXX` חדש.)*
 
@@ -405,6 +413,59 @@ notificationPrefs`/`updateNotificationPrefs` · טוגל `Switch` (רכיב `ui/
 
 ---
 
+### DEV-010 — תרגום שדות טפסים ל-EN
+
+מסגרת השיווק (נחיתה/login/signup) כבר דו-לשונית EN⇄HE עם i18n אמיתי, אבל תוויות
+**שדות הטפסים** (`LoginForm`/`SignupForm`/onboarding) נשארות עברית גם במצב EN — הן הטפסים
+החיים והעובדים. המשימה: i18n לתוויות/placeholders/הודעות-שגיאה שלהם, **בזהירות לא לשבור**
+את הזרימות. ללא DB.
+
+### DEV-011 — בלוק ציטוט לקוח אמיתי
+
+בעיצוב הנחיתה מוכן מקום ל"מה לקוחות אומרים". דרוש **ציטוט אמיתי** ממשרד השותף של Liran
+(שם, תפקיד, משפט). תלוי-תוכן — קוד מינימלי אחרי שיש טקסט.
+
+### DEV-012 — לוגו + ח.פ. למשרד
+
+הרחבת טאב "משרד" ב-`/settings`: לוגו המשרד (העלאה) + מספר ח.פ./עוסק של המשרד עצמו.
+**דורש מיגרציה** (`organizations.logo_url` + `organizations.business_number`) + Supabase
+Storage bucket ללוגו (משטח חדש — כולל RLS על storage). בעלים בלבד (כמו שאר עריכת המשרד,
+DEV-009).
+
+### DEV-013 — אימות דו-שלבי (2FA)
+
+דרך Supabase Auth MFA (TOTP/authenticator). UI בטאב "אבטחה": הרשמה (QR + אימות), ניהול
+factors, אתגר בכניסה. קונפיג Supabase (Enable MFA) + קוד לא-טריוויאלי. **רלוונטי-אבטחה
+לנתונים פיננסיים — שקול להעלות ל-P2.**
+
+### DEV-014 — השתקת התראות בפעמון (in-app)
+
+DEV-009 חלק 2 נתן כיבוי **מייל** בלבד. התראות ה-**פעמון** נוצרות ע"י trigger
+`notify_on_task_assignment` (מיגרציה 0002) ברמת DB. כדי לכבד העדפה: **מיגרציה** שמעדכנת
+את ה-trigger לבדוק `profiles.notification_prefs`, או סינון בשכבת הקריאה. מפתח pref חדש
+ב-JSONB הקיים (לא צריך עמודה נוספת).
+
+### DEV-015 — סביבת staging (Vercel Preview)
+
+env נפרד (Supabase project/branch נפרד) לבדיקת מיילים/Auth/מיגרציות בלי לגעת ב-Production.
+ערכה התחדדה כש-QA של DEV-009 חלק 2 חייב להחיל את מיגרציה 0019 על prod-DB לפני בדיקה, וכש-
+build ה-Vercel נכשל. קונפיג בלבד (Vercel env scope + Supabase), בלי קוד מהותי.
+
+### DEV-016 — `<noscript>` fallback לנחיתה
+
+אלמנטי `.reveal` וה-hero בנחיתה מתחילים מוסתרים ונחשפים ב-JS (scroll-reveal) → בלי JS
+הדף כמעט ריק. Google מריץ JS (SEO תקין), אבל fallback (`<noscript>` שמציג את התוכן, או
+ברירת-מחדל גלויה ב-CSS) חסין יותר. שינוי מקומי ב-`marketing`, ללא DB.
+
+### DEV-017 — הפעלת Google OAuth (קונפיג בלבד)
+
+**הקוד כבר כתוב ומוכן** (`/api/auth/oauth/google`, זרימת PKCE server-side; `/auth/callback`
+קיים). דרוש **קונפיג בלבד**: OAuth client ב-Google Cloud Console (redirect ל-Supabase) +
+הדבקת client-id/secret ב-Supabase Dashboard + הפעלת provider Google. **אפס שינוי קוד.**
+השגיאה "Unsupported provider" שנצפתה בעבר = קונפיג חסר, לא באג.
+
+---
+
 ## היסטוריית שינויים
 
 - **2026-07-06** — יצירת המסמך. תיעוד ראשוני של 3 פריטים: DEV-001 (הפעלת דגלים,
@@ -497,3 +558,9 @@ notificationPrefs`/`updateNotificationPrefs` · טוגל `Switch` (רכיב `ui/
   clone (תקלת תשתית חולפת — הקוד תקין: build מקומי + כל CI ירוקים); retrigger ב-empty
   commit `670f671` → success.** GET smoke ירוק (`/settings` 307, כל settings-APIs 401,
   `/api/me/notification-prefs` 401). **מסך ההגדרות המלא (4 טאבים) חי על `www.aviapp1.com`.**
+- **2026-07-11** — **נוספו 8 פריטי backlog (DEV-010→DEV-017)** לבקשת Liran, מרשימת
+  ה"נחמד-שיהיה" שהיו פזורים בגוף הקובץ/זיכרון: EN לשדות טפסים (010), ציטוט לקוח (011),
+  לוגו+ח.פ. למשרד (012), 2FA (013), השתקת התראות-פעמון (014), סביבת staging (015),
+  `<noscript>` לנחיתה (016), הפעלת Google OAuth (017). כולם P3, סטטוס "ממתין", לא התחילו.
+  שלושה דורשים מיגרציה/משטח DB חדש (012 organizations+storage, 014 trigger); 017 קונפיג-
+  בלבד (הקוד מוכן); השאר קוד/תוכן ללא DB.
