@@ -70,7 +70,7 @@ export function WeekGrid({
   const gridHeight = totalHours * HOUR_PX;
 
   return (
-    <div className="border border-border rounded-lg bg-card overflow-hidden">
+    <div className="border border-border rounded-lg glass-card shadow-card overflow-hidden">
       {/* Horizontal scroll on narrow screens: at ~720px the day
           columns become readable; below that we let the user pan
           rather than squishing every column to a few pixels. */}

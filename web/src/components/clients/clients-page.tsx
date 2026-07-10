@@ -8,8 +8,10 @@ import {
   ArchiveRestore,
   Eye,
   Loader2,
+  Mail,
   MoreHorizontal,
   Pencil,
+  Phone,
   Plus,
   Search,
   UserSquare2,
@@ -176,6 +178,13 @@ export function ClientsPage({
   const hasActiveFilters =
     debouncedSearch.length > 0 || businessType !== "all" || status !== "active";
 
+  const cardHandlers = {
+    canArchive,
+    onEdit: handleEditClick,
+    onArchive: handleArchive,
+    onRestore: handleRestore,
+  };
+
   return (
     <div className="container mx-auto px-4 md:px-6 py-6 md:py-8 max-w-6xl">
       <div className="flex items-center justify-between mb-6 gap-4 flex-wrap">
@@ -243,93 +252,68 @@ export function ClientsPage({
         </div>
       </div>
 
-      <div className="border border-border rounded-lg bg-card overflow-hidden">
-        {items.length === 0 ? (
+      {items.length === 0 ? (
+        <div className="border border-border rounded-lg glass-card shadow-card overflow-hidden">
           <EmptyState hasFilters={hasActiveFilters} onAddClient={handleCreateClick} />
-        ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>שם</TableHead>
-                <TableHead>סוג עסק</TableHead>
-                <TableHead>טלפון</TableHead>
-                <TableHead>אימייל</TableHead>
-                <TableHead>סטטוס</TableHead>
-                <TableHead className="w-[40px]"></TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {items.map((client) => (
-                <TableRow key={client.id}>
-                  <TableCell className="font-medium">
-                    <Link
-                      href={`/clients/${client.id}`}
-                      className="hover:underline focus:underline focus:outline-none"
-                    >
-                      {client.name}
-                    </Link>
-                  </TableCell>
-                  <TableCell>{formatBusinessType(client.businessType)}</TableCell>
-                  <TableCell dir="ltr" className="text-start">
-                    {client.phone ?? "—"}
-                  </TableCell>
-                  <TableCell dir="ltr" className="text-start">
-                    {client.email ?? "—"}
-                  </TableCell>
-                  <TableCell>
-                    {client.isActive ? (
-                      <Badge variant="secondary">פעיל</Badge>
-                    ) : (
-                      <Badge variant="outline">בארכיון</Badge>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          aria-label={`פעולות עבור ${client.name}`}
-                        >
-                          <MoreHorizontal className="size-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem asChild>
-                          <Link href={`/clients/${client.id}`}>
-                            <Eye className="size-4" />
-                            צפייה
-                          </Link>
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => handleEditClick(client)}>
-                          <Pencil className="size-4" />
-                          ערוך
-                        </DropdownMenuItem>
-                        {canArchive && client.isActive && (
-                          <DropdownMenuItem
-                            onClick={() => handleArchive(client)}
-                          >
-                            <Archive className="size-4" />
-                            העבר לארכיון
-                          </DropdownMenuItem>
-                        )}
-                        {canArchive && !client.isActive && (
-                          <DropdownMenuItem
-                            onClick={() => handleRestore(client)}
-                          >
-                            <ArchiveRestore className="size-4" />
-                            שחזר מהארכיון
-                          </DropdownMenuItem>
-                        )}
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </TableCell>
+        </div>
+      ) : (
+        <>
+          {/* Desktop: table (md and up). */}
+          <div className="hidden md:block border border-border rounded-lg glass-card shadow-card overflow-hidden">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>שם</TableHead>
+                  <TableHead>סוג עסק</TableHead>
+                  <TableHead>טלפון</TableHead>
+                  <TableHead>אימייל</TableHead>
+                  <TableHead>סטטוס</TableHead>
+                  <TableHead className="w-[40px]"></TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        )}
-      </div>
+              </TableHeader>
+              <TableBody>
+                {items.map((client) => (
+                  <TableRow key={client.id}>
+                    <TableCell className="font-medium">
+                      <Link
+                        href={`/clients/${client.id}`}
+                        className="hover:underline focus:underline focus:outline-none"
+                      >
+                        {client.name}
+                      </Link>
+                    </TableCell>
+                    <TableCell>{formatBusinessType(client.businessType)}</TableCell>
+                    <TableCell dir="ltr" className="text-start">
+                      {client.phone ?? "—"}
+                    </TableCell>
+                    <TableCell dir="ltr" className="text-start">
+                      {client.email ?? "—"}
+                    </TableCell>
+                    <TableCell>
+                      {client.isActive ? (
+                        <Badge variant="secondary">פעיל</Badge>
+                      ) : (
+                        <Badge variant="outline">בארכיון</Badge>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <ClientActionsMenu client={client} {...cardHandlers} />
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+
+          {/* Mobile: stacked cards (below md). Name, type, tappable
+              phone/email, status and the actions menu — all in portrait. */}
+          <div className="md:hidden space-y-3">
+            {items.map((client) => (
+              <ClientCard key={client.id} client={client} {...cardHandlers} />
+            ))}
+          </div>
+        </>
+      )}
 
       <ClientFormDialog
         open={dialogOpen}
@@ -338,6 +322,133 @@ export function ClientsPage({
         initial={dialogTarget}
         onSaved={handleSaved}
       />
+    </div>
+  );
+}
+
+// Shared actions dropdown — used by both the desktop table row and the
+// mobile card so view / edit / archive / restore behave identically.
+function ClientActionsMenu({
+  client,
+  canArchive,
+  onEdit,
+  onArchive,
+  onRestore,
+}: {
+  client: ClientDTO;
+  canArchive: boolean;
+  onEdit: (c: ClientDTO) => void;
+  onArchive: (c: ClientDTO) => void;
+  onRestore: (c: ClientDTO) => void;
+}) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label={`פעולות עבור ${client.name}`}
+        >
+          <MoreHorizontal className="size-4" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuItem asChild>
+          <Link href={`/clients/${client.id}`}>
+            <Eye className="size-4" />
+            צפייה
+          </Link>
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => onEdit(client)}>
+          <Pencil className="size-4" />
+          ערוך
+        </DropdownMenuItem>
+        {canArchive && client.isActive && (
+          <DropdownMenuItem onClick={() => onArchive(client)}>
+            <Archive className="size-4" />
+            העבר לארכיון
+          </DropdownMenuItem>
+        )}
+        {canArchive && !client.isActive && (
+          <DropdownMenuItem onClick={() => onRestore(client)}>
+            <ArchiveRestore className="size-4" />
+            שחזר מהארכיון
+          </DropdownMenuItem>
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+// Mobile row rendered as a self-contained card (portrait-friendly).
+function ClientCard({
+  client,
+  canArchive,
+  onEdit,
+  onArchive,
+  onRestore,
+}: {
+  client: ClientDTO;
+  canArchive: boolean;
+  onEdit: (c: ClientDTO) => void;
+  onArchive: (c: ClientDTO) => void;
+  onRestore: (c: ClientDTO) => void;
+}) {
+  return (
+    <div className="rounded-lg border border-border glass-card shadow-card p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <Link
+            href={`/clients/${client.id}`}
+            className="font-medium hover:underline focus:underline focus:outline-none truncate block"
+          >
+            {client.name}
+          </Link>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            {formatBusinessType(client.businessType)}
+          </p>
+        </div>
+        <ClientActionsMenu
+          client={client}
+          canArchive={canArchive}
+          onEdit={onEdit}
+          onArchive={onArchive}
+          onRestore={onRestore}
+        />
+      </div>
+
+      {(client.phone || client.email) && (
+        <div className="mt-3 space-y-1.5 text-sm">
+          {client.phone && (
+            <a
+              href={`tel:${client.phone}`}
+              className="inline-flex items-center gap-2 text-foreground hover:text-primary"
+              dir="ltr"
+            >
+              <Phone className="size-3.5 text-muted-foreground" />
+              {client.phone}
+            </a>
+          )}
+          {client.email && (
+            <a
+              href={`mailto:${client.email}`}
+              className="flex items-center gap-2 text-foreground hover:text-primary break-all"
+              dir="ltr"
+            >
+              <Mail className="size-3.5 text-muted-foreground shrink-0" />
+              {client.email}
+            </a>
+          )}
+        </div>
+      )}
+
+      <div className="mt-3">
+        {client.isActive ? (
+          <Badge variant="secondary">פעיל</Badge>
+        ) : (
+          <Badge variant="outline">בארכיון</Badge>
+        )}
+      </div>
     </div>
   );
 }

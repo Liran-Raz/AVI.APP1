@@ -74,7 +74,7 @@ export function TaskCard({
   const due = dueState(task.dueAt);
 
   return (
-    <div className="group rounded-lg border border-border bg-card shadow-card p-3 space-y-2 hover:shadow-overlay transition-shadow">
+    <div className="group rounded-lg border border-border glass-card shadow-card p-3 space-y-2 hover:shadow-overlay transition-shadow">
       <div className="flex items-start justify-between gap-2">
         <Badge
           variant="outline"

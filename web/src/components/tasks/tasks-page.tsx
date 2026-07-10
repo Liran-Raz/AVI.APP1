@@ -383,7 +383,7 @@ function KanbanView({
         return (
           <div
             key={col.key}
-            className="rounded-lg border border-border bg-card/50 p-3 space-y-3"
+            className="rounded-lg border border-border glass-column p-3 space-y-3"
           >
             <div className="flex items-center justify-between">
               <h2 className="font-semibold text-sm">{col.label}</h2>
@@ -458,7 +458,7 @@ function EmptyState({
 }) {
   if (hasFilters) {
     return (
-      <div className="border border-border rounded-lg bg-card p-12 text-center">
+      <div className="border border-border rounded-lg glass-card shadow-card p-12 text-center">
         <p className="text-sm text-muted-foreground">
           אין משימות התואמות לסינון.
         </p>
@@ -466,7 +466,7 @@ function EmptyState({
     );
   }
   return (
-    <div className="border border-dashed border-border rounded-lg bg-card p-12 text-center">
+    <div className="border border-dashed border-border rounded-lg glass-card shadow-card p-12 text-center">
       <div className="size-12 mx-auto rounded-full bg-primary/10 text-primary flex items-center justify-center mb-4">
         <ListChecks className="size-6" />
       </div>
