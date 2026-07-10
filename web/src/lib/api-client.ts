@@ -6,12 +6,17 @@
 // from @supabase/* or @/server/* values (types only).
 
 import type {
+  ChangePasswordPayload,
   ForgotPasswordPayload,
   ResetPasswordPayload,
   SigninPayload,
   SignupPayload,
 } from "@/server/validators/auth.schema";
 import type { BootstrapOrgPayload } from "@/server/validators/onboarding.schema";
+import type { UpdateProfilePayload } from "@/server/validators/profile.schema";
+import type { MyProfileDTO } from "@/server/services/profile.service";
+import type { UpdateOrganizationPayload } from "@/server/validators/organization.schema";
+import type { OrganizationDTO } from "@/server/services/organization.service";
 import type {
   CreateClientPayload,
   ListClientsQuery,
@@ -109,6 +114,13 @@ export type {
   DuplicateRolePayload,
   RoleGrantInput,
 } from "@/server/validators/roles.schema";
+
+// Settings surface — own profile, office details, password change.
+export type { MyProfileDTO } from "@/server/services/profile.service";
+export type { UpdateProfilePayload } from "@/server/validators/profile.schema";
+export type { OrganizationDTO } from "@/server/services/organization.service";
+export type { UpdateOrganizationPayload } from "@/server/validators/organization.schema";
+export type { ChangePasswordPayload } from "@/server/validators/auth.schema";
 
 // ============================================================
 // Response payloads — match what each /api route actually returns
@@ -283,6 +295,11 @@ export const apiClient = {
     // re-validates the match.
     resetPassword: (input: ResetPasswordPayload) =>
       postJson<null>("/api/auth/reset-password", input),
+    // Change the password of the logged-in user. Verifies the CURRENT
+    // password server-side; a wrong one comes back as a VALIDATION_ERROR
+    // tagged details.reason = "wrong_current_password".
+    changePassword: (input: ChangePasswordPayload) =>
+      postJson<null>("/api/auth/change-password", input),
   },
   onboarding: {
     bootstrap: (input: BootstrapOrgPayload) =>
@@ -295,6 +312,15 @@ export const apiClient = {
     // router.refresh() afterwards so server components re-render in scope.
     setActiveOrg: (orgId: string) =>
       postJson<{ activeOrgId: string }>("/api/me/active-org", { orgId }),
+    // Update the caller's own name / phone (Settings → פרופיל).
+    updateProfile: (input: UpdateProfilePayload) =>
+      patchJson<MyProfileDTO>("/api/me/profile", input),
+  },
+  organization: {
+    // Update the active office's details (Settings → משרד). Owner-only —
+    // the server returns FORBIDDEN for non-owners.
+    update: (input: UpdateOrganizationPayload) =>
+      patchJson<OrganizationDTO>("/api/organization", input),
   },
   clients: {
     list: (query?: Partial<ListClientsQuery>) =>

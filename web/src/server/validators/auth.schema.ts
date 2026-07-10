@@ -59,3 +59,25 @@ export const resetPasswordSchema = z
   });
 
 export type ResetPasswordPayload = z.infer<typeof resetPasswordSchema>;
+
+// Change password (logged-in user, from Settings → אבטחה). Unlike the
+// recovery-link reset, this requires the CURRENT password so the server can
+// re-authenticate before changing it (a walk-up attacker at an unlocked
+// screen must not be able to silently change it). New password reuses the
+// signup rule (min 8) and must differ from the current one.
+export const changePasswordSchema = z
+  .object({
+    currentPassword: passwordSigninField,
+    newPassword: passwordSignupField,
+    confirmPassword: z.string(),
+  })
+  .refine((v) => v.newPassword === v.confirmPassword, {
+    message: "Passwords do not match",
+    path: ["confirmPassword"],
+  })
+  .refine((v) => v.newPassword !== v.currentPassword, {
+    message: "New password must be different from the current password",
+    path: ["newPassword"],
+  });
+
+export type ChangePasswordPayload = z.infer<typeof changePasswordSchema>;

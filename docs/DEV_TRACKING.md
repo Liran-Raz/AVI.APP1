@@ -36,6 +36,7 @@
 | DEV-006 | Supabase Auth Custom SMTP דרך Resend (מיילי Auth + מגבלת 429) | תשתית | P2 | **הושלם** | 2026-07-09 | **אומת בפרודקשן 2026-07-09.** חובר דרך אינטגרציית Resend↔Supabase הרשמית (Sender `noreply@aviapp1.com`). הוכחה: מייל איפוס-סיסמה הגיע כעת מ-`AVI.APP <noreply@aviapp1.com>` (לא מ-`supabase.io`) + `POST /emails → 200` ב-Resend Logs. עבודת Dashboard בלבד, ללא קוד. כל מיילי ה-Auth יוצאים כעת מ-`aviapp1.com`, מגבלת ה-429 בוטלה. |
 | DEV-007 | חיווי ויזואלי כשמזינים באיפוס את אותה סיסמה נוכחית | UX/באג | P2 | **הושלם** | 2026-07-09 | **אומת בפרודקשן 2026-07-09** ([PR #44](https://github.com/Liran-Raz/AVI.APP1/pull/44)). Supabase דוחה סיסמה זהה, ועד עכשיו זה הוצג כ-toast חולף באנגלית. תוקן: השרת מסמן `details.reason="same_password"`, והטופס מציג חיווי אדום קבוע בעברית ("הסיסמה החדשה חייבת להיות שונה מהסיסמה הנוכחית") + מסגרת אדומה + ניקוי בעריכה. +5 בדיקות. |
 | DEV-008 | עיצוב "Liquid Glass" (Calm) ל-UI הפנימי + תיקון רספונסיביות נייד | עיצוב/פיתוח | P2 | **הושלם** | 2026-07-10 | **חי בייצור** ([PR #49](https://github.com/Liran-Raz/AVI.APP1/pull/49), main `8fc343c`, Vercel deploy=success, GET smoke ירוק). שלד זכוכית (sidebar/topbar דביק/mobile-nav) + כל עמודי הדשבורד. **תיקון באג:** טבלאות צוות+לקוחות נחתכו בנייד → פריסה כפולה (טבלה בדסקטופ / כרטיסים בנייד). אף טוקן צבע לא שונה; בידוד `.mkt` מוכח (`:root --accent` = `#e6e8ea`). Round 1 מתוך redesign פנימי מתמשך. |
+| DEV-009 | מסך הגדרות (`/settings`) — פרופיל · אבטחה · משרד · התראות | פיתוח | P2 | בתהליך | 2026-07-10 | **חלק 1 נבנה + אושר ב-QA (Liran).** פרופיל (עריכת שם/טלפון), אבטחה (שינוי סיסמה **עם אימות סיסמה נוכחית**), משרד (עריכה לבעלים + קוד להעתקה) — **ללא מיגרציה** (מדיניות RLS `users update own profile` / `owner can update own org` כבר קיימות). סוגר את באג ה-404 בניווט (`/settings` → 307 במקום 404). tsc/lint/build ירוקים. **חלק 2 (העדפות התראות) ממתין — דורש מיגרציה 0019.** |
 
 *(פריטים נוספים ייכנסו כאן עם `DEV-XXX` חדש.)*
 
@@ -353,6 +354,42 @@ squash-merged (main `8fc343c`), Vercel deploy=success, GET smoke ירוק (healt
 
 ---
 
+### DEV-009 — מסך הגדרות (`/settings`)
+
+**רקע:** הניווט (sidebar + תפריט משתמש) קישר ל-`/settings` אבל לא היה ראוט כזה → 404
+(סומן ב-DEV-008). Liran בחר היקף **מלא** למסך: פרופיל · אבטחה · משרד · התראות.
+
+**ממצא ארכיטקטוני מפתח:** מדיניות RLS לעדכון-עצמי כבר הוכנו מראש ב-DB — `"users update
+own profile"` (0009, עם הערה *"settings: name/avatar/phone"*) ו-`"owner can update own
+org"` (0003/0009). לכן עריכת פרופיל ומשרד דורשות רק שכבת-אפליקציה, **בלי מיגרציה**. רק
+העדפות התראות דורשות מיגרציה (אין היום אחסון העדפות).
+
+**חלק 1 — נבנה + אושר ב-QA (2026-07-10), ללא מיגרציה:**
+- **טאב פרופיל:** עריכת שם + טלפון (אימייל ותפקיד לקריאה) + התנתקות.
+  `updateProfileSchema` (whitelist שם/טלפון בלבד) → `profile.repository.updateOwnProfile`
+  → `profile.service` → `PATCH /api/me/profile` → `apiClient.me.updateProfile`.
+- **טאב אבטחה:** שינוי סיסמה **עם אימות סיסמה נוכחית** — `auth.service.changePassword`
+  מאמת מחדש (`signIn`) לפני `updatePassword`; סיסמה נוכחית שגויה → `ValidationError
+  {reason:"wrong_current_password"}`. `POST /api/auth/change-password`. הטופס במתכונת
+  `reset-password-form` (חיוויים inline).
+- **טאב משרד:** בעלים עורך שם/אימייל/טלפון/כתובת (`org_code` לא ניתן לעריכה, עם העתקה);
+  לא-בעלים רואה לקריאה. `updateOrganizationSchema` → `organization.repository.update` →
+  `organization.service` (assert owner) → `PATCH /api/organization`.
+- UI: `(dashboard)/settings/page.tsx` (+`loading.tsx`) + `components/settings/*`
+  (`settings-page` Tabs + 3 טפסים), זכוכית Calm, RTL. **אימות:** tsc/lint/build ירוקים;
+  `/settings`→307 (404 נעלם); 3 ה-API→401 unauth; אפס שגיאות שרת. QA ידני ע"י Liran.
+
+**חלק 2 — ממתין (דורש מיגרציה 0019):** טאב **התראות** — עמודת `profiles.notification_prefs
+jsonb` (additive; RLS הקיים מכסה עדכון-עצמי) + טוגל "מייל בשיוך משימה חדשה" שמצמידים ל-
+`sendAssignmentEmailIfNeeded`. + רכיב `ui/switch.tsx` (מ-`radix-ui`, בלי dependency).
+**Liran מריץ את 0019 ידנית ב-Dashboard.**
+
+**נדחה:** תרגום שדות ל-EN; לוגו/ח.פ. למשרד; 2FA/ניתוק-מכשירים; מעבר-משרד בתוך המסך.
+
+**סטטוס:** חלק 1 אושר, נכנס לייצור. חלק 2 יתחיל אחרי מיגרציה 0019.
+
+---
+
 ## היסטוריית שינויים
 
 - **2026-07-06** — יצירת המסמך. תיעוד ראשוני של 3 פריטים: DEV-001 (הפעלת דגלים,
@@ -429,3 +466,10 @@ squash-merged (main `8fc343c`), Vercel deploy=success, GET smoke ירוק (healt
   squash-merged ל-main (`8fc343c`), Vercel deploy=success, GET smoke ירוק (health/login/signup
   200, tasks/clients/team 307). המיזוג בוצע ע"י Claude לפי אישור מפורש של Liran
   ("יש לך אישור למזג בשמי"). זיכרון הפרויקט עודכן. Round 1 של ה-redesign הפנימי סגור.
+- **2026-07-10** — **DEV-009 נפתח + חלק 1 נבנה ואושר.** מסך `/settings` (סוגר את באג ה-404
+  בניווט). תוכנן ב-plan mode; Liran בחר היקף מלא (פרופיל/אבטחה/משרד/התראות). ממצא מפתח:
+  מדיניות RLS לעדכון-עצמי כבר קיימות → עריכת פרופיל+משרד בלי מיגרציה. חלק 1 (ללא מיגרציה):
+  עריכת פרופיל, שינוי סיסמה עם אימות-נוכחית, עריכת משרד לבעלים + התנתקות. ~18 קבצים בתבנית
+  השכבתית. `tsc`/`lint`/`build` ירוקים, `/settings`→307, API→401, אפס שגיאות. QA ידני
+  אושר ע"י Liran ("בדקתי וזה נראה טוב - יש אישור"). ענף `feat/settings-screen`. חלק 2
+  (העדפות התראות + מיגרציה 0019) יתחיל בהמשך.
