@@ -35,7 +35,7 @@
 | DEV-005 | תיקון `reset-password` → `confirm_failed` (זרימת אימות קישור) | באג | P1 | **הושלם** | 2026-07-09 | **אומת בפרודקשן 2026-07-09** (קליק על קישור-איפוס אמיתי → מסך "הגדרת סיסמה חדשה" → סיסמה עודכנה → סיסמה ישנה כבר לא עובדת). הפתרון: (א) `/auth/confirm` מטפל כעת גם ב-`?code=` (PKCE) וגם ב-`token_hash` ([PR #43](https://github.com/Liran-Raz/AVI.APP1/pull/43)); (ב) עודכנה תבנית Reset Password ב-Supabase לפורמט `token_hash`; (ג) אימות ידני מקצה-לקצה. ראה פירוט למטה. |
 | DEV-006 | Supabase Auth Custom SMTP דרך Resend (מיילי Auth + מגבלת 429) | תשתית | P2 | **הושלם** | 2026-07-09 | **אומת בפרודקשן 2026-07-09.** חובר דרך אינטגרציית Resend↔Supabase הרשמית (Sender `noreply@aviapp1.com`). הוכחה: מייל איפוס-סיסמה הגיע כעת מ-`AVI.APP <noreply@aviapp1.com>` (לא מ-`supabase.io`) + `POST /emails → 200` ב-Resend Logs. עבודת Dashboard בלבד, ללא קוד. כל מיילי ה-Auth יוצאים כעת מ-`aviapp1.com`, מגבלת ה-429 בוטלה. |
 | DEV-007 | חיווי ויזואלי כשמזינים באיפוס את אותה סיסמה נוכחית | UX/באג | P2 | **הושלם** | 2026-07-09 | **אומת בפרודקשן 2026-07-09** ([PR #44](https://github.com/Liran-Raz/AVI.APP1/pull/44)). Supabase דוחה סיסמה זהה, ועד עכשיו זה הוצג כ-toast חולף באנגלית. תוקן: השרת מסמן `details.reason="same_password"`, והטופס מציג חיווי אדום קבוע בעברית ("הסיסמה החדשה חייבת להיות שונה מהסיסמה הנוכחית") + מסגרת אדומה + ניקוי בעריכה. +5 בדיקות. |
-| DEV-008 | עיצוב "Liquid Glass" (Calm) ל-UI הפנימי + תיקון רספונסיביות נייד | עיצוב/פיתוח | P2 | בתהליך | 2026-07-10 | **Round 1 אושר ע"י Liran.** שלד (sidebar/topbar/mobile-nav זכוכית) + כל עמודי הדשבורד. **תיקון באג:** טבלאות צוות+לקוחות נחתכו בנייד → פריסה כפולה (טבלה בדסקטופ / כרטיסים בנייד). tsc/lint/build ירוקים; בידוד `.mkt` מוכח (`:root --accent` ללא שינוי). ענף `feat/glass-internal-ui`, ממתין מיזוג+דפלוי. |
+| DEV-008 | עיצוב "Liquid Glass" (Calm) ל-UI הפנימי + תיקון רספונסיביות נייד | עיצוב/פיתוח | P2 | **הושלם** | 2026-07-10 | **חי בייצור** ([PR #49](https://github.com/Liran-Raz/AVI.APP1/pull/49), main `8fc343c`, Vercel deploy=success, GET smoke ירוק). שלד זכוכית (sidebar/topbar דביק/mobile-nav) + כל עמודי הדשבורד. **תיקון באג:** טבלאות צוות+לקוחות נחתכו בנייד → פריסה כפולה (טבלה בדסקטופ / כרטיסים בנייד). אף טוקן צבע לא שונה; בידוד `.mkt` מוכח (`:root --accent` = `#e6e8ea`). Round 1 מתוך redesign פנימי מתמשך. |
 
 *(פריטים נוספים ייכנסו כאן עם `DEV-XXX` חדש.)*
 
@@ -346,7 +346,10 @@ Logs הראה `POST /emails → 200` על אותו מייל. כל מיילי ה-
 **נדחה (אופציונלי, Round הבא):** תרגום שדות טפסים ל-EN; מסך `/settings` (קיים בניווט
 אך אין ראוט תואם — פער קדום, מחוץ להיקף); עמוד `/roles` (דורמנטי מאחורי דגל).
 
-**ענף:** `feat/glass-internal-ui`. **סטטוס:** בתהליך — אושר, ממתין מיזוג + דפלוי.
+**סטטוס:** ✅ **הושלם + חי בייצור (2026-07-10).** [PR #49](https://github.com/Liran-Raz/AVI.APP1/pull/49)
+squash-merged (main `8fc343c`), Vercel deploy=success, GET smoke ירוק (health/login/signup
+200, tasks/clients/team 307-לא-מאומת). ה-QA הוויזואלי המאומת נעשה ע"י Liran. **זהו Round 1**
+— אפשר להמשיך לעמודים/מרכיבים נוספים ולפריטים הנדחים בהמשך.
 
 ---
 
@@ -422,3 +425,7 @@ Logs הראה `POST /emails → 200` על אותו מייל. כל מיילי ה-
   פריסה כפולה טבלה/כרטיסים לצוות+לקוחות (תיקון החיתוך בנייד) + פוליש עקביות. אף טוקן
   צבע לא שונה, בידוד `.mkt` מוכח. `tsc`/`lint`/`build` ירוקים. אושר ע"י Liran ("נראה
   טוב — אישור להמשיך לייצור"). ענף `feat/glass-internal-ui`, ממתין מיזוג + דפלוי.
+- **2026-07-10** — **DEV-008 הושלם + חי בייצור.** [PR #49](https://github.com/Liran-Raz/AVI.APP1/pull/49)
+  squash-merged ל-main (`8fc343c`), Vercel deploy=success, GET smoke ירוק (health/login/signup
+  200, tasks/clients/team 307). המיזוג בוצע ע"י Claude לפי אישור מפורש של Liran
+  ("יש לך אישור למזג בשמי"). זיכרון הפרויקט עודכן. Round 1 של ה-redesign הפנימי סגור.
