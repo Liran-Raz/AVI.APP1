@@ -7,14 +7,7 @@
 // state. Everything renders inside the `.mkt` wrapper whose `dir` comes from
 // the language context — isolation lives in marketing.css.
 
-import {
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useRef,
-  useState,
-  type CSSProperties,
-} from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 
 import {
   Aurora,
@@ -72,157 +65,61 @@ const INITIAL: DemoTask[] = [
   mk(["התאמות בנק — יוני", "Bank reconciliation — June"], ["ר.נ ייעוץ · הושלם על ידי רות", "R.N Consulting · completed by Ruth"], "ok", ["הושלם", "Done"]),
 ];
 
-const POOL: Array<Omit<DemoTask, "id" | "done" | "entering">> = [
-  { title: ["דוח ניכויים — 102", "Withholding report — 102"], client: ["מוסך היובל · עד 16 ביולי", "HaYovel Garage · due Jul 16"], tag: "normal", label: ["רגיל", "Normal"] },
-  { title: ["הצהרת הון", "Capital declaration"], client: ["א. ברק אדריכלים · עד 21 ביולי", "A. Barak Architects · due Jul 21"], tag: "urgent", label: ["דחוף", "Urgent"] },
-  { title: ["התאמת ספקים — רבעון ב׳", "Supplier reconciliation — Q2"], client: ["כהן אחזקות בע״מ · עד 24 ביולי", "Cohen Holdings Ltd · due Jul 24"], tag: "progress", label: ["בתהליך", "In progress"] },
-  { title: ["דוח מקדמות — יולי", "Advances report — July"], client: ["מסעדת הגפן · עד 15 באוגוסט", "Ha'Gefen Restaurant · due Aug 15"], tag: "normal", label: ["רגיל", "Normal"] },
-];
-
 function HeroDemo() {
   const { t } = useMarketingLang();
-  const wrapRef = useRef<HTMLDivElement>(null);
-  const itemEls = useRef(new Map<number, HTMLLIElement>());
-  const prevTops = useRef(new Map<number, number>());
-  const timers = useRef<number[]>([]);
-  const intervalRef = useRef<number | null>(null);
-  const poolIdx = useRef(0);
   const startedRef = useRef(false);
-  const visibleRef = useRef(false);
 
   const [tasks, setTasks] = useState<DemoTask[]>(() => INITIAL.map((x) => ({ ...x })));
   const [count, setCount] = useState(0);
   const [noteOn, setNoteOn] = useState(false);
 
-  const clearTimers = () => {
-    timers.current.forEach((id) => clearTimeout(id));
-    timers.current = [];
-  };
-  const after = (ms: number, fn: () => void) => {
-    timers.current.push(window.setTimeout(fn, ms));
-  };
-
-  const countUp = useCallback((to: number, ms: number) => {
-    const t0 = performance.now();
-    const tick = (now: number) => {
-      const p = Math.min(1, (now - t0) / ms);
-      const eased = p < 0.5 ? 2 * p * p : -1 + (4 - 2 * p) * p;
-      setCount(Math.round(to * eased));
-      if (p < 1) requestAnimationFrame(tick);
-    };
-    requestAnimationFrame(tick);
-  }, []);
-
-  const idleTick = useCallback(() => {
-    if (document.hidden || !visibleRef.current) return;
-    // mark the oldest (last) open task done, so the eye catches the check…
-    setTasks((prev) => {
-      const next = [...prev];
-      for (let i = next.length - 1; i >= 0; i--) {
-        if (!next[i].done) {
-          next[i] = { ...next[i], done: true };
-          break;
-        }
-      }
-      return next;
-    });
-    setCount((c) => c + 1);
-    // …then, after a beat, a fresh task glides in on top and the oldest leaves.
-    after(500, () => {
-      const base = POOL[poolIdx.current % POOL.length];
-      poolIdx.current += 1;
-      const fresh: DemoTask = { ...base, id: demoSeq++, done: false, entering: true };
-      setTasks((prev) => [fresh, ...prev.slice(0, prev.length - 1)]);
-      after(30, () =>
-        setTasks((prev) => prev.map((p) => (p.id === fresh.id ? { ...p, entering: false } : p))),
-      );
-    });
-  }, []);
-
-  const runIntro = useCallback(() => {
-    const list = tasks;
-    list.forEach((tk, i) => {
-      after(160 + i * 190, () =>
-        setTasks((prev) => prev.map((p) => (p.id === tk.id ? { ...p, entering: false } : p))),
-      );
-    });
-    const done = 160 + list.length * 190;
-    after(done + 120, () => {
-      setTasks((prev) => prev.map((p) => (p.tag === "ok" ? { ...p, done: true } : p)));
-      countUp(23, 700);
-    });
-    after(done + 640, () => {
-      setNoteOn(true);
-      intervalRef.current = window.setInterval(idleTick, 4500);
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [countUp, idleTick]);
-
+  // One-time entrance on mount (the hero is always in view): tasks slide in
+  // one after another, the completed one gets checked, the weekly counter
+  // counts up, and the "teammate updated" note pops. No live reorder loop —
+  // it stays a clean, stable snapshot after the intro (robust, glitch-free).
   useEffect(() => {
-    const wrap = wrapRef.current;
-    if (!wrap) return;
+    if (startedRef.current) return;
+    startedRef.current = true;
     const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
-    if (reduce) {
-      // Reduced motion: skip the animation and show the final state on the
-      // next tick (deferred so it is not a synchronous setState in the body).
-      const id = window.setTimeout(() => {
-        setTasks((prev) => prev.map((p) => ({ ...p, entering: false, done: p.tag === "ok" ? true : p.done })));
-        setCount(23);
-        setNoteOn(true);
-      }, 0);
-      return () => clearTimeout(id);
-    }
-    const io = new IntersectionObserver(
-      (entries) => {
-        entries.forEach((e) => {
-          visibleRef.current = e.isIntersecting;
-          if (e.isIntersecting && !startedRef.current) {
-            startedRef.current = true;
-            runIntro();
-          }
-        });
-      },
-      { threshold: 0.35 },
-    );
-    io.observe(wrap);
-    return () => {
-      io.disconnect();
-      clearTimers();
-      if (intervalRef.current) clearInterval(intervalRef.current);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    const timers: number[] = [];
+    const stagger = reduce ? 0 : 200;
+    const base = reduce ? 0 : 240;
 
-  // FLIP: smoothly slide items between positions when the list reorders.
-  useLayoutEffect(() => {
-    const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
-    if (reduce) return;
-    const newTops = new Map<number, number>();
-    tasks.forEach((tk) => {
-      const el = itemEls.current.get(tk.id);
-      if (el) newTops.set(tk.id, el.getBoundingClientRect().top);
+    INITIAL.forEach((tk, i) => {
+      timers.push(
+        window.setTimeout(() => {
+          setTasks((prev) => prev.map((p) => (p.id === tk.id ? { ...p, entering: false } : p)));
+        }, base + i * stagger),
+      );
     });
-    tasks.forEach((tk) => {
-      const el = itemEls.current.get(tk.id);
-      if (!el) return;
-      const prev = prevTops.current.get(tk.id);
-      const now = newTops.get(tk.id);
-      if (prev != null && now != null && Math.abs(prev - now) > 0.5) {
-        el.style.transition = "none";
-        el.style.transform = `translateY(${prev - now}px)`;
-        requestAnimationFrame(() => {
-          requestAnimationFrame(() => {
-            el.style.transition = "";
-            el.style.transform = "";
-          });
-        });
-      }
-    });
-    prevTops.current = newTops;
-  }, [tasks]);
+
+    const done = base + INITIAL.length * stagger;
+    timers.push(
+      window.setTimeout(() => {
+        setTasks((prev) => prev.map((p) => (p.tag === "ok" ? { ...p, done: true } : p)));
+        if (reduce) {
+          setCount(23);
+          return;
+        }
+        const to = 23;
+        const ms = 800;
+        const t0 = performance.now();
+        const tick = (now: number) => {
+          const p = Math.min(1, (now - t0) / ms);
+          const eased = p < 0.5 ? 2 * p * p : -1 + (4 - 2 * p) * p;
+          setCount(Math.round(to * eased));
+          if (p < 1) requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+      }, done + (reduce ? 0 : 160)),
+    );
+    timers.push(window.setTimeout(() => setNoteOn(true), done + (reduce ? 0 : 720)));
+
+    return () => timers.forEach((id) => clearTimeout(id));
+  }, []);
 
   return (
-    <div className="hero-demo-wrap reveal" style={d(".15s")} ref={wrapRef}>
+    <div className="hero-demo-wrap reveal" style={d(".15s")}>
       <div className="glass-strong app-window">
         <div className="app-chrome">
           <span className="dot d1" /><span className="dot d2" /><span className="dot d3" />
@@ -235,14 +132,7 @@ function HeroDemo() {
           </div>
           <ul className="demo-list">
             {tasks.map((tk) => (
-              <li
-                key={tk.id}
-                ref={(el) => {
-                  if (el) itemEls.current.set(tk.id, el);
-                  else itemEls.current.delete(tk.id);
-                }}
-                className={`d-task${tk.done ? " done" : ""}${tk.entering ? " entering" : ""}`}
-              >
+              <li key={tk.id} className={`d-task${tk.done ? " done" : ""}${tk.entering ? " entering" : ""}`}>
                 <span className="chk"><Check size={13} /></span>
                 <div className="t-txt">
                   <strong>{t(tk.title[0], tk.title[1])}</strong>
