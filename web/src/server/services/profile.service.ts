@@ -1,10 +1,13 @@
 import "server-only";
 
 import type { FullSession } from "@/server/auth/session";
-import type { UserRole } from "@/server/db/domain.types";
+import type { Profile, UserRole } from "@/server/db/domain.types";
 import { AppError } from "@/server/errors/app-error";
 import * as profileRepo from "@/server/repositories/profile.repository";
-import type { UpdateProfilePayload } from "@/server/validators/profile.schema";
+import type {
+  UpdateNotificationPrefsPayload,
+  UpdateProfilePayload,
+} from "@/server/validators/profile.schema";
 
 // Display DTO for the settings screen — only the safe self-profile fields.
 // `role` reflects the ACTIVE office (from the session), not the legacy
@@ -40,4 +43,58 @@ export async function updateMyProfile(
     phone: updated.phone,
     role: session.activeRole,
   };
+}
+
+// ============================================================
+// Notification preferences (Settings → התראות)
+// ============================================================
+//
+// Stored in profiles.notification_prefs (jsonb, migration 0019). The stored
+// value may be partial or empty ({}) — the reader always returns a fully
+// resolved object with every key defaulted, so callers never branch on
+// "absent". Absent/unknown => the safe default (notifications ON).
+
+export type NotificationPrefs = {
+  // Email the assignee when a task is assigned to them.
+  emailOnTaskAssignment: boolean;
+};
+
+export const NOTIFICATION_PREFS_DEFAULTS: NotificationPrefs = {
+  emailOnTaskAssignment: true,
+};
+
+// Resolve a raw jsonb value (possibly null / partial / from before the
+// migration) into a complete, typed prefs object. Tolerant by design.
+export function readNotificationPrefs(raw: unknown): NotificationPrefs {
+  const stored =
+    raw && typeof raw === "object" ? (raw as Partial<NotificationPrefs>) : {};
+  return {
+    emailOnTaskAssignment:
+      typeof stored.emailOnTaskAssignment === "boolean"
+        ? stored.emailOnTaskAssignment
+        : NOTIFICATION_PREFS_DEFAULTS.emailOnTaskAssignment,
+  };
+}
+
+// Read the caller's current prefs from their session profile (already loaded).
+export function getNotificationPrefs(profile: Profile): NotificationPrefs {
+  return readNotificationPrefs(profile.notification_prefs);
+}
+
+// Merge a partial update over the current prefs and persist. Writes only the
+// notification_prefs column (via the same self-update RLS path).
+export async function updateMyNotificationPrefs(
+  session: FullSession,
+  input: UpdateNotificationPrefsPayload,
+): Promise<NotificationPrefs> {
+  const current = readNotificationPrefs(session.profile.notification_prefs);
+  const merged: NotificationPrefs = { ...current, ...input };
+
+  const updated = await profileRepo.updateOwnProfile(session.user.id, {
+    notification_prefs: merged,
+  });
+  if (!updated) {
+    throw new AppError("INTERNAL_ERROR", "Could not update notification preferences");
+  }
+  return readNotificationPrefs(updated.notification_prefs);
 }

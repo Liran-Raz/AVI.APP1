@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 
 import { getCurrentSession } from "@/server/auth/session";
+import { getNotificationPrefs } from "@/server/services/profile.service";
 import { SettingsPage } from "@/components/settings/settings-page";
 
 export default async function SettingsRoute() {
@@ -29,6 +30,7 @@ export default async function SettingsRoute() {
         address: session.activeOrg.address,
       }}
       isOwner={session.activeRole === "owner"}
+      notificationPrefs={getNotificationPrefs(session.profile)}
     />
   );
 }

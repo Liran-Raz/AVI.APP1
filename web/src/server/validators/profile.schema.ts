@@ -27,3 +27,18 @@ export const updateProfileSchema = z
   });
 
 export type UpdateProfilePayload = z.infer<typeof updateProfileSchema>;
+
+// Per-user notification preferences (Settings → התראות). Partial PATCH — the
+// service merges over the stored value; at least one key must be present.
+// Extend this object as more toggles are added (the DB column is jsonb).
+export const updateNotificationPrefsSchema = z
+  .object({
+    emailOnTaskAssignment: z.boolean().optional(),
+  })
+  .refine((obj) => Object.keys(obj).length > 0, {
+    message: "At least one preference is required",
+  });
+
+export type UpdateNotificationPrefsPayload = z.infer<
+  typeof updateNotificationPrefsSchema
+>;
