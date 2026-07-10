@@ -21,7 +21,12 @@ function Switch({
       <SwitchPrimitive.Thumb
         data-slot="switch-thumb"
         className={cn(
-          "pointer-events-none block size-4 rounded-full bg-background shadow-sm ring-0 transition-transform data-[state=checked]:translate-x-4 data-[state=unchecked]:translate-x-0 rtl:data-[state=checked]:-translate-x-4"
+          // Track is w-9 (36px), thumb size-4 (16px), 1px border each side →
+          // 18px of travel. `translate-x` is PHYSICAL, and the thumb's off
+          // position is direction-dependent (left in LTR, right in RTL), so the
+          // "on" transform must be DIRECTION-SCOPED — otherwise it slides the
+          // wrong way and overflows the track (the DEV-018 RTL bug).
+          "pointer-events-none block size-4 rounded-full bg-background shadow-sm ring-0 transition-transform data-[state=unchecked]:translate-x-0 ltr:data-[state=checked]:translate-x-[18px] rtl:data-[state=checked]:-translate-x-[18px]"
         )}
       />
     </SwitchPrimitive.Root>

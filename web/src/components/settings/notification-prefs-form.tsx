@@ -7,28 +7,31 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { ApiError, apiClient, type NotificationPrefs } from "@/lib/api-client";
 
+// Controlled: the source of truth lives in SettingsPage (which stays mounted
+// across tab switches), so toggling here — and then leaving/returning to the
+// tab — no longer "resets" to the server-render value. Radix unmounts inactive
+// tab content, so a form-local useState would be lost on every tab change.
 export function NotificationPrefsForm({
-  initial,
+  value,
+  onChange,
 }: {
-  initial: NotificationPrefs;
+  value: NotificationPrefs;
+  onChange: (next: NotificationPrefs) => void;
 }) {
-  const [emailOnTaskAssignment, setEmailOnTaskAssignment] = useState(
-    initial.emailOnTaskAssignment,
-  );
   const [saving, setSaving] = useState(false);
 
   async function toggleEmailOnAssignment(next: boolean) {
-    const prev = emailOnTaskAssignment;
-    setEmailOnTaskAssignment(next); // optimistic
+    const prev = value;
+    onChange({ ...value, emailOnTaskAssignment: next }); // optimistic (parent)
     setSaving(true);
     try {
       const updated = await apiClient.me.updateNotificationPrefs({
         emailOnTaskAssignment: next,
       });
-      setEmailOnTaskAssignment(updated.emailOnTaskAssignment);
+      onChange(updated); // confirm with the persisted server value
       toast.success("ההעדפות עודכנו");
     } catch (err) {
-      setEmailOnTaskAssignment(prev); // rollback
+      onChange(prev); // rollback
       if (err instanceof ApiError) toast.error(err.message);
       else {
         toast.error("שגיאה לא צפויה");
@@ -53,7 +56,7 @@ export function NotificationPrefsForm({
         </div>
         <Switch
           id="emailOnTaskAssignment"
-          checked={emailOnTaskAssignment}
+          checked={value.emailOnTaskAssignment}
           onCheckedChange={toggleEmailOnAssignment}
           disabled={saving}
         />

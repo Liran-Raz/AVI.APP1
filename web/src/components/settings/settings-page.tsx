@@ -1,5 +1,7 @@
 "use client";
 
+import { useState } from "react";
+
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { MeRole, NotificationPrefs } from "@/lib/api-client";
 
@@ -34,6 +36,11 @@ export function SettingsPage({
   isOwner: boolean;
   notificationPrefs: NotificationPrefs;
 }) {
+  // Source of truth for the notifications toggle lives HERE (SettingsPage stays
+  // mounted across tab switches), so the choice persists visually when the user
+  // leaves and returns to the tab — Radix unmounts inactive TabsContent.
+  const [notifPrefs, setNotifPrefs] = useState(notificationPrefs);
+
   return (
     <div className="container mx-auto px-4 md:px-6 py-6 md:py-8 max-w-3xl">
       <div className="mb-6">
@@ -64,7 +71,7 @@ export function SettingsPage({
         </TabsContent>
 
         <TabsContent value="notifications" className="mt-4">
-          <NotificationPrefsForm initial={notificationPrefs} />
+          <NotificationPrefsForm value={notifPrefs} onChange={setNotifPrefs} />
         </TabsContent>
       </Tabs>
     </div>
