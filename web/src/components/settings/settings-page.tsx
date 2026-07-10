@@ -1,11 +1,12 @@
 "use client";
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import type { MeRole } from "@/lib/api-client";
+import type { MeRole, NotificationPrefs } from "@/lib/api-client";
 
 import { ProfileForm } from "./profile-form";
 import { ChangePasswordForm } from "./change-password-form";
 import { OfficeForm } from "./office-form";
+import { NotificationPrefsForm } from "./notification-prefs-form";
 
 export type SettingsProfile = {
   fullName: string;
@@ -26,10 +27,12 @@ export function SettingsPage({
   profile,
   organization,
   isOwner,
+  notificationPrefs,
 }: {
   profile: SettingsProfile;
   organization: SettingsOrganization;
   isOwner: boolean;
+  notificationPrefs: NotificationPrefs;
 }) {
   return (
     <div className="container mx-auto px-4 md:px-6 py-6 md:py-8 max-w-3xl">
@@ -45,6 +48,7 @@ export function SettingsPage({
           <TabsTrigger value="profile">פרופיל</TabsTrigger>
           <TabsTrigger value="security">אבטחה</TabsTrigger>
           <TabsTrigger value="office">משרד</TabsTrigger>
+          <TabsTrigger value="notifications">התראות</TabsTrigger>
         </TabsList>
 
         <TabsContent value="profile" className="mt-4">
@@ -57,6 +61,10 @@ export function SettingsPage({
 
         <TabsContent value="office" className="mt-4">
           <OfficeForm initial={organization} canEdit={isOwner} />
+        </TabsContent>
+
+        <TabsContent value="notifications" className="mt-4">
+          <NotificationPrefsForm initial={notificationPrefs} />
         </TabsContent>
       </Tabs>
     </div>

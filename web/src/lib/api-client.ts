@@ -13,8 +13,14 @@ import type {
   SignupPayload,
 } from "@/server/validators/auth.schema";
 import type { BootstrapOrgPayload } from "@/server/validators/onboarding.schema";
-import type { UpdateProfilePayload } from "@/server/validators/profile.schema";
-import type { MyProfileDTO } from "@/server/services/profile.service";
+import type {
+  UpdateNotificationPrefsPayload,
+  UpdateProfilePayload,
+} from "@/server/validators/profile.schema";
+import type {
+  MyProfileDTO,
+  NotificationPrefs,
+} from "@/server/services/profile.service";
 import type { UpdateOrganizationPayload } from "@/server/validators/organization.schema";
 import type { OrganizationDTO } from "@/server/services/organization.service";
 import type {
@@ -116,8 +122,11 @@ export type {
 } from "@/server/validators/roles.schema";
 
 // Settings surface — own profile, office details, password change.
-export type { MyProfileDTO } from "@/server/services/profile.service";
-export type { UpdateProfilePayload } from "@/server/validators/profile.schema";
+export type { MyProfileDTO, NotificationPrefs } from "@/server/services/profile.service";
+export type {
+  UpdateProfilePayload,
+  UpdateNotificationPrefsPayload,
+} from "@/server/validators/profile.schema";
 export type { OrganizationDTO } from "@/server/services/organization.service";
 export type { UpdateOrganizationPayload } from "@/server/validators/organization.schema";
 export type { ChangePasswordPayload } from "@/server/validators/auth.schema";
@@ -315,6 +324,11 @@ export const apiClient = {
     // Update the caller's own name / phone (Settings → פרופיל).
     updateProfile: (input: UpdateProfilePayload) =>
       patchJson<MyProfileDTO>("/api/me/profile", input),
+    // Notification preferences (Settings → התראות).
+    notificationPrefs: () =>
+      getJson<NotificationPrefs>("/api/me/notification-prefs"),
+    updateNotificationPrefs: (input: UpdateNotificationPrefsPayload) =>
+      patchJson<NotificationPrefs>("/api/me/notification-prefs", input),
   },
   organization: {
     // Update the active office's details (Settings → משרד). Owner-only —

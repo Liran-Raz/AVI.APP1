@@ -12,6 +12,7 @@ import * as clientsRepo from "@/server/repositories/clients.repository";
 import * as membershipsRepo from "@/server/repositories/memberships.repository";
 import { env } from "@/server/env";
 import { sendTaskAssignmentEmail } from "@/server/services/emails.service";
+import { readNotificationPrefs } from "@/server/services/profile.service";
 import { toSafeErrorMeta } from "@/server/email/email-errors";
 import type { Database } from "@/server/db/database.types";
 import type {
@@ -294,6 +295,13 @@ export async function sendAssignmentEmailIfNeeded(
 
     const assignee = await profileRepo.findByUserId(newAssigned);
     if (!assignee || !assignee.email) return;
+
+    // Respect the assignee's notification preference (Settings → התראות).
+    // Absent/unset prefs default to ON (see readNotificationPrefs). The
+    // in-app notification (DB trigger) is unaffected — only the email opts out.
+    if (!readNotificationPrefs(assignee.notification_prefs).emailOnTaskAssignment) {
+      return;
+    }
 
     const taskUrl = `${env.NEXT_PUBLIC_SITE_URL}/tasks`;
 
