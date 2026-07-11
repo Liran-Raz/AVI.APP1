@@ -7,6 +7,7 @@ import {
   LayoutDashboard,
   ListChecks,
   LogOut,
+  MessageSquare,
   Settings,
   ShieldCheck,
   Users,
@@ -41,6 +42,7 @@ const NAV_ITEMS = [
   { href: "/calendar", label: "לוח שבועי", icon: CalendarDays },
   { href: "/clients", label: "לקוחות", icon: UserSquare2 },
   { href: "/team", label: "צוות", icon: Users },
+  { href: "/messages", label: "הודעות", icon: MessageSquare },
   { href: "/settings", label: "הגדרות", icon: Settings },
 ];
 
@@ -214,13 +216,10 @@ export function AppShell({
           </div>
         </header>
 
-        {/* Mobile bottom nav */}
-        <nav
-          className="md:hidden order-last border-t border-border glass-mobilenav grid sticky bottom-0 z-30"
-          style={{
-            gridTemplateColumns: `repeat(${navItems.length}, minmax(0, 1fr))`,
-          }}
-        >
+        {/* Mobile bottom nav — horizontally scrollable (RTL) so items keep a
+            normal tab size instead of being squeezed as more are added. ~5 fit
+            the viewport; the rest are reached by swiping right→left. */}
+        <nav className="md:hidden order-last border-t border-border glass-mobilenav flex overflow-x-auto no-scrollbar sticky bottom-0 z-30">
           {navItems.map((item) => {
             const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
             return (
@@ -228,12 +227,12 @@ export function AppShell({
                 key={item.href}
                 href={item.href}
                 className={cn(
-                  "flex flex-col items-center justify-center gap-1 py-2 text-xs",
+                  "flex flex-col items-center justify-center gap-1 py-2 shrink-0 basis-1/5 min-w-[4.5rem] text-xs",
                   active ? "text-primary" : "text-muted-foreground",
                 )}
               >
                 <item.icon className="size-5" />
-                <span className="text-[10px]">{item.label}</span>
+                <span className="text-[10px] whitespace-nowrap">{item.label}</span>
               </Link>
             );
           })}

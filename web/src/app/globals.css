@@ -224,6 +224,16 @@
 }
 
 @layer utilities {
+  /* Hide the scrollbar while keeping the element scrollable (e.g. the
+     horizontally-scrollable mobile bottom nav). */
+  .no-scrollbar {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
   /* Glassmorphism panel — frosted glass over the mesh gradient.
      Use sparingly on featured cards (e.g., dashboard widgets,
      calendar event chips). Reads best on light surfaces. */
