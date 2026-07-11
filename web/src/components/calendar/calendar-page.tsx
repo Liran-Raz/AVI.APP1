@@ -23,6 +23,7 @@ import {
 } from "./calendar-utils";
 import { WeekGrid } from "./week-grid";
 import { TaskFormDialog } from "@/components/tasks/task-form-dialog";
+import { useLiveTaskRefresh } from "@/components/tasks/use-live-task-refresh";
 
 type Props = {
   initialItems: TaskDTO[];
@@ -95,6 +96,9 @@ export function CalendarPage({
     }
     void refetch(weekStart);
   }, [weekStart, refetch]);
+
+  // Live refresh: pick up other users' task changes automatically (~3s).
+  useLiveTaskRefresh(() => void refetch(weekStart));
 
   function goPrev() {
     setWeekStart(prevWeek(weekStart));

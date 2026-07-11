@@ -182,3 +182,22 @@ export async function setDeleted(
     deleted_at: deleted ? new Date().toISOString() : null,
   });
 }
+
+// Cheap "did anything change?" signal for live board polling (Stage 13 R6):
+// the org's task count plus the newest updated_at. Every insert / status /
+// assignment / archive / delete bumps updated_at (set_updated_at trigger) or
+// the count, so the returned string changes. Returns NO task rows — a tiny
+// payload safe to poll every few seconds.
+export async function getBoardVersion(orgId: string): Promise<string> {
+  const supabase = await createSupabaseServerClient();
+  const { data, count, error } = await supabase
+    .from("tasks")
+    .select("updated_at", { count: "exact" })
+    .eq("org_id", orgId)
+    .order("updated_at", { ascending: false })
+    .limit(1);
+  if (error) throw error;
+  const maxUpdated =
+    (data as { updated_at: string }[] | null)?.[0]?.updated_at ?? "";
+  return `${count ?? 0}:${maxUpdated}`;
+}

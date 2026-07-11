@@ -784,3 +784,11 @@ C — לוח אישי 3-טורים (חדשות=assigned+new / במעקב=assigne
   שני הטריגרים secdef=t). `tsc`/`lint`/`build`/347 בדיקות ירוקים. ענף
   `feat/stage13-clients-ux-notifications`, במיזוג (Liran אישר "למזג לייצור"; QA התראות
   בין-יוזרים ייעשה בפרודקשן — דורש 2 יוזרים).
+- **2026-07-11** — **DEV-020 R6: עדכון-לוח חי + פעמון מהיר.** לאחר QA של Round 1, Liran
+  דיווח שעדכונים בין-יוזרים לא מגיעים בלי רענון ידני. פתרון: polling כל **3ש'** בשיטת
+  חתימה-זעירה — `GET /api/tasks/version` מחזיר `count:maxUpdatedAt` (org-scoped, בלי שורות),
+  והלוח מושך רשימה מלאה **רק כשהחתימה השתנתה** + עצירה כשהטאב מוסתר (רענון מיידי בחזרה).
+  hook חדש `useLiveTaskRefresh` מחווט ל-`tasks-page` + `calendar-page`; הפעמון הואץ מ-60ש'
+  ל-3ש' באותה שיטה. בחירה מודעת: **polling, לא Realtime** (20 יוזרים ≈ עומס זניח; Realtime
+  = מעבר Firebase עתידי, שם ה-realtime מובנה). `tsc`/`lint`/`build`/348 בדיקות ירוקים.
+  ענף `feat/stage13-live-board-refresh`.

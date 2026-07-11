@@ -362,6 +362,9 @@ export const apiClient = {
         `/api/tasks${toQueryString(params)}`,
       );
     },
+    // Tiny change-signal for live board polling (Stage 13) — returns an opaque
+    // version string; the board refetches (list) only when it changes.
+    version: () => getJson<{ version: string }>("/api/tasks/version"),
     get: (id: string) => getJson<TaskDTO>(`/api/tasks/${id}`),
     create: (input: CreateTaskPayload) =>
       postJson<TaskDTO>("/api/tasks", input),

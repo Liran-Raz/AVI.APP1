@@ -219,6 +219,18 @@ export async function listTasks(
   return { items: rows.map(toDTO) };
 }
 
+// Cheap change-signal for live board polling (Stage 13 R6). Org-scoped; any
+// active member may poll their own org. Returns a small opaque version string
+// that changes whenever any task in the org changes — the client refetches its
+// board only when the string changes, keeping frequent polling near-free.
+export async function getBoardVersion(
+  session: FullSession,
+): Promise<{ version: string }> {
+  resolveListScope(session, PERMISSIONS.TASKS_VIEW);
+  const version = await tasksRepo.getBoardVersion(session.organization.id);
+  return { version };
+}
+
 export async function getTask(
   session: FullSession,
   id: string,

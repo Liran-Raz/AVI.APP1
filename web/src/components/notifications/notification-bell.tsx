@@ -23,7 +23,7 @@ import {
 } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
 
-const POLL_INTERVAL_MS = 60_000; // 60s — lightweight unread-count probe
+const POLL_INTERVAL_MS = 3_000; // 3s — lightweight unread-count probe (paused when the tab is hidden)
 
 export function NotificationBell() {
   const [unreadCount, setUnreadCount] = useState(0);
@@ -50,8 +50,18 @@ export function NotificationBell() {
     // by a render — same legitimate exception as polling subscriptions.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void refreshCount();
-    const t = setInterval(refreshCount, POLL_INTERVAL_MS);
-    return () => clearInterval(t);
+    // Short poll for near-live notifications, but skip while the tab is hidden
+    // and refresh the moment it becomes visible again (Stage 13). The
+    // unread-count query is a cheap indexed count, safe at this cadence.
+    const tick = () => {
+      if (!document.hidden) void refreshCount();
+    };
+    const t = setInterval(tick, POLL_INTERVAL_MS);
+    document.addEventListener("visibilitychange", tick);
+    return () => {
+      clearInterval(t);
+      document.removeEventListener("visibilitychange", tick);
+    };
   }, [refreshCount]);
 
   // Fetch the full list whenever the popover opens (cheap, max 20 rows).
