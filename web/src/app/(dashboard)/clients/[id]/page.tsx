@@ -6,6 +6,7 @@ import { resolveCapabilities } from "@/server/auth/authorization";
 import { AppError } from "@/server/errors/app-error";
 import * as clientsService from "@/server/services/clients.service";
 import * as contactsService from "@/server/services/client-contacts.service";
+import * as teamService from "@/server/services/team.service";
 
 type Props = {
   params: Promise<{ id: string }>;
@@ -21,10 +22,12 @@ export default async function ClientDetailRoute({ params }: Props) {
 
   let client;
   let contactsResult;
+  let membersResult;
   try {
-    [client, contactsResult] = await Promise.all([
+    [client, contactsResult, membersResult] = await Promise.all([
       clientsService.getClient(fullSession, id),
       contactsService.listContacts(fullSession, id),
+      teamService.listMembers(fullSession),
     ]);
   } catch (err) {
     if (err instanceof AppError && err.code === "NOT_FOUND") {
@@ -33,10 +36,16 @@ export default async function ClientDetailRoute({ params }: Props) {
     throw err;
   }
 
+  const handlerName = client.handlingUserId
+    ? membersResult.items.find((m) => m.id === client.handlingUserId)
+        ?.fullName ?? null
+    : null;
+
   return (
     <ClientDetail
       client={client}
       initialContacts={contactsResult.items}
+      handlerName={handlerName}
       capabilities={resolveCapabilities(fullSession)}
     />
   );

@@ -38,10 +38,16 @@ import { formatBusinessType } from "./business-types";
 type Props = {
   client: ClientDTO;
   initialContacts: ContactDTO[];
+  handlerName: string | null; // resolved from client.handlingUserId server-side
   capabilities: Capability[];
 };
 
-export function ClientDetail({ client, initialContacts, capabilities }: Props) {
+export function ClientDetail({
+  client,
+  initialContacts,
+  handlerName,
+  capabilities,
+}: Props) {
   // Display-only hint: contacts.delete is Owner/Manager-only. The server
   // re-enforces this on every delete call regardless of what the UI shows.
   const canDeleteContact = hasCapability(
@@ -150,6 +156,10 @@ export function ClientDetail({ client, initialContacts, capabilities }: Props) {
           <div className="space-y-1">
             <p className="text-xs text-muted-foreground">טלפון</p>
             <p className="text-sm" dir="ltr">{client.phone ?? "—"}</p>
+          </div>
+          <div className="space-y-1">
+            <p className="text-xs text-muted-foreground">גורם מטפל</p>
+            <p className="text-sm">{handlerName ?? "—"}</p>
           </div>
           <div className="space-y-1 sm:col-span-2">
             <p className="text-xs text-muted-foreground">כתובת</p>

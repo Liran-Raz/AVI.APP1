@@ -3,9 +3,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { FullSession } from "@/server/auth/session";
 import type { Client } from "@/server/db/domain.types";
 import type { UserRole } from "@/server/db/domain.types";
-import { ForbiddenError, NotFoundError } from "@/server/errors/app-error";
+import {
+  ForbiddenError,
+  NotFoundError,
+  ValidationError,
+} from "@/server/errors/app-error";
 
-// Mock only the repository — its (mocked) module never loads supabase/env.
+// Mock the repositories — their (mocked) modules never load supabase/env.
 vi.mock("@/server/repositories/clients.repository", () => ({
   findManyByOrgId: vi.fn(),
   findByIdAndOrgId: vi.fn(),
@@ -13,8 +17,12 @@ vi.mock("@/server/repositories/clients.repository", () => ({
   updateByIdAndOrgId: vi.fn(),
   setActiveStatus: vi.fn(),
 }));
+vi.mock("@/server/repositories/memberships.repository", () => ({
+  findByUserAndOrg: vi.fn(),
+}));
 
 import * as clientsRepo from "@/server/repositories/clients.repository";
+import * as membershipsRepo from "@/server/repositories/memberships.repository";
 import {
   archiveClient,
   createClient,
@@ -47,6 +55,7 @@ function clientRow(o: { isActive?: boolean } = {}): Client {
     phone: null,
     address: null,
     notes: null,
+    handling_user_id: null,
     is_active: o.isActive ?? true,
     created_by: "owner-user",
     created_at: "2026-01-01T00:00:00.000Z",
@@ -145,5 +154,56 @@ describe("archiveClient / restoreClient — owner/admin only", () => {
     await expect(
       archiveClient(makeSession("owner"), "ghost"),
     ).rejects.toBeInstanceOf(NotFoundError);
+  });
+});
+
+// ============================================================
+// Stage 12 Round D — handling staff member (גורם מטפל) cross-org guard
+// ============================================================
+
+describe("handling staff member — same-org active-membership guard", () => {
+  it("create with an active-member handler succeeds", async () => {
+    vi.mocked(membershipsRepo.findByUserAndOrg).mockResolvedValue({
+      is_active: true,
+    } as unknown as Awaited<ReturnType<typeof membershipsRepo.findByUserAndOrg>>);
+    await expect(
+      createClient(makeSession("owner"), {
+        name: "X",
+        handlingUserId: "member-1",
+      } as Parameters<typeof createClient>[1]),
+    ).resolves.toBeDefined();
+    expect(membershipsRepo.findByUserAndOrg).toHaveBeenCalledWith("member-1", ORG);
+  });
+
+  it("create with a foreign / non-member handler → ValidationError", async () => {
+    vi.mocked(membershipsRepo.findByUserAndOrg).mockResolvedValue(null);
+    await expect(
+      createClient(makeSession("owner"), {
+        name: "X",
+        handlingUserId: "foreign-user",
+      } as Parameters<typeof createClient>[1]),
+    ).rejects.toBeInstanceOf(ValidationError);
+    expect(clientsRepo.create).not.toHaveBeenCalled();
+  });
+
+  it("create with an INACTIVE-member handler → ValidationError", async () => {
+    vi.mocked(membershipsRepo.findByUserAndOrg).mockResolvedValue({
+      is_active: false,
+    } as unknown as Awaited<ReturnType<typeof membershipsRepo.findByUserAndOrg>>);
+    await expect(
+      createClient(makeSession("owner"), {
+        name: "X",
+        handlingUserId: "inactive-user",
+      } as Parameters<typeof createClient>[1]),
+    ).rejects.toBeInstanceOf(ValidationError);
+  });
+
+  it("update clearing the handler (null) needs no membership check", async () => {
+    await expect(
+      updateClient(makeSession("owner"), "c1", {
+        handlingUserId: null,
+      } as Parameters<typeof updateClient>[2]),
+    ).resolves.toBeDefined();
+    expect(membershipsRepo.findByUserAndOrg).not.toHaveBeenCalled();
   });
 });

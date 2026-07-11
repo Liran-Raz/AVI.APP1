@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
 import {
@@ -47,6 +47,7 @@ import {
   BUSINESS_TYPES,
   type ClientDTO,
   type ListClientsQuery,
+  type MemberDTO,
 } from "@/lib/api-client";
 import { hasCapability, PERMISSIONS, type Capability } from "@/lib/capabilities";
 import { ClientFormDialog } from "./client-form-dialog";
@@ -59,12 +60,21 @@ const SEARCH_DEBOUNCE_MS = 300;
 
 export function ClientsPage({
   initialItems,
+  initialMembers,
   capabilities,
 }: {
   initialItems: ClientDTO[];
+  initialMembers: MemberDTO[];
   capabilities: Capability[];
 }) {
   const [items, setItems] = useState<ClientDTO[]>(initialItems);
+  const [members] = useState<MemberDTO[]>(initialMembers);
+  // O(1) handler-name lookup by member id for the table + cards.
+  const memberNameById = useMemo(() => {
+    const m: Record<string, string> = {};
+    for (const mem of members) m[mem.id] = mem.fullName;
+    return m;
+  }, [members]);
   const [searchInput, setSearchInput] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [businessType, setBusinessType] = useState<BusinessTypeFilter>("all");
@@ -267,6 +277,7 @@ export function ClientsPage({
                   <TableHead>סוג עסק</TableHead>
                   <TableHead>טלפון</TableHead>
                   <TableHead>אימייל</TableHead>
+                  <TableHead>גורם מטפל</TableHead>
                   <TableHead>סטטוס</TableHead>
                   <TableHead className="w-[40px]"></TableHead>
                 </TableRow>
@@ -290,6 +301,11 @@ export function ClientsPage({
                       {client.email ?? "—"}
                     </TableCell>
                     <TableCell>
+                      {client.handlingUserId
+                        ? memberNameById[client.handlingUserId] ?? "—"
+                        : "—"}
+                    </TableCell>
+                    <TableCell>
                       {client.isActive ? (
                         <Badge variant="secondary">פעיל</Badge>
                       ) : (
@@ -309,7 +325,16 @@ export function ClientsPage({
               phone/email, status and the actions menu — all in portrait. */}
           <div className="md:hidden space-y-3">
             {items.map((client) => (
-              <ClientCard key={client.id} client={client} {...cardHandlers} />
+              <ClientCard
+                key={client.id}
+                client={client}
+                handlerName={
+                  client.handlingUserId
+                    ? memberNameById[client.handlingUserId] ?? null
+                    : null
+                }
+                {...cardHandlers}
+              />
             ))}
           </div>
         </>
@@ -320,6 +345,7 @@ export function ClientsPage({
         onOpenChange={setDialogOpen}
         mode={dialogMode}
         initial={dialogTarget}
+        members={members}
         onSaved={handleSaved}
       />
     </div>
@@ -383,12 +409,14 @@ function ClientActionsMenu({
 // Mobile row rendered as a self-contained card (portrait-friendly).
 function ClientCard({
   client,
+  handlerName,
   canArchive,
   onEdit,
   onArchive,
   onRestore,
 }: {
   client: ClientDTO;
+  handlerName: string | null;
   canArchive: boolean;
   onEdit: (c: ClientDTO) => void;
   onArchive: (c: ClientDTO) => void;
@@ -440,6 +468,12 @@ function ClientCard({
             </a>
           )}
         </div>
+      )}
+
+      {handlerName && (
+        <p className="mt-3 text-xs text-muted-foreground">
+          גורם מטפל: <span className="text-foreground">{handlerName}</span>
+        </p>
       )}
 
       <div className="mt-3">

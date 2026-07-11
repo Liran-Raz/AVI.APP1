@@ -34,6 +34,7 @@ const emailField = z
 const phoneField = z.string().trim().max(50, "Phone is too long");
 const addressField = z.string().trim().max(500, "Address is too long");
 const notesField = z.string().trim().max(5000, "Notes are too long");
+const handlingUserIdField = z.string().uuid("Invalid user id");
 
 // Optional + nullable wrapper. Treats "" as null so users can clear a field
 // by submitting an empty input. Missing keys stay missing (important for
@@ -54,6 +55,9 @@ export const createClientSchema = z.object({
   phone: optionalNullable(phoneField),
   address: optionalNullable(addressField),
   notes: optionalNullable(notesField),
+  // "Gorem metapel" (handling staff member, Stage 12/DEV-019 R2): optional +
+  // editable. The service validates same-org active membership before write.
+  handlingUserId: optionalNullable(handlingUserIdField),
 });
 
 export const updateClientSchema = z
@@ -65,6 +69,7 @@ export const updateClientSchema = z
     phone: optionalNullable(phoneField),
     address: optionalNullable(addressField),
     notes: optionalNullable(notesField),
+    handlingUserId: optionalNullable(handlingUserIdField),
   })
   .refine((obj) => Object.keys(obj).length > 0, {
     message: "At least one field is required for update",
