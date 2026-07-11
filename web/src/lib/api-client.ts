@@ -62,6 +62,8 @@ import type {
 } from "@/server/validators/roles.schema";
 import type { CreateBugReportPayload } from "@/server/validators/bug-reports.schema";
 import type { DashboardStatsDTO } from "@/server/services/dashboard.service";
+import type { MessageDTO } from "@/server/services/messages.service";
+import type { SendMessagePayload } from "@/server/validators/messages.schema";
 
 // Re-export DTOs so client components have one stable import path.
 export type { ClientDTO } from "@/server/services/clients.service";
@@ -121,6 +123,12 @@ export type {
   TopClient,
   WeekPoint,
 } from "@/server/services/dashboard.service";
+
+export type { MessageDTO } from "@/server/services/messages.service";
+export type {
+  SendMessagePayload,
+  ListMessagesQuery,
+} from "@/server/validators/messages.schema";
 
 export type { RoleDTO, RoleGrantDTO } from "@/server/services/roles.service";
 export type {
@@ -439,6 +447,14 @@ export const apiClient = {
     // Owner-only office analytics (Stage 13 R4). 403 for non-owners. The page
     // server-renders this; the method exists for a future client-side refresh.
     stats: () => getJson<DashboardStatsDTO>("/api/dashboard/stats"),
+  },
+  messages: {
+    // Office chat (Stage 13 R5). `with` = "group" or a member id; `after` (ISO)
+    // pulls only newer messages for the 3s poll.
+    list: (params: { with: string; after?: string; limit?: number }) =>
+      getJson<{ items: MessageDTO[] }>(`/api/messages${toQueryString(params)}`),
+    send: (input: SendMessagePayload) =>
+      postJson<MessageDTO>("/api/messages", input),
   },
   team: {
     list: () => getJson<{ items: MemberDTO[] }>("/api/team"),

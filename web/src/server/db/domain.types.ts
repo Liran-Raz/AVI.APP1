@@ -31,6 +31,7 @@ export type Profile = Tables<"profiles">;
 export type Client = Tables<"clients">;
 export type ClientContact = Tables<"client_contacts">;
 export type Task = Tables<"tasks">;
+export type Message = Tables<"messages">;
 export type Notification = Tables<"notifications">;
 export type Invitation = Tables<"invitations">;
 export type OrganizationMembership = Tables<"organization_memberships">;
