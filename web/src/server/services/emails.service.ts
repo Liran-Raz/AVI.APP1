@@ -24,7 +24,7 @@ export type SendTaskAssignmentInput = {
   assigneeName: string;
   taskTitle: string;
   taskDescription: string | null;
-  dueAt: string;
+  dueAt: string | null;
   creatorName: string;
   /** Absolute URL of the task (or queue) to view in the app */
   taskUrl: string;
@@ -34,7 +34,7 @@ export async function sendTaskAssignmentEmail(
   input: SendTaskAssignmentInput,
 ): Promise<void> {
   const subject = `משימה חדשה הוצמדה לך: ${input.taskTitle}`;
-  const due = formatDueAt(input.dueAt);
+  const due = input.dueAt ? formatDueAt(input.dueAt) : "ללא תאריך יעד";
 
   const text = [
     `שלום ${input.assigneeName},`,

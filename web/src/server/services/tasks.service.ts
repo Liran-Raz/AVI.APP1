@@ -20,7 +20,11 @@ import type {
   TaskPriority,
   TaskStatus,
 } from "@/server/db/domain.types";
-import { NotFoundError, ValidationError } from "@/server/errors/app-error";
+import {
+  ForbiddenError,
+  NotFoundError,
+  ValidationError,
+} from "@/server/errors/app-error";
 import type {
   CreateTaskPayload,
   ListTasksQuery,
@@ -31,18 +35,22 @@ type TaskUpdate = Database["public"]["Tables"]["tasks"]["Update"];
 
 // ============================================================
 // DTO — what the API exposes to the client.
-// Strips org_id (implicit — caller's own org) and creator_id (audit
-// only). Field names are camelCase, ISO timestamps as strings.
+// Strips org_id (implicit — the caller's own org). Exposes creatorId and the
+// per-org taskNumber (Stage 12): the personal board groups by creator/assignee
+// and the card shows #NNNN. Field names are camelCase, ISO timestamps as
+// strings; dueAt is nullable (the due date is optional).
 // ============================================================
 
 export type TaskDTO = {
   id: string;
+  taskNumber: number;
   title: string;
   description: string | null;
-  dueAt: string;
+  dueAt: string | null;
   status: TaskStatus;
   priority: TaskPriority;
   assignedTo: string | null;
+  creatorId: string;
   clientId: string | null;
   completedAt: string | null;
   archivedAt: string | null;
@@ -54,12 +62,14 @@ export type TaskDTO = {
 function toDTO(row: Task): TaskDTO {
   return {
     id: row.id,
+    taskNumber: row.task_number,
     title: row.title,
     description: row.description,
     dueAt: row.due_at,
     status: row.status,
     priority: row.priority,
     assignedTo: row.assigned_to,
+    creatorId: row.creator_id,
     clientId: row.client_id,
     completedAt: row.completed_at,
     archivedAt: row.archived_at,
@@ -169,6 +179,30 @@ export async function listTasks(
   // Collection authorization: requires tasks.view at a supported scope.
   // Phase 4 supports only "all" (assigned/team fail closed) → list all.
   resolveListScope(session, PERMISSIONS.TASKS_VIEW);
+
+  // Personal-board gate (Stage 12 Round C). Everyone may view their OWN board;
+  // viewing ANOTHER member's board is owner/admin-only, and the target must be
+  // a member of this org. Gated on the ENUM activeRole (a relational check),
+  // NOT a grantable permission key — so it stays correct if authorization ever
+  // becomes DB-authoritative (that map would not carry a "view others' board"
+  // permission). Precedent: the owner/admin protected-action checks.
+  if (query.boardFor && query.boardFor !== session.profile.id) {
+    if (session.activeRole !== "owner" && session.activeRole !== "admin") {
+      throw new ForbiddenError(
+        "Only an owner or manager can view another member's board",
+      );
+    }
+    const membership = await membershipsRepo.findByUserAndOrg(
+      query.boardFor,
+      session.organization.id,
+    );
+    if (!membership) {
+      throw new ValidationError(
+        "Target user is not a member of this organization",
+      );
+    }
+  }
+
   const rows = await tasksRepo.findManyByOrgId(session.organization.id, {
     search: query.search,
     status: query.status,
@@ -178,6 +212,7 @@ export async function listTasks(
     lifecycle: query.lifecycle,
     dueBefore: query.dueBefore,
     dueAfter: query.dueAfter,
+    boardFor: query.boardFor,
     limit: query.limit,
     offset: query.offset,
   });
@@ -210,8 +245,10 @@ export async function createTask(
     creator_id: session.profile.id,
     title: input.title,
     description: input.description ?? null,
-    due_at: input.dueAt,
-    status: input.status ?? "new",
+    due_at: input.dueAt ?? null,
+    // Every new task starts in the assignee's "new" queue (Round B removed the
+    // status field from the form). task_number is allocated by the DB trigger.
+    status: "new",
     priority: input.priority ?? "normal",
     assigned_to: input.assignedTo ?? null,
     client_id: input.clientId ?? null,

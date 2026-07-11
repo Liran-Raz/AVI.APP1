@@ -5,8 +5,10 @@ import {
   ArchiveRestore,
   ArrowLeft,
   CalendarClock,
+  Clock,
   MoreHorizontal,
   Pencil,
+  RotateCcw,
   Trash2,
   Undo2,
 } from "lucide-react";
@@ -27,7 +29,9 @@ import {
   PRIORITY_LABELS,
   STATUS_LABELS,
   dueState,
+  formatCreatedAt,
   formatDueAt,
+  formatTaskNumber,
   nextStatus,
 } from "./task-utils";
 
@@ -40,6 +44,7 @@ type Props = {
   onUnarchive: (task: TaskDTO) => void;
   onDelete: (task: TaskDTO) => void;
   onRestore: (task: TaskDTO) => void;
+  onReturnToWork: (task: TaskDTO) => void; // done → back to assignee (status new)
 };
 
 const PRIORITY_CLASS: Record<TaskDTO["priority"], string> = {
@@ -67,21 +72,27 @@ export function TaskCard({
   onUnarchive,
   onDelete,
   onRestore,
+  onReturnToWork,
 }: Props) {
   const next = nextStatus(task.status);
   const isArchived = task.archivedAt !== null;
   const isDeleted = task.deletedAt !== null;
-  const due = dueState(task.dueAt);
+  const due = task.dueAt ? dueState(task.dueAt) : null;
 
   return (
     <div className="group rounded-lg border border-border glass-card shadow-card p-3 space-y-2 hover:shadow-overlay transition-shadow">
       <div className="flex items-start justify-between gap-2">
-        <Badge
-          variant="outline"
-          className={cn("text-xs font-medium px-2 py-0.5", PRIORITY_CLASS[task.priority])}
-        >
-          {PRIORITY_LABELS[task.priority]}
-        </Badge>
+        <div className="flex items-center gap-2 min-w-0">
+          <Badge
+            variant="outline"
+            className={cn("text-xs font-medium px-2 py-0.5", PRIORITY_CLASS[task.priority])}
+          >
+            {PRIORITY_LABELS[task.priority]}
+          </Badge>
+          <span className="inline-flex items-center rounded-md border border-border/70 bg-muted/40 px-2 py-0.5 font-mono text-xs font-semibold text-foreground/80 tabular-nums tracking-widest">
+            {formatTaskNumber(task.taskNumber)}
+          </span>
+        </div>
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -103,6 +114,12 @@ export function TaskCard({
               <DropdownMenuItem onClick={() => onAdvance(task)}>
                 <ArrowLeft className="size-4" />
                 העבר ל-{STATUS_LABELS[next]}
+              </DropdownMenuItem>
+            )}
+            {task.status === "done" && !isDeleted && !isArchived && (
+              <DropdownMenuItem onClick={() => onReturnToWork(task)}>
+                <RotateCcw className="size-4" />
+                החזר לביצוע
               </DropdownMenuItem>
             )}
             <DropdownMenuSeparator />
@@ -153,15 +170,19 @@ export function TaskCard({
       )}
 
       <div className="flex items-center justify-between gap-2 pt-1">
-        <div
-          className={cn(
-            "inline-flex items-center gap-1 text-xs",
-            DUE_CLASS[due],
-          )}
-        >
-          <CalendarClock className="size-3" />
-          {formatDueAt(task.dueAt)}
-        </div>
+        {task.dueAt && due ? (
+          <div
+            className={cn(
+              "inline-flex items-center gap-1 text-xs",
+              DUE_CLASS[due],
+            )}
+          >
+            <CalendarClock className="size-3" />
+            {formatDueAt(task.dueAt)}
+          </div>
+        ) : (
+          <span className="text-xs text-muted-foreground/70">ללא תאריך יעד</span>
+        )}
         {isArchived && (
           <Badge variant="outline" className="text-[10px] uppercase">
             ארכיון
@@ -173,6 +194,11 @@ export function TaskCard({
           </Badge>
         )}
       </div>
+
+      <p className="flex items-center gap-1 text-xs text-muted-foreground">
+        <Clock className="size-3 shrink-0" aria-hidden />
+        נוצרה ב־{formatCreatedAt(task.createdAt)}
+      </p>
     </div>
   );
 }

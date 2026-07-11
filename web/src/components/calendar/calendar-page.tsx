@@ -10,6 +10,7 @@ import {
   apiClient,
   type ClientDTO,
   type ListTasksQuery,
+  type MemberDTO,
   type TaskDTO,
 } from "@/lib/api-client";
 
@@ -26,16 +27,21 @@ import { TaskFormDialog } from "@/components/tasks/task-form-dialog";
 type Props = {
   initialItems: TaskDTO[];
   initialClients: ClientDTO[];
+  initialMembers: MemberDTO[];
+  currentUserId: string;
   initialWeekStartIso: string;
 };
 
 export function CalendarPage({
   initialItems,
   initialClients,
+  initialMembers,
+  currentUserId,
   initialWeekStartIso,
 }: Props) {
   const [items, setItems] = useState<TaskDTO[]>(initialItems);
   const [clients] = useState<ClientDTO[]>(initialClients);
+  const [members] = useState<MemberDTO[]>(initialMembers);
   const [weekStart, setWeekStart] = useState<Date>(
     () => new Date(initialWeekStartIso),
   );
@@ -181,6 +187,9 @@ export function CalendarPage({
         mode={dialogMode}
         initial={dialogTarget}
         clients={clients}
+        members={members}
+        currentUserId={currentUserId}
+        defaultWithDueDate
         onSaved={handleSaved}
       />
     </div>

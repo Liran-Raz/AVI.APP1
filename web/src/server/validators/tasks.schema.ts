@@ -60,10 +60,13 @@ function optionalNullable<T extends z.ZodTypeAny>(schema: T) {
 export const createTaskSchema = z.object({
   title: titleField,
   description: optionalNullable(descriptionField),
-  dueAt: dueAtField,
-  status: taskStatusSchema.optional(), // default 'new' is in the DB
+  // Optional due date (Round B "האם להוסיף תאריך יעד?"): null/omitted = none.
+  dueAt: optionalNullable(dueAtField),
+  // `status` is no longer a create input — every new task starts 'new'
+  // (forced in the service). The enum contract (TASK_STATUSES) is untouched.
   priority: taskPrioritySchema.optional(), // default 'normal' is in the DB
-  assignedTo: optionalNullable(uuidNullableField),
+  // Mandatory assignee (Round B). The UI defaults the picker to the creator.
+  assignedTo: uuidNullableField,
   clientId: optionalNullable(uuidNullableField),
 });
 
@@ -71,7 +74,8 @@ export const updateTaskSchema = z
   .object({
     title: titleField.optional(),
     description: optionalNullable(descriptionField),
-    dueAt: dueAtField.optional(),
+    // Nullable on update too: unchecking "add a due date?" clears it.
+    dueAt: optionalNullable(dueAtField),
     status: taskStatusSchema.optional(),
     priority: taskPrioritySchema.optional(),
     assignedTo: optionalNullable(uuidNullableField),
@@ -145,6 +149,10 @@ export const listTasksQuerySchema = z.object({
   priority: taskPrioritySchema.optional(),
   assignedTo: z.string().uuid().optional(),
   clientId: z.string().uuid().optional(),
+  // Personal-board filter (Stage 12 Round C): returns the target user's board
+  // — (assignee's new/in_progress) OR (creator's done). Overrides status/
+  // assignedTo. Viewing another user's board is owner/admin-only (service gate).
+  boardFor: z.string().uuid().optional(),
   lifecycle: lifecycleField,
   dueBefore: isoDateField,
   dueAfter: isoDateField,

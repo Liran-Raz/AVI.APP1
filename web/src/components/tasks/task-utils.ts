@@ -9,16 +9,16 @@ import type {
 } from "@/lib/api-client";
 
 export const STATUS_LABELS: Record<TaskStatusValue, string> = {
-  new: "חדש",
-  received: "התקבל",
-  in_progress: "בתהליך",
-  done: "הושלם",
+  new: "חדשה",
+  received: "התקבל", // legacy: retired from the flow, kept for defensive rendering
+  in_progress: "במעקב",
+  done: "הושלמה",
 };
 
 export const PRIORITY_LABELS: Record<TaskPriorityValue, string> = {
   urgent: "דחוף",
   normal: "רגיל",
-  optional: "סופני",
+  optional: "עתידי",
 };
 
 export const LIFECYCLE_LABELS: Record<LifecycleFilter, string> = {
@@ -28,10 +28,13 @@ export const LIFECYCLE_LABELS: Record<LifecycleFilter, string> = {
   all: "הכל",
 };
 
-// Kanban column model. The grouping bundles new + received under
-// "לביצוע" (to do) because Liran asked for a 3-column Kanban
-// rather than four. The DB still tracks them as separate statuses
-// so future views can distinguish them.
+// Personal-board columns (Stage 12 Round C). The list query (boardFor) already
+// returns exactly the viewer's assignee-side new/in_progress tasks plus their
+// creator-side done tasks, so grouping by status yields the three columns:
+//   חדשות  = new (assigned to the viewer)
+//   במעקב  = in_progress (assigned to the viewer)
+//   הושלמו = done (created by the viewer — returned for verification → archive)
+// 'received' is legacy and buckets with "חדשות" defensively (none are produced).
 export type KanbanColumnKey = "todo" | "in_progress" | "done";
 
 export const KANBAN_COLUMNS: ReadonlyArray<{
@@ -39,9 +42,9 @@ export const KANBAN_COLUMNS: ReadonlyArray<{
   label: string;
   statuses: ReadonlyArray<TaskStatusValue>;
 }> = [
-  { key: "todo", label: "לביצוע", statuses: ["new", "received"] },
-  { key: "in_progress", label: "בתהליך", statuses: ["in_progress"] },
-  { key: "done", label: "הושלם", statuses: ["done"] },
+  { key: "todo", label: "חדשות", statuses: ["new", "received"] },
+  { key: "in_progress", label: "במעקב", statuses: ["in_progress"] },
+  { key: "done", label: "הושלמו", statuses: ["done"] },
 ];
 
 export function kanbanColumnForStatus(
@@ -58,7 +61,10 @@ export function kanbanColumnForStatus(
 export function nextStatus(status: TaskStatusValue): TaskStatusValue | null {
   switch (status) {
     case "new":
-      return "received";
+      return "in_progress";
+    // 'received' is retired from the flow (Stage 12): the promotion path is
+    // new → in_progress → done. The enum value stays in the DB/types only for
+    // defensive rendering of any legacy row, which also advances to in_progress.
     case "received":
       return "in_progress";
     case "in_progress":
@@ -70,13 +76,33 @@ export function nextStatus(status: TaskStatusValue): TaskStatusValue | null {
 
 // Format a due_at ISO timestamp as a short Hebrew date+time string.
 // "יום שני, 26 במאי 18:00".
-export function formatDueAt(iso: string): string {
+export function formatDueAt(iso: string | null): string {
+  if (!iso) return "";
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
   return d.toLocaleString("he-IL", {
     weekday: "short",
     day: "numeric",
     month: "long",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+// Per-org task number as a short display code: 1 -> "#0001". The UI shows
+// digits only; the system identity (org_code + number) is not surfaced here.
+export function formatTaskNumber(n: number): string {
+  return `#${String(n).padStart(4, "0")}`;
+}
+
+// Creation timestamp for the card ("נוצרה ב…"). Short he-IL date + time.
+export function formatCreatedAt(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleString("he-IL", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
     hour: "2-digit",
     minute: "2-digit",
   });
@@ -120,7 +146,8 @@ export function localDatetimeToISO(local: string): string {
 }
 
 // And back: ISO -> datetime-local for the form to display.
-export function isoToLocalDatetime(iso: string): string {
+export function isoToLocalDatetime(iso: string | null): string {
+  if (!iso) return "";
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "";
   const pad = (n: number) => String(n).padStart(2, "0");

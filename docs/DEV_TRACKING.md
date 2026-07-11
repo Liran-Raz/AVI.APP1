@@ -46,7 +46,7 @@
 | DEV-016 | `<noscript>` fallback לנחיתה | תשתית/נגישות | P3 | ממתין | 2026-07-11 | ה-`.reveal`/hero מתחילים מוסתרים ונחשפים ב-JS → בלי JS הדף כמעט ריק. Google מריץ JS (SEO תקין), אבל fallback חסין יותר. ללא מיגרציה. |
 | DEV-017 | הפעלת Google OAuth (קונפיג בלבד) | תשתית | P3 | **הושלם** | 2026-07-11 | **חי בפרודקשן.** קונפיג בלבד ב-Google Cloud + Supabase (אפס שינוי קוד). משתמש קיים נבדק חי (הגיע ל-`/tasks`); משתמש חדש מאומת בקוד בלבד (אותו שער onboarding כמו הרשמה רגילה). |
 | DEV-018 | באגים בטאב "התראות" (`/settings`) — רגרסיות מ-DEV-009 חלק 2 | באג | P2 | **הושלם** | 2026-07-11 | **חי בייצור** ([PR #53](https://github.com/Liran-Raz/AVI.APP1/pull/53), main `36b725d`, Vercel success, QA ע"י Liran). (א) הטוגל "מתאפס" → מקור-האמת הורם ל-`SettingsPage` (לא מתפרק במעבר טאבים); הטופס controlled. (ב) ה-thumb יוצא מהמסגרת ב-RTL → translate מכוון-כיוון (`ltr:translate-x-[18px]` / `rtl:-translate-x-[18px]`) ב-`ui/switch.tsx`; אומת דטרמיניסטית (מדידת DOM: 0 overflow). |
-| DEV-019 | שלב 12 — דרישות מפגישת לקוח (סרגל עליון · גורם מטפל ללקוח · מספור משימות · מחזור-חיים חדש) | פיתוח (רב-סבב) | P2 | בתהליך | 2026-07-11 | סבב-על: מיגרציה `0020` + 4 סבבים (A→D). **Round A** (סרגל עליון — חיווי DB דרך `/api/health/db` + אינטרנט דרך `navigator.onLine` + שעון) נבנה, gate ירוק, QA אושר, **ב-PR**. B/C/D תלויים ב-0020 חי. ראה פירוט למטה. |
+| DEV-019 | שלב 12 — דרישות מפגישת לקוח (סרגל עליון · מספור משימות · מחזור-חיים חדש · גורם מטפל ללקוח) | פיתוח (רב-סבב) | P2 | בתהליך | 2026-07-11 | סבב-על: מיגרציה `0020` (חיה) + 4 סבבים. **A** (סרגל עליון) חי בייצור. **B+C** (טופס+כרטיס+מספור; לוח אישי 3-טורים) QA אושר + במיזוג. נשאר **D** (גורם מטפל ללקוח). ראה פירוט. |
 
 *(פריטים נוספים ייכנסו כאן עם `DEV-XXX` חדש.)*
 
@@ -559,13 +559,13 @@ Google קיים כרגע רק ב-`/login`, לא ב-`/signup` (לא חוסם — 
 לביצוע חובה, ברירת מחדל = היוצר · עובד רואה רק את לוחו, מנהל+בעלים בוחרים תצוגה ·
 גורם מטפל רשות + ניתן לעריכה.
 
-**מיגרציה `0020`** (חבילת-אופרטור בסגנון 0019; Liran מריץ ידנית לפני מיזוג Round B):
+**מיגרציה `0020`** — 🟢 **הוחלה + אומתה בייצור 2026-07-11** (Liran, role postgres; postflight ירוק). חבילת-אופרטור בסגנון 0019:
 `tasks.task_number` + backfill + `UNIQUE(org_id, task_number)` · טבלת `task_counters`
 (RLS + אפס policies + REVOKE מפורש) + טריגר `assign_task_number` (SECURITY DEFINER,
 בטוח בתחרותיות + חסין-זיוף) · `due_at DROP NOT NULL` · remaps (status `received`→`new`;
 `assigned_to`=creator כשריק — בלי ספאם התראות) · `clients.handling_user_id`.
 
-**Round A — סרגל עליון (ללא DB) — נבנה, gate ירוק, QA אושר, ב-PR:**
+**Round A — סרגל עליון (ללא DB) — 🟢 חי בייצור** ([PR #54](https://github.com/Liran-Raz/AVI.APP1/pull/54), main `2572da7`):
 - קבצים חדשים (6): `server/repositories/health.repository.ts` (`pingDb` — קריאת org
   זעירה **שזורקת** על שגיאה), `server/services/health.service.ts` (+`.test.ts` —
   503 על כשל/אין-שורה), `app/api/health/db/route.ts` (`withErrorHandler`+`requireSession`),
@@ -577,16 +577,20 @@ Google קיים כרגע רק ב-`/login`, לא ב-`/signup` (לא חוסם — 
 - אימות: `tsc`/`lint`/`build`/**324 בדיקות** ירוקים; GET לא-מאומת — `/api/health/db`→**401**,
   `/api/health`→200, `/login`→200, `/tasks`→307. QA ויזואלי אושר ע"י Liran (2026-07-11).
 
-**Round B/C/D — מתוכננים, ממתינים ל-0020 חי:** B (טופס יצירה/עריכה + כרטיס: dueAt
-אופציונלי, הסרת סטטוס, בורר מבצע, `#0001`+חותמת) · C (הלוח האישי 3-טורים: חדשות/
-במעקב/הושלמו + שער owner/admin לתצוגת אחר) · D (גורם מטפל ללקוח + guard חברות-בארגון).
+**Round B + C — QA אושר (Liran), במיזוג (PR אחד):** B — טופס: `dueAt` אופציונלי מאחורי
+צ'קבוקס, הסרת שדה סטטוס, בורר "איש צוות לביצוע" (חובה, ברירת מחדל=היוצר), כרטיס
+`#0001`+חותמת יצירה, "סופני"→"עתידי", DTO חושף `taskNumber`+`creatorId`, `due_at` nullable.
+C — לוח אישי 3-טורים (חדשות=assigned+new / במעקב=assigned+in_progress / הושלמו=creator+done)
+דרך `boardFor` `.or()` ב-repo; עובד רואה רק את שלו, owner/admin מקבל בורר "הלוח של: X"
+(שער `activeRole`); "החזר לביצוע" בטור הושלמו; `received` יצא מזרימת הקידום (נשאר ב-DB
+לרינדור הגנתי). **Round D — גורם מטפל ללקוח — הבא.**
 
 **דגלי scope שאושרו:** יוצר לא רואה משימה יוצאת עד השלמה · לוח-שנה + ארכיון/פח נשארים
 כלל-משרדיים · משימות בלי תאריך לא מופיעות בלוח-שנה · "החזר לביצוע" בטור הושלמו ·
 ארכוב מותר-לכולם בשרת.
 
-**סטטוס:** 🔵 **בתהליך.** Round A נבנה + ירוק + QA אושר → ב-PR (ממתין למיזוג). המשך:
-החלת מיגרציה 0020 → Round B → Round C → Round D.
+**סטטוס:** 🔵 **בתהליך.** A חי בייצור; 0020 מוחלת+מאומתת; B+C QA אושר + במיזוג. נשאר
+**Round D** (גורם מטפל ללקוח) — הסבב האחרון לסגירת שלב 12.
 
 ---
 
@@ -713,3 +717,17 @@ Google קיים כרגע רק ב-`/login`, לא ב-`/signup` (לא חוסם — 
   `tsc`/`lint`/`build`/324 בדיקות ירוקים; GET לא-מאומת `/api/health/db`→401. QA ויזואלי
   אושר ע"י Liran. ענף `feat/stage12-topbar-status`, **ב-PR** (ממתין למיזוג). המשך:
   החלת 0020 → Round B → C → D.
+- **2026-07-11** — **DEV-019: Round A חי בייצור** ([PR #54](https://github.com/Liran-Raz/AVI.APP1/pull/54),
+  main `2572da7`, Vercel success). סרגל עליון: 2 חיוויי חיבוריות + שעון. GET smoke ירוק
+  (`/api/health/db`=401, `/api/health`=200, tasks/clients/team=307).
+- **2026-07-11** — **DEV-019: מיגרציה 0020 הוחלה + אומתה בייצור** (Liran, role postgres;
+  postflight ירוק — task_number int/NOT NULL/unique, task_counters fail-closed (RLS+0
+  policies+0 client grants), טריגר SECURITY DEFINER `search_path=""`, `due_at` nullable,
+  remaps `received`→`new` + assigned→creator, `clients.handling_user_id`). קובץ ה-SQL
+  נכנס לריפו יחד עם PR של Round B+C.
+- **2026-07-11** — **DEV-019: Round B+C נבנו + QA אושר (Liran).** B: טופס (dueAt אופציונלי,
+  הסרת סטטוס, מבצע חובה=ברירת מחדל היוצר), כרטיס `#0001`+חותמת, "סופני"→"עתידי". C: לוח
+  אישי 3-טורים (`boardFor` `.or()`: assignee-new/in_progress + creator-done), עובד רואה רק
+  את שלו, owner/admin בורר "הלוח של: X" (שער `activeRole`), "החזר לביצוע", `received` יצא
+  מהזרימה. QA כלל את הזרימה המלאה (יוצר→מבצע→הושלם→חזרה-ליוצר) + מספר מרווח.
+  `tsc`/`lint`/`build`/343 בדיקות ירוקים. ענף `feat/stage12-task-form-board`, במיזוג ב-PR אחד.
