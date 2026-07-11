@@ -15,8 +15,8 @@ are + how to continue" brief.
   shadcn/ui · Supabase (Postgres + Auth + Realtime + RLS) · Vercel.
 - **Production:** **https://www.aviapp1.com** (Cloudflare→Vercel; old
   `avi-app-1.vercel.app` still alive). Auto-deploys on push to `main`.
-- **`main` at `4a56cef`** (2026-07-11). Working tree clean. All feature branches
-  merged + deleted. Run `git log -5` to confirm.
+- **`main` at `9cbf9d6`** (2026-07-11) **+ this session's DEV-017 doc updates**
+  (config-only, no code — pending commit). Run `git log -5` to confirm current tip.
 - **User = Liran**, Hebrew-speaking founder / product owner. Reply in Hebrew.
   He drives product; Claude drives implementation. Honest tradeoffs, not hype.
 - **Nothing is pending/blocked.** No open bugs. Next work is optional backlog.
@@ -28,6 +28,14 @@ are + how to continue" brief.
 The email/domain/auth story, the internal "Liquid Glass" redesign, and the full
 settings screen are all shipped. Recent arc (newest first):
 
+- **DEV-017** — enabled Google OAuth in Production, config-only (zero code changed).
+  Code was audited link-by-link first (button → apiClient → route → service → adapter
+  → `/auth/callback`, including the new-user path landing on `/onboarding`). Liran did
+  Google Cloud (OAuth consent screen In production + client with the exact Supabase
+  redirect URI) + Supabase (provider enabled, Client ID/Secret verified byte-for-byte
+  against the downloaded Google JSON). Live-tested with an existing user (landed on
+  `/tasks`); new-user path code-verified only (shares the same onboarding gate as
+  regular signup) — no spare Google account to test live.
 - **DEV-018** (PR #53, `36b725d`) — fixed 2 regressions in Settings→התראות:
   (a) toggle "reset" (Radix Tabs unmounts inactive content → lifted prefs state
   up to `SettingsPage`; form is now controlled); (b) RTL switch thumb overflow
@@ -59,17 +67,16 @@ DEV-001/003).
 
 Nothing is blocked. Pick from the backlog when Liran wants:
 
-- **DEV-010→017 (P3 nice-to-haves, added 2026-07-11):** EN form-field labels
+- **DEV-010→016 (P3 nice-to-haves, added 2026-07-11):** EN form-field labels
   (010) · client testimonial block (011, needs a real quote) · office logo+ח.פ.
   (012, needs migration + Storage) · 2FA (013, security — could be P2) · mute
   in-app bell notifications (014, needs trigger migration) · staging env (015) ·
-  landing `<noscript>` (016) · **enable Google OAuth (017 — CODE IS READY,
-  config-only in Google Cloud + Supabase).**
+  landing `<noscript>` (016).
 - **DEV-001 / DEV-003 (deferred by Liran):** the custom-roles activation +
   authoritative cutover. Infra is live but dormant; the existing 3-tier
   Owner/Manager/Employee system already meets the client's need.
 
-Cheapest to start: **DEV-017** (Google OAuth, zero code). Highest value:
+**DEV-017 (Google OAuth) DONE 2026-07-11** — see above. Highest value left:
 **DEV-013** (2FA, financial data) or **DEV-015** (staging — would've saved the
 deploy pain below).
 
@@ -146,7 +153,7 @@ Critical do-nots:
 | Domain / mail | `aviapp1.com` at Cloudflare; Resend Verified (sends via `send.aviapp1.com`); Supabase Auth Custom SMTP → Resend. All mail from `AVI.APP <noreply@aviapp1.com>` |
 | Migrations applied in Prod | through **0019** (manual apply; latest = `0019_notification_prefs.sql`) |
 | Vercel env (Production scope only) | `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `NEXT_PUBLIC_SITE_URL=https://www.aviapp1.com`, `MAIL_FROM`, `RESEND_API_KEY`, `BUG_REPORT_NOTIFY_EMAIL`. **No service role key.** |
-| Google OAuth | code ready (`/api/auth/oauth/google` PKCE); provider NOT enabled (DEV-017) |
+| Google OAuth | **enabled in Production** (DEV-017, 2026-07-11) — `/api/auth/oauth/google` PKCE; live-tested with an existing user |
 | Service role key | not used, not stored (intentional) |
 | Durable design preview | `.claude/design-preview/` (gitignored) — `index.html` (marketing) + `dashboard.html` (internal Tasks mockup, Calm⇄Ambient); launch.json `glass-preview` port 4173 |
 
