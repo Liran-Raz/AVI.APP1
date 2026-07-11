@@ -15,8 +15,10 @@ are + how to continue" brief.
   shadcn/ui · Supabase (Postgres + Auth + Realtime + RLS) · Vercel.
 - **Production:** **https://www.aviapp1.com** (Cloudflare→Vercel; old
   `avi-app-1.vercel.app` still alive). Auto-deploys on push to `main`.
-- **`main` at `9cbf9d6`** (2026-07-11) **+ this session's DEV-017 doc updates**
-  (config-only, no code — pending commit). Run `git log -5` to confirm current tip.
+- **`main` at `102402e`** (2026-07-11) — **Stage 12 (DEV-019) fully shipped**:
+  topbar indicators + clock, task numbering + optional due date + mandatory
+  assignee, the personal board, the client handling-person, and a "back to new"
+  action. Run `git log -5` to confirm current tip.
 - **User = Liran**, Hebrew-speaking founder / product owner. Reply in Hebrew.
   He drives product; Claude drives implementation. Honest tradeoffs, not hype.
 - **Nothing is pending/blocked.** No open bugs. Next work is optional backlog.
@@ -25,9 +27,22 @@ are + how to continue" brief.
 
 ## 📍 Where we are (everything below is LIVE in production + verified)
 
-The email/domain/auth story, the internal "Liquid Glass" redesign, and the full
-settings screen are all shipped. Recent arc (newest first):
+The email/domain/auth story, the "Liquid Glass" redesign, the full settings
+screen, and **Stage 12** are all shipped. Recent arc (newest first):
 
+- **DEV-019 — Stage 12 (client-meeting requirements) COMPLETE (2026-07-11).**
+  Migration `0020` (per-org task numbers + `task_counters` + SECURITY-DEFINER
+  assign trigger, `due_at` nullable, `received`→`new` + assigned→creator remaps,
+  `clients.handling_user_id`) applied + verified in Prod. **Round A** (PR #54) —
+  topbar DB/internet indicators + clock. **Round B+C** (PR #55) — task form
+  (optional due date behind a checkbox, no status field, mandatory assignee
+  default=creator, `#0001` + created stamp, "סופני"→"עתידי") + **personal board**
+  3 cols חדשות/במעקב/הושלמו via a repo `.or()` (a done task returns to its
+  CREATOR; employee sees only their board, owner/admin get a "הלוח של: X"
+  selector gated on `session.activeRole`). **Round D** (PR #56) — client
+  "גורם מטפל" picker + table column/mobile row/detail cell + F1-style same-org
+  guard. **QA follow-up** (PR #57) — "החזר לחדשות" on in-progress cards. 347
+  tests; each Vercel deploy verified + prod GET smoke green.
 - **DEV-017** — enabled Google OAuth in Production, config-only (zero code changed).
   Code was audited link-by-link first (button → apiClient → route → service → adapter
   → `/auth/callback`, including the new-user path landing on `/onboarding`). Liran did
@@ -56,7 +71,8 @@ settings screen are all shipped. Recent arc (newest first):
   sends from `aviapp1.com`), reset-password PKCE fix, Custom SMTP, same-password
   indicator. All Production-verified.
 
-**Migrations applied to Production: through `0019`** (0001–0019). Legacy `role`
+**Migrations applied to Production: through `0020`** (0001–0020; `0020` =
+Stage 12 task numbers + client handler). Legacy `role`
 enum (owner/admin/employee) + `ROLE_GRANTS` are still the SOLE authority; the
 custom-roles infra (0011–0017) is live but 100% DORMANT (Liran chose to stop —
 DEV-001/003).
@@ -76,9 +92,9 @@ Nothing is blocked. Pick from the backlog when Liran wants:
   authoritative cutover. Infra is live but dormant; the existing 3-tier
   Owner/Manager/Employee system already meets the client's need.
 
-**DEV-017 (Google OAuth) DONE 2026-07-11** — see above. Highest value left:
-**DEV-013** (2FA, financial data) or **DEV-015** (staging — would've saved the
-deploy pain below).
+**DEV-017 (Google OAuth) + DEV-019 (Stage 12) DONE 2026-07-11** — see above.
+Highest value left: **DEV-013** (2FA, financial data) or **DEV-015** (staging —
+would've saved the deploy pain below).
 
 ---
 
@@ -140,6 +156,19 @@ Critical do-nots:
   self-edit needs NO migration, only the app-layer write stack.
 - **Every push to `main` triggers a Prod deploy** — even doc-only commits (they
   rebuild; harmless, but be aware).
+- **Retiring an enum/status value** (Stage 12 dropped `received` from the flow):
+  keep it in the DB enum AND the validator — just stop PRODUCING it (UI +
+  `nextStatus`). Removing it from `TaskStatus`/label maps forces coupled type
+  churn; leaving it as defensive-render-only is clean.
+- **Personal-board scoping is a repository `.or()` predicate** (assignee's
+  new/in_progress OR creator's done), NOT a status filter. And "view another's
+  board" / client-handler guards gate on the ENUM `session.activeRole`
+  (relational, cutover-safe), never a grantable permission key — so they survive
+  a future DB-authoritative roles cutover.
+- **A `SECURITY DEFINER` trigger owned by `postgres` writes a locked-down table**
+  (`task_counters`: RLS on, 0 policies, all client grants revoked) — the per-org
+  counter is untouchable by any client role, yet task inserts allocate `#NNNN`
+  atomically. Trigger firing does NOT need EXECUTE grants.
 
 ---
 
@@ -151,7 +180,7 @@ Critical do-nots:
 | GitHub repo | https://github.com/Liran-Raz/AVI.APP1 |
 | Supabase project ref | `xsuvwihfcxinorzutbve` (region Central EU / Frankfurt) |
 | Domain / mail | `aviapp1.com` at Cloudflare; Resend Verified (sends via `send.aviapp1.com`); Supabase Auth Custom SMTP → Resend. All mail from `AVI.APP <noreply@aviapp1.com>` |
-| Migrations applied in Prod | through **0019** (manual apply; latest = `0019_notification_prefs.sql`) |
+| Migrations applied in Prod | through **0020** (manual apply; latest = `0020_stage12_task_numbers_board_and_client_handler.sql`) |
 | Vercel env (Production scope only) | `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `NEXT_PUBLIC_SITE_URL=https://www.aviapp1.com`, `MAIL_FROM`, `RESEND_API_KEY`, `BUG_REPORT_NOTIFY_EMAIL`. **No service role key.** |
 | Google OAuth | **enabled in Production** (DEV-017, 2026-07-11) — `/api/auth/oauth/google` PKCE; live-tested with an existing user |
 | Service role key | not used, not stored (intentional) |
@@ -179,7 +208,7 @@ authed API routes (`/api/me/profile`, `/api/me/notification-prefs`, …)→401.
 
 1. **`docs/DEV_TRACKING.md`** — the living backlog (DEV-XXX table + details).
 2. Memory (auto-loaded): `MEMORY.md` index → **`project_avi_app.md`** (the deep,
-   current project record — read the 2026-07-09/10 section + the DEV-009/018 notes).
+   current project record — read the Stage 12 / DEV-019 section near the top).
 3. **`avi-app-architecture` skill** — load before touching `web/src`.
 4. `docs/ARCHITECTURE.md` — canonical 21-section architecture doc.
 
