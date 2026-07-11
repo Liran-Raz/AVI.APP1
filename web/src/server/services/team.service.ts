@@ -40,6 +40,10 @@ export type MemberDTO = {
   role: UserRole;
   isActive: boolean;
   createdAt: string;
+  // Owner-granted access to the management dashboard (Stage 13 R4). Owners
+  // always have access; this flag governs non-owners. The team UI reads it to
+  // label the "פתח / חסום גישה לדשבורד" action.
+  dashboardAccess: boolean;
 };
 
 // Invitation DTO returned to the inviter immediately after creation.
@@ -91,6 +95,7 @@ function memberToDTO(row: TeamMemberRow): MemberDTO {
     role: row.role,
     isActive: row.isActive,
     createdAt: row.joinedAt,
+    dashboardAccess: row.dashboardAccess,
   };
 }
 
@@ -370,6 +375,45 @@ export async function deactivateMember(
 
   const updated = await membershipsRepo.setActive(targetUserId, orgId, false);
   return memberToDTO({ ...target, isActive: updated.is_active });
+}
+
+// ============================================================
+// setDashboardAccess (Stage 13 R4)
+// ============================================================
+//
+// Owner grants/revokes a member's access to the management dashboard. This is
+// an OWNER-ONLY relational invariant (not a grantable capability): only the
+// office owner decides who sees the dashboard, and the owner themselves always
+// has access (so the flag never applies to an owner row). CUTOVER-SAFE — reads
+// the enum activeRole, enforced regardless of any future DB grant map.
+export async function setDashboardAccess(
+  session: FullSession,
+  targetUserId: string,
+  enabled: boolean,
+): Promise<MemberDTO> {
+  if (session.activeRole !== "owner") {
+    throw new ForbiddenError("Only the owner can manage dashboard access");
+  }
+
+  const orgId = session.activeOrg.id;
+  const target = await teamRepo.findMemberInOrg(orgId, targetUserId);
+  if (!target) {
+    throw new NotFoundError("Member not found in your organization");
+  }
+  // Owners always have dashboard access — the flag is meaningless for them.
+  if (target.role === "owner") {
+    throw new ValidationError("Owner always has dashboard access");
+  }
+
+  const updated = await membershipsRepo.setDashboardAccess(
+    targetUserId,
+    orgId,
+    enabled,
+  );
+  return memberToDTO({
+    ...target,
+    dashboardAccess: updated.dashboard_access === true,
+  });
 }
 
 // ============================================================

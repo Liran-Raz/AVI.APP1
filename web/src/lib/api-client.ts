@@ -61,6 +61,7 @@ import type {
   UpdateRolePayload,
 } from "@/server/validators/roles.schema";
 import type { CreateBugReportPayload } from "@/server/validators/bug-reports.schema";
+import type { DashboardStatsDTO } from "@/server/services/dashboard.service";
 
 // Re-export DTOs so client components have one stable import path.
 export type { ClientDTO } from "@/server/services/clients.service";
@@ -112,6 +113,14 @@ export type {
   CreateBugReportPayload,
   ClientLogsPayload,
 } from "@/server/validators/bug-reports.schema";
+
+export type {
+  DashboardStatsDTO,
+  CountSlice,
+  MemberLoad,
+  TopClient,
+  WeekPoint,
+} from "@/server/services/dashboard.service";
 
 export type { RoleDTO, RoleGrantDTO } from "@/server/services/roles.service";
 export type {
@@ -426,6 +435,11 @@ export const apiClient = {
     // treats that as neutral, not as an outage).
     db: () => getJson<{ db: "ok" }>("/api/health/db"),
   },
+  dashboard: {
+    // Owner-only office analytics (Stage 13 R4). 403 for non-owners. The page
+    // server-renders this; the method exists for a future client-side refresh.
+    stats: () => getJson<DashboardStatsDTO>("/api/dashboard/stats"),
+  },
   team: {
     list: () => getJson<{ items: MemberDTO[] }>("/api/team"),
     // Create a new invitation. The response includes `inviteUrl` so
@@ -437,6 +451,12 @@ export const apiClient = {
       patchJson<MemberDTO>(
         `/api/team/members/${memberId}/role`,
         input,
+      ),
+    // Owner grants/revokes a member's dashboard access (Stage 13 R4).
+    setDashboardAccess: (memberId: string, enabled: boolean) =>
+      postJson<MemberDTO>(
+        `/api/team/members/${memberId}/dashboard-access`,
+        { enabled },
       ),
     deactivate: (memberId: string) =>
       postJson<MemberDTO>(`/api/team/members/${memberId}/deactivate`),

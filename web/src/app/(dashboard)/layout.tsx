@@ -5,6 +5,7 @@ import { getCurrentSession, type FullSession } from "@/server/auth/session";
 import { can } from "@/server/auth/authorization";
 import { PERMISSIONS } from "@/server/auth/permissions";
 import { isRoleManagementUiEnabled } from "@/server/auth/role-management.flags";
+import { canViewDashboard } from "@/server/services/dashboard.service";
 
 export default async function DashboardLayout({
   children,
@@ -31,6 +32,11 @@ export default async function DashboardLayout({
     isRoleManagementUiEnabled() &&
     can(session as FullSession, PERMISSIONS.ROLES_VIEW);
 
+  // Reveal the management dashboard nav — owner, or a member the owner granted
+  // access to (Stage 13 R4). Display-only; the /dashboard page + dashboard.service
+  // re-check with the same rule.
+  const showDashboardNav = canViewDashboard(session as FullSession);
+
   return (
     <AppShell
       profile={session.profile}
@@ -38,6 +44,7 @@ export default async function DashboardLayout({
       memberships={offices}
       activeOrgId={session.activeOrg.id}
       showRolesNav={showRolesNav}
+      showDashboardNav={showDashboardNav}
     >
       {children}
     </AppShell>
