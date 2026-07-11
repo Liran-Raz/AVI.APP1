@@ -1,17 +1,20 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import {
   CalendarDays,
   LayoutDashboard,
   ListChecks,
   LogOut,
+  Menu,
   MessageSquare,
   Settings,
   ShieldCheck,
   Users,
   UserSquare2,
+  X,
 } from "lucide-react";
 
 import { NotificationBell } from "@/components/notifications/notification-bell";
@@ -46,6 +49,17 @@ const NAV_ITEMS = [
   { href: "/settings", label: "הגדרות", icon: Settings },
 ];
 
+// Mobile bottom bar shows ONLY these 4 everyday screens (in this order — Liran's
+// pick) + a "תפריט" button that opens the full navigation drawer. Everything
+// else (צוות, דשבורד, תפקידים, הגדרות) lives in the drawer.
+const MOBILE_BAR_HREFS = ["/tasks", "/clients", "/calendar", "/messages"];
+
+const ROLE_LABELS: Record<"owner" | "admin" | "employee", string> = {
+  owner: "בעלים",
+  admin: "מנהל",
+  employee: "עובד",
+};
+
 export function AppShell({
   profile,
   organization,
@@ -74,6 +88,25 @@ export function AppShell({
   const pathname = usePathname();
   const router = useRouter();
 
+  // Mobile navigation drawer (slides in from the right, RTL). Closed by the
+  // scrim, the X, Escape, or tapping any nav link. Desktop is untouched.
+  const [drawerOpen, setDrawerOpen] = useState(false);
+
+  useEffect(() => {
+    if (!drawerOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setDrawerOpen(false);
+    };
+    document.addEventListener("keydown", onKey);
+    // Lock background scroll while the drawer is open.
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [drawerOpen]);
+
   // Compose the nav from the base items. Insertions are index-safe (found by
   // href) so they compose regardless of which flags are on.
   let navItems = [...NAV_ITEMS];
@@ -94,6 +127,16 @@ export function AppShell({
       ...navItems,
     ];
   }
+
+  // The 4 fixed bottom-bar tabs (none is role-gated, so NAV_ITEMS always has
+  // them). The drawer shows the FULL navItems list incl. gated entries.
+  const mobileBarItems = MOBILE_BAR_HREFS.map((href) =>
+    NAV_ITEMS.find((i) => i.href === href),
+  ).filter((i): i is (typeof NAV_ITEMS)[number] => Boolean(i));
+
+  // Drawer layout: everything except הגדרות, a separator, then הגדרות.
+  const drawerMainItems = navItems.filter((i) => i.href !== "/settings");
+  const drawerSettingsItem = navItems.find((i) => i.href === "/settings");
 
   async function handleLogout() {
     try {
@@ -221,21 +264,18 @@ export function AppShell({
           </div>
         </header>
 
-        {/* Mobile bottom nav — horizontally scrollable (RTL) so items keep a
-            normal tab size instead of being squeezed as more are added. ~5 fit
-            the viewport; the rest are reached by swiping right→left. */}
+        {/* Mobile bottom bar — the 4 everyday screens + a "תפריט" button that
+            opens the full navigation drawer. Fixed set, so no scrolling needed;
+            overflow-x-auto stays as a safety net for very narrow screens. */}
         <nav className="md:hidden order-last border-t border-border glass-mobilenav flex overflow-x-auto no-scrollbar sticky bottom-0 z-30">
-          {navItems.map((item) => {
+          {mobileBarItems.map((item) => {
             const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
             return (
               <Link
                 key={item.href}
                 href={item.href}
                 className={cn(
-                  // grow: when all tabs fit, spread to fill the bar; shrink-0 +
-                  // min-w + content-based width: when they don't, keep full size
-                  // and let the bar scroll. Labels never overflow their tab.
-                  "flex flex-col items-center justify-center gap-1 py-2 px-2 grow shrink-0 min-w-[4.5rem]",
+                  "flex flex-col items-center justify-center gap-1 py-2 px-1 grow shrink-0 min-w-[4rem]",
                   active ? "text-primary" : "text-muted-foreground",
                 )}
               >
@@ -244,7 +284,139 @@ export function AppShell({
               </Link>
             );
           })}
+          <button
+            type="button"
+            onClick={() => setDrawerOpen(true)}
+            aria-label="פתיחת תפריט הניווט"
+            className="flex flex-col items-center justify-center gap-1 py-2 px-1 grow shrink-0 min-w-[4rem] text-muted-foreground"
+          >
+            <Menu className="size-5" />
+            <span className="text-xs whitespace-nowrap">תפריט</span>
+          </button>
         </nav>
+
+        {/* Mobile navigation drawer (approved mockup: navy glass, like the
+            desktop sidebar). position:fixed → zero layout impact on the page
+            (no min-content propagation — see the min-w-0 lesson above). */}
+        <div
+          className={cn(
+            "md:hidden fixed inset-0 z-40 bg-black/45 backdrop-blur-[2px] transition-opacity duration-200",
+            drawerOpen ? "opacity-100" : "opacity-0 pointer-events-none",
+          )}
+          onClick={() => setDrawerOpen(false)}
+          aria-hidden
+        />
+        <aside
+          role="dialog"
+          aria-modal="true"
+          aria-label="תפריט ניווט"
+          className={cn(
+            "md:hidden fixed inset-y-0 right-0 z-50 w-[300px] max-w-[85vw] flex flex-col",
+            "glass-sidebar text-sidebar-foreground border-l border-white/10 shadow-2xl",
+            "transition-transform duration-300 ease-out",
+            drawerOpen ? "translate-x-0" : "translate-x-full",
+          )}
+        >
+          {/* Header: logo + office (or switcher) + close */}
+          <div className="flex items-center gap-2.5 px-4 pt-4 pb-3">
+            <div className="size-9 rounded-lg bg-primary text-primary-foreground flex items-center justify-center font-bold shadow-[0_8px_18px_-6px_rgba(2,106,255,0.6)]">
+              א
+            </div>
+            <div className="flex flex-col min-w-0">
+              <span className="font-bold text-sm text-white leading-tight">AVI.APP</span>
+              {memberships.length > 1 && activeOrgId ? (
+                <OfficeSwitcher offices={memberships} activeOrgId={activeOrgId} />
+              ) : (
+                <span className="text-xs text-sidebar-foreground/80 truncate">
+                  {organization.name}
+                </span>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={() => setDrawerOpen(false)}
+              aria-label="סגירת התפריט"
+              className="ms-auto p-2 rounded-md text-sidebar-foreground hover:bg-white/5 hover:text-white"
+            >
+              <X className="size-5" />
+            </button>
+          </div>
+
+          {/* Account card */}
+          <div className="mx-3 mb-2 rounded-xl bg-white/5 px-3 py-2.5 flex items-center gap-3">
+            <Avatar className="size-9">
+              <AvatarFallback className="bg-primary/15 text-[#8db8ff] text-xs font-medium">
+                {initials}
+              </AvatarFallback>
+            </Avatar>
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-white truncate">{profile.full_name}</p>
+              <p className="text-[11px] text-sidebar-foreground/75 truncate" dir="ltr">
+                {profile.email}
+              </p>
+            </div>
+            <span className="ms-auto shrink-0 rounded-full bg-white/10 px-2.5 py-0.5 text-[11px] text-white">
+              {ROLE_LABELS[profile.role]}
+            </span>
+          </div>
+
+          {/* Full navigation */}
+          <nav className="flex-1 overflow-y-auto px-3 py-2 space-y-1">
+            {drawerMainItems.map((item) => {
+              const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  onClick={() => setDrawerOpen(false)}
+                  className={cn(
+                    "flex items-center gap-3 px-3 py-2.5 rounded-md text-sm transition-colors",
+                    active
+                      ? "bg-sidebar-primary text-sidebar-primary-foreground font-medium nav-active-glow"
+                      : "text-sidebar-foreground hover:bg-white/5 hover:text-white",
+                  )}
+                >
+                  <item.icon className="size-4" />
+                  {item.label}
+                </Link>
+              );
+            })}
+            {drawerSettingsItem ? (
+              <>
+                <div className="border-t border-white/10 my-2" />
+                <Link
+                  href={drawerSettingsItem.href}
+                  onClick={() => setDrawerOpen(false)}
+                  className={cn(
+                    "flex items-center gap-3 px-3 py-2.5 rounded-md text-sm transition-colors",
+                    pathname === drawerSettingsItem.href ||
+                      pathname.startsWith(`${drawerSettingsItem.href}/`)
+                      ? "bg-sidebar-primary text-sidebar-primary-foreground font-medium nav-active-glow"
+                      : "text-sidebar-foreground hover:bg-white/5 hover:text-white",
+                  )}
+                >
+                  <drawerSettingsItem.icon className="size-4" />
+                  {drawerSettingsItem.label}
+                </Link>
+              </>
+            ) : null}
+          </nav>
+
+          {/* Footer: office code + logout */}
+          <div className="border-t border-white/10 px-3 pb-4 pt-2">
+            <div className="text-xs text-sidebar-foreground/70 px-3 pb-2">
+              קוד משרד: <span className="font-mono text-white/90">{organization.org_code}</span>
+            </div>
+            <button
+              type="button"
+              onClick={handleLogout}
+              className="flex w-full items-center gap-3 px-3 py-2.5 rounded-md text-sm text-red-300 hover:bg-red-500/10 transition-colors"
+            >
+              <LogOut className="size-4" />
+              התנתקות
+            </button>
+          </div>
+        </aside>
 
         <main className="flex-1 overflow-auto">{children}</main>
       </div>
