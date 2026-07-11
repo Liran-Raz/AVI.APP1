@@ -14,6 +14,8 @@ import {
 
 import { NotificationBell } from "@/components/notifications/notification-bell";
 import { ReportBugButton } from "@/components/bug-report/report-bug-button";
+import { TopbarClock } from "@/components/dashboard/topbar-clock";
+import { TopbarConnectivity } from "@/components/dashboard/topbar-connectivity";
 
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -145,10 +147,16 @@ export function AppShell({
             <div className="size-8 rounded-lg bg-primary text-primary-foreground flex items-center justify-center font-bold text-sm">
               א
             </div>
-            <span className="font-bold text-sm">{organization.name}</span>
+            {/* truncate: the topbar gained clock+indicators — a long office
+                name must not overflow the mobile header */}
+            <span className="font-bold text-sm truncate max-w-[32vw]">
+              {organization.name}
+            </span>
           </div>
 
           <div className="flex items-center gap-2 mr-auto">
+            <TopbarConnectivity />
+            <TopbarClock />
             <ReportBugButton />
             <NotificationBell />
 

@@ -417,6 +417,12 @@ export const apiClient = {
     markAllRead: () =>
       postJson<{ updatedCount: number }>("/api/notifications/read-all"),
   },
+  health: {
+    // Authenticated DB-connectivity probe for the topbar indicator.
+    // 200 = reachable; 503 = DB fault; 401 = signed out (the indicator
+    // treats that as neutral, not as an outage).
+    db: () => getJson<{ db: "ok" }>("/api/health/db"),
+  },
   team: {
     list: () => getJson<{ items: MemberDTO[] }>("/api/team"),
     // Create a new invitation. The response includes `inviteUrl` so
