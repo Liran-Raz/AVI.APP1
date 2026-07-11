@@ -28,10 +28,12 @@ import {
   apiClient,
   type ClientDTO,
   type ContactDTO,
+  type MemberDTO,
 } from "@/lib/api-client";
 import { hasCapability, PERMISSIONS, type Capability } from "@/lib/capabilities";
 import { cn } from "@/lib/utils";
 
+import { ClientFormDialog } from "./client-form-dialog";
 import { ContactFormDialog } from "./contact-form-dialog";
 import { formatBusinessType } from "./business-types";
 
@@ -39,6 +41,7 @@ type Props = {
   client: ClientDTO;
   initialContacts: ContactDTO[];
   handlerName: string | null; // resolved from client.handlingUserId server-side
+  members: MemberDTO[]; // for the client-edit dialog's "gorem metapel" picker
   capabilities: Capability[];
 };
 
@@ -46,6 +49,7 @@ export function ClientDetail({
   client,
   initialContacts,
   handlerName,
+  members,
   capabilities,
 }: Props) {
   // Display-only hint: contacts.delete is Owner/Manager-only. The server
@@ -59,6 +63,10 @@ export function ClientDetail({
   const [dialogOpen, setDialogOpen] = useState(false);
   const [dialogMode, setDialogMode] = useState<"create" | "edit">("create");
   const [dialogTarget, setDialogTarget] = useState<ContactDTO | null>(null);
+  // Separate dialog for editing the CLIENT itself (the state above is for
+  // client_contacts). onSaved refreshes the server component so both the client
+  // fields and the server-derived handlerName update.
+  const [clientEditOpen, setClientEditOpen] = useState(false);
 
   function handleAddClick() {
     setDialogMode("create");
@@ -145,6 +153,14 @@ export function ClientDetail({
             ) : (
               <Badge variant="outline">בארכיון</Badge>
             )}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setClientEditOpen(true)}
+            >
+              <Pencil className="size-4" />
+              ערוך
+            </Button>
           </div>
         </div>
 
@@ -219,6 +235,15 @@ export function ClientDetail({
         clientId={client.id}
         initial={dialogTarget}
         onSaved={() => handleSaved()}
+      />
+
+      <ClientFormDialog
+        open={clientEditOpen}
+        onOpenChange={setClientEditOpen}
+        mode="edit"
+        initial={client}
+        members={members}
+        onSaved={() => router.refresh()}
       />
     </div>
   );

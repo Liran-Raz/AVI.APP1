@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
   Archive,
@@ -69,6 +70,7 @@ export function ClientsPage({
 }) {
   const [items, setItems] = useState<ClientDTO[]>(initialItems);
   const [members] = useState<MemberDTO[]>(initialMembers);
+  const router = useRouter();
   // O(1) handler-name lookup by member id for the table + cards.
   const memberNameById = useMemo(() => {
     const m: Record<string, string> = {};
@@ -284,11 +286,16 @@ export function ClientsPage({
               </TableHeader>
               <TableBody>
                 {items.map((client) => (
-                  <TableRow key={client.id}>
+                  <TableRow
+                    key={client.id}
+                    onClick={() => router.push(`/clients/${client.id}`)}
+                    className="cursor-pointer"
+                  >
                     <TableCell className="font-medium">
                       <Link
                         href={`/clients/${client.id}`}
                         className="hover:underline focus:underline focus:outline-none"
+                        onClick={(e) => e.stopPropagation()}
                       >
                         {client.name}
                       </Link>
@@ -374,6 +381,7 @@ function ClientActionsMenu({
           variant="ghost"
           size="icon"
           aria-label={`פעולות עבור ${client.name}`}
+          onClick={(e) => e.stopPropagation()}
         >
           <MoreHorizontal className="size-4" />
         </Button>
@@ -422,13 +430,18 @@ function ClientCard({
   onArchive: (c: ClientDTO) => void;
   onRestore: (c: ClientDTO) => void;
 }) {
+  const router = useRouter();
   return (
-    <div className="rounded-lg border border-border glass-card shadow-card p-4">
+    <div
+      className="rounded-lg border border-border glass-card shadow-card p-4 cursor-pointer"
+      onClick={() => router.push(`/clients/${client.id}`)}
+    >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <Link
             href={`/clients/${client.id}`}
             className="font-medium hover:underline focus:underline focus:outline-none truncate block"
+            onClick={(e) => e.stopPropagation()}
           >
             {client.name}
           </Link>
@@ -452,6 +465,7 @@ function ClientCard({
               href={`tel:${client.phone}`}
               className="inline-flex items-center gap-2 text-foreground hover:text-primary"
               dir="ltr"
+              onClick={(e) => e.stopPropagation()}
             >
               <Phone className="size-3.5 text-muted-foreground" />
               {client.phone}
@@ -462,6 +476,7 @@ function ClientCard({
               href={`mailto:${client.email}`}
               className="flex items-center gap-2 text-foreground hover:text-primary break-all"
               dir="ltr"
+              onClick={(e) => e.stopPropagation()}
             >
               <Mail className="size-3.5 text-muted-foreground shrink-0" />
               {client.email}
