@@ -158,8 +158,13 @@ export function AppShell({
         </div>
       </aside>
 
-      {/* Main */}
-      <div className="flex-1 flex flex-col">
+      {/* Main. min-w-0 is CRITICAL: as a flex item this column defaults to
+          min-width:auto, so the scrollable mobile nav's min-content width
+          (6+ fixed-size tabs) would otherwise force the whole column wider
+          than the viewport — panning the entire page sideways on mobile.
+          With min-w-0 the column stays at viewport width and the nav
+          scrolls INTERNALLY as intended. */}
+      <div className="flex-1 flex flex-col min-w-0">
         {/* Top bar */}
         <header className="h-16 border-b border-border glass-topbar flex items-center justify-between px-4 md:px-6 sticky top-0 z-30">
           <div className="md:hidden flex items-center gap-2">
@@ -227,12 +232,15 @@ export function AppShell({
                 key={item.href}
                 href={item.href}
                 className={cn(
-                  "flex flex-col items-center justify-center gap-1 py-2 shrink-0 basis-1/5 min-w-[4.5rem] text-xs",
+                  // grow: when all tabs fit, spread to fill the bar; shrink-0 +
+                  // min-w + content-based width: when they don't, keep full size
+                  // and let the bar scroll. Labels never overflow their tab.
+                  "flex flex-col items-center justify-center gap-1 py-2 px-2 grow shrink-0 min-w-[4.5rem]",
                   active ? "text-primary" : "text-muted-foreground",
                 )}
               >
                 <item.icon className="size-5" />
-                <span className="text-[10px] whitespace-nowrap">{item.label}</span>
+                <span className="text-xs whitespace-nowrap">{item.label}</span>
               </Link>
             );
           })}
