@@ -116,6 +116,12 @@ export function TaskCard({
                 העבר ל-{STATUS_LABELS[next]}
               </DropdownMenuItem>
             )}
+            {task.status === "in_progress" && !isDeleted && !isArchived && (
+              <DropdownMenuItem onClick={() => onReturnToWork(task)}>
+                <RotateCcw className="size-4" />
+                החזר לחדשות
+              </DropdownMenuItem>
+            )}
             {task.status === "done" && !isDeleted && !isArchived && (
               <DropdownMenuItem onClick={() => onReturnToWork(task)}>
                 <RotateCcw className="size-4" />
