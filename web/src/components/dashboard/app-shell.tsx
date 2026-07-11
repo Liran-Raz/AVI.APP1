@@ -49,10 +49,10 @@ const NAV_ITEMS = [
   { href: "/settings", label: "הגדרות", icon: Settings },
 ];
 
-// Mobile bottom bar shows ONLY these 4 everyday screens (in this order — Liran's
+// Mobile bottom bar shows ONLY these 3 everyday screens (in this order — Liran's
 // pick) + a "תפריט" button that opens the full navigation drawer. Everything
-// else (צוות, דשבורד, תפקידים, הגדרות) lives in the drawer.
-const MOBILE_BAR_HREFS = ["/tasks", "/clients", "/calendar", "/messages"];
+// else (לוח שבועי, צוות, דשבורד, תפקידים, הגדרות) lives in the drawer.
+const MOBILE_BAR_HREFS = ["/tasks", "/clients", "/messages"];
 
 const ROLE_LABELS: Record<"owner" | "admin" | "employee", string> = {
   owner: "בעלים",
