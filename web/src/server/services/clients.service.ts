@@ -8,11 +8,12 @@ import {
 } from "@/server/auth/authorization";
 import { PERMISSIONS } from "@/server/auth/permissions";
 import * as clientsRepo from "@/server/repositories/clients.repository";
+import * as membershipsRepo from "@/server/repositories/memberships.repository";
 import type { Database } from "@/server/db/database.types";
 import type { Client } from "@/server/db/domain.types";
 
 type ClientUpdate = Database["public"]["Tables"]["clients"]["Update"];
-import { NotFoundError } from "@/server/errors/app-error";
+import { NotFoundError, ValidationError } from "@/server/errors/app-error";
 import type {
   CreateClientPayload,
   ListClientsQuery,
@@ -35,6 +36,7 @@ export type ClientDTO = {
   phone: string | null;
   address: string | null;
   notes: string | null;
+  handlingUserId: string | null;
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
@@ -50,6 +52,7 @@ function toDTO(row: Client): ClientDTO {
     phone: row.phone,
     address: row.address,
     notes: row.notes,
+    handlingUserId: row.handling_user_id,
     isActive: row.is_active,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -68,6 +71,25 @@ function toDTO(row: Client): ClientDTO {
 
 function clientContext(row: Client): { orgId: string; ownerId: string | null } {
   return { orgId: row.org_id, ownerId: row.created_by };
+}
+
+// F1-style cross-org guard for the handling staff member. A non-null handler
+// must be an ACTIVE member of the caller's org — mirrors tasks.service's
+// assertAssignmentRefsInOrg. null/undefined (no handler / clearing it) is allowed.
+async function assertHandlerInOrg(
+  session: FullSession,
+  handlingUserId: string | null | undefined,
+): Promise<void> {
+  if (!handlingUserId) return;
+  const membership = await membershipsRepo.findByUserAndOrg(
+    handlingUserId,
+    session.organization.id,
+  );
+  if (!membership || !membership.is_active) {
+    throw new ValidationError(
+      "Handling user is not an active member of this organization",
+    );
+  }
 }
 
 export async function listClients(
@@ -102,6 +124,7 @@ export async function createClient(
   input: CreateClientPayload,
 ): Promise<ClientDTO> {
   requirePermission(session, PERMISSIONS.CLIENTS_CREATE);
+  await assertHandlerInOrg(session, input.handlingUserId ?? null);
   const row = await clientsRepo.create({
     org_id: session.organization.id,
     created_by: session.profile.id,
@@ -112,6 +135,7 @@ export async function createClient(
     phone: input.phone ?? null,
     address: input.address ?? null,
     notes: input.notes ?? null,
+    handling_user_id: input.handlingUserId ?? null,
   });
   return toDTO(row);
 }
@@ -126,6 +150,11 @@ export async function updateClient(
   if (!existing) throw new NotFoundError("Client not found");
   requirePermission(session, PERMISSIONS.CLIENTS_EDIT, clientContext(existing));
 
+  // A non-null handler must be an active member of the org (F1-style).
+  if (patch.handlingUserId !== undefined) {
+    await assertHandlerInOrg(session, patch.handlingUserId);
+  }
+
   // Build a snake_case partial. Only include keys the caller explicitly sent
   // (zod leaves omitted keys as `undefined`). Null is meaningful — it clears
   // the field — and is preserved.
@@ -137,6 +166,8 @@ export async function updateClient(
   if (patch.phone !== undefined) dbPatch.phone = patch.phone;
   if (patch.address !== undefined) dbPatch.address = patch.address;
   if (patch.notes !== undefined) dbPatch.notes = patch.notes;
+  if (patch.handlingUserId !== undefined)
+    dbPatch.handling_user_id = patch.handlingUserId;
 
   const row = await clientsRepo.updateByIdAndOrgId(
     id,

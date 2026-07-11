@@ -29,6 +29,7 @@ import {
   BUSINESS_TYPES,
   type ClientDTO,
   type CreateClientPayload,
+  type MemberDTO,
   type UpdateClientPayload,
 } from "@/lib/api-client";
 import { BUSINESS_TYPE_LABELS } from "./business-types";
@@ -40,6 +41,7 @@ type Props = {
   onOpenChange: (open: boolean) => void;
   mode: Mode;
   initial: ClientDTO | null;
+  members: MemberDTO[]; // for the "handling staff member" picker
   onSaved: (saved: ClientDTO) => void;
 };
 
@@ -55,6 +57,7 @@ type FormState = {
   phone: string;
   address: string;
   notes: string;
+  handlingUserId: string; // NONE or a member UUID
 };
 
 function emptyState(): FormState {
@@ -66,6 +69,7 @@ function emptyState(): FormState {
     phone: "",
     address: "",
     notes: "",
+    handlingUserId: NONE,
   };
 }
 
@@ -78,6 +82,7 @@ function stateFromDTO(dto: ClientDTO): FormState {
     phone: dto.phone ?? "",
     address: dto.address ?? "",
     notes: dto.notes ?? "",
+    handlingUserId: dto.handlingUserId ?? NONE,
   };
 }
 
@@ -86,6 +91,7 @@ export function ClientFormDialog({
   onOpenChange,
   mode,
   initial,
+  members,
   onSaved,
 }: Props) {
   // Keying the inner form by mode + id ensures fresh state every time the
@@ -110,6 +116,7 @@ export function ClientFormDialog({
           key={formKey}
           mode={mode}
           initial={initial}
+          members={members}
           onCancel={() => onOpenChange(false)}
           onSaved={(saved) => {
             onSaved(saved);
@@ -124,11 +131,13 @@ export function ClientFormDialog({
 function ClientFormBody({
   mode,
   initial,
+  members,
   onCancel,
   onSaved,
 }: {
   mode: Mode;
   initial: ClientDTO | null;
+  members: MemberDTO[];
   onCancel: () => void;
   onSaved: (saved: ClientDTO) => void;
 }) {
@@ -142,6 +151,12 @@ function ClientFormBody({
     setForm((f) => ({ ...f, [key]: value }));
   }
 
+  // Active members, plus the currently-selected one even if it went inactive
+  // (so editing a client whose handler was deactivated still shows a name).
+  const handlerOptions = members.filter(
+    (m) => m.isActive || m.id === form.handlingUserId,
+  );
+
   function buildCreatePayload(): CreateClientPayload {
     return {
       name: form.name.trim(),
@@ -154,6 +169,7 @@ function ClientFormBody({
       phone: form.phone.trim() || null,
       address: form.address.trim() || null,
       notes: form.notes.trim() || null,
+      handlingUserId: form.handlingUserId === NONE ? null : form.handlingUserId,
     };
   }
 
@@ -172,6 +188,7 @@ function ClientFormBody({
       phone: form.phone.trim() || null,
       address: form.address.trim() || null,
       notes: form.notes.trim() || null,
+      handlingUserId: form.handlingUserId === NONE ? null : form.handlingUserId,
     };
   }
 
@@ -286,6 +303,27 @@ function ClientFormBody({
           onChange={(e) => set("address", e.target.value)}
           maxLength={500}
         />
+      </div>
+
+      <div className="space-y-2 sm:col-span-2">
+        <Label htmlFor="client-handler">גורם מטפל</Label>
+        <Select
+          value={form.handlingUserId}
+          onValueChange={(v) => set("handlingUserId", v)}
+        >
+          <SelectTrigger id="client-handler" className="w-full">
+            <SelectValue placeholder="בחר גורם מטפל" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={NONE}>ללא גורם מטפל</SelectItem>
+            {handlerOptions.map((m) => (
+              <SelectItem key={m.id} value={m.id}>
+                {m.fullName}
+                {!m.isActive ? " (לא פעיל)" : ""}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
 
       <div className="space-y-2 sm:col-span-2">

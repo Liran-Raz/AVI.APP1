@@ -150,6 +150,7 @@ export type Database = {
           created_at: string
           created_by: string | null
           email: string | null
+          handling_user_id: string | null
           id: string
           is_active: boolean
           name: string
@@ -165,6 +166,7 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           email?: string | null
+          handling_user_id?: string | null
           id?: string
           is_active?: boolean
           name: string
@@ -180,6 +182,7 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           email?: string | null
+          handling_user_id?: string | null
           id?: string
           is_active?: boolean
           name?: string
@@ -193,6 +196,13 @@ export type Database = {
           {
             foreignKeyName: "clients_created_by_fkey"
             columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "clients_handling_user_id_fkey"
+            columns: ["handling_user_id"]
             isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
