@@ -1,4 +1,4 @@
-# AVI.APP — Session Handoff (2026-07-11)
+# AVI.APP — Session Handoff (2026-07-12)
 
 **You are continuing AVI.APP from a fresh chat.** Read this top-to-bottom first.
 Deep detail lives in the auto-loaded memory (`project_avi_app.md`) and in the
@@ -15,10 +15,11 @@ are + how to continue" brief.
   shadcn/ui · Supabase (Postgres + Auth + Realtime + RLS) · Vercel.
 - **Production:** **https://www.aviapp1.com** (Cloudflare→Vercel; old
   `avi-app-1.vercel.app` still alive). Auto-deploys on push to `main`.
-- **`main` at `102402e`** (2026-07-11) — **Stage 12 (DEV-019) fully shipped**:
-  topbar indicators + clock, task numbering + optional due date + mandatory
-  assignee, the personal board, the client handling-person, and a "back to new"
-  action. Run `git log -5` to confirm current tip.
+- **`main` at `8a99918`** (2026-07-12) — **Stage 13 (DEV-020) fully shipped** (all
+  3 rounds): clients-UX + task-flow bell notifications (mig `0021`); the owner
+  analytics **dashboard** + owner-granted **per-member dashboard access** (`0022`)
+  + a new bilingual invite email; and the **office chat** ("הודעות" — group + DMs,
+  3s polling, `0023`). Stage 12 (DEV-019) shipped just before. `git log -8` to confirm.
 - **User = Liran**, Hebrew-speaking founder / product owner. Reply in Hebrew.
   He drives product; Claude drives implementation. Honest tradeoffs, not hype.
 - **Nothing is pending/blocked.** No open bugs. Next work is optional backlog.
@@ -28,8 +29,26 @@ are + how to continue" brief.
 ## 📍 Where we are (everything below is LIVE in production + verified)
 
 The email/domain/auth story, the "Liquid Glass" redesign, the full settings
-screen, and **Stage 12** are all shipped. Recent arc (newest first):
+screen, **Stage 12**, and **Stage 13** are all shipped. Recent arc (newest first):
 
+- **DEV-020 — Stage 13 (2nd client-meeting requirements) COMPLETE (2026-07-12).**
+  3 rounds. **Round 1** (PR #59/#60) — clicking a client row/card opens the client
+  page; an "ערוך" button on client detail; migration `0021` (`notify_on_task_status_change`
+  trigger — bell the CREATOR on completion + the ASSIGNEE on return-to-new, skip the
+  actor); + live board refresh (3s cheap-signal poll `GET /api/tasks/version`) + faster
+  bell. **Round 2 (R4)** (PR #61) — owner **analytics dashboard** (`/dashboard`: KPI
+  cards + hand-rolled SVG/CSS charts from `tasks`, no dashboard migration) + **per-member
+  dashboard access** the owner grants from the Team screen (migration `0022` =
+  `organization_memberships.dashboard_access`; gate `canViewDashboard` = owner || flag;
+  non-authorized member → friendly "no access" screen, not 404) + a new **bilingual
+  EN+HE invite email**. **Round 3 (R5)** (PR #62) — **office chat** under `/messages`:
+  office-group feed + 1:1 DMs, 3s polling (paused when hidden), migration `0023`
+  (`messages` table, immutable, RLS via `user_is_active_member_of`) + the mobile bottom
+  nav made horizontally scrollable so icons keep a normal size. **A pre-merge adversarial
+  multi-agent security review of R5 found 0 security issues but caught 6 correctness bugs
+  the mocked tests missed (incl. a timestamp-format bug that silently killed live
+  delivery) — all fixed before merge.** 384 tests; each Vercel deploy verified + prod
+  smoke green. Cross-user chat QA is Liran's, in Production.
 - **DEV-019 — Stage 12 (client-meeting requirements) COMPLETE (2026-07-11).**
   Migration `0020` (per-org task numbers + `task_counters` + SECURITY-DEFINER
   assign trigger, `due_at` nullable, `received`→`new` + assigned→creator remaps,
@@ -71,11 +90,11 @@ screen, and **Stage 12** are all shipped. Recent arc (newest first):
   sends from `aviapp1.com`), reset-password PKCE fix, Custom SMTP, same-password
   indicator. All Production-verified.
 
-**Migrations applied to Production: through `0020`** (0001–0020; `0020` =
-Stage 12 task numbers + client handler). Legacy `role`
-enum (owner/admin/employee) + `ROLE_GRANTS` are still the SOLE authority; the
-custom-roles infra (0011–0017) is live but 100% DORMANT (Liran chose to stop —
-DEV-001/003).
+**Migrations applied to Production: through `0023`** (0001–0023; `0021` task-flow
+notifications · `0022` per-member `dashboard_access` · `0023` chat `messages`).
+Legacy `role` enum (owner/admin/employee) + `ROLE_GRANTS` are still the SOLE
+authority; the custom-roles infra (0011–0017) is live but 100% DORMANT (Liran
+chose to stop — DEV-001/003).
 
 ---
 
@@ -92,9 +111,9 @@ Nothing is blocked. Pick from the backlog when Liran wants:
   authoritative cutover. Infra is live but dormant; the existing 3-tier
   Owner/Manager/Employee system already meets the client's need.
 
-**DEV-017 (Google OAuth) + DEV-019 (Stage 12) DONE 2026-07-11** — see above.
-Highest value left: **DEV-013** (2FA, financial data) or **DEV-015** (staging —
-would've saved the deploy pain below).
+**DEV-020 (Stage 13) DONE 2026-07-12; DEV-019 (Stage 12) + DEV-017 (Google OAuth)
+DONE 2026-07-11** — see above. Highest value left: **DEV-013** (2FA, financial
+data) or **DEV-015** (staging — would've saved the deploy pain below).
 
 ---
 
@@ -169,6 +188,21 @@ Critical do-nots:
   (`task_counters`: RLS on, 0 policies, all client grants revoked) — the per-org
   counter is untouchable by any client role, yet task inserts allocate `#NNNN`
   atomically. Trigger firing does NOT need EXECUTE grants.
+- **Repo-mocked unit tests give FALSE confidence on client↔DB serialization +
+  client polling logic.** R5's chat shipped 8 green tests, but an adversarial
+  multi-agent review over the REAL wire format caught 6 bugs — the worst:
+  `z.string().datetime()` REJECTS a Postgres `timestamptz` (PostgREST serializes
+  `+00:00`, never a bare `Z`) → every chat poll 400'd → live delivery was silently
+  DEAD. **Use `.datetime({ offset: true })` for any DB-timestamp round-trip** (as
+  `roles.schema.ts` already does) and add a real VALIDATOR test, not just a
+  repo-mocked service test.
+- **Per-conversation polling** needs a `cancelled` flag inside ONE effect keyed on
+  the conversation (else a stale switch-response renders into the wrong thread +
+  clobbers the cursor); the delta cursor uses **`gte` + client id-dedup** (not
+  `gt`, or same-timestamp messages drop); optimistic-send must NOT advance the cursor.
+- **An adversarial pre-merge review pays for itself** on anything with RLS / a new
+  client-facing table / real-time-ish behavior — it caught what a green test suite
+  could not. Worth running before merging a security- or correctness-sensitive feature.
 
 ---
 
@@ -180,7 +214,7 @@ Critical do-nots:
 | GitHub repo | https://github.com/Liran-Raz/AVI.APP1 |
 | Supabase project ref | `xsuvwihfcxinorzutbve` (region Central EU / Frankfurt) |
 | Domain / mail | `aviapp1.com` at Cloudflare; Resend Verified (sends via `send.aviapp1.com`); Supabase Auth Custom SMTP → Resend. All mail from `AVI.APP <noreply@aviapp1.com>` |
-| Migrations applied in Prod | through **0020** (manual apply; latest = `0020_stage12_task_numbers_board_and_client_handler.sql`) |
+| Migrations applied in Prod | through **0023** (manual apply; `0021` task-flow notify · `0022` `dashboard_access` · `0023` chat `messages`) |
 | Vercel env (Production scope only) | `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `NEXT_PUBLIC_SITE_URL=https://www.aviapp1.com`, `MAIL_FROM`, `RESEND_API_KEY`, `BUG_REPORT_NOTIFY_EMAIL`. **No service role key.** |
 | Google OAuth | **enabled in Production** (DEV-017, 2026-07-11) — `/api/auth/oauth/google` PKCE; live-tested with an existing user |
 | Service role key | not used, not stored (intentional) |
@@ -199,8 +233,8 @@ npm run lint          # clean
 npm run build         # PASS
 ```
 Unauth production smoke (no login needed):
-`GET /api/health`→200 · `/login`→200 · `/settings /tasks /clients /team`→307 ·
-authed API routes (`/api/me/profile`, `/api/me/notification-prefs`, …)→401.
+`GET /api/health`→200 · `/login`→200 · `/settings /tasks /clients /team /messages
+/dashboard`→307 · authed API routes (`/api/messages`, `/api/dashboard/stats`, …)→401.
 
 ---
 
