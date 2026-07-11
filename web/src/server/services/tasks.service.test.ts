@@ -24,6 +24,7 @@ vi.mock("@/server/repositories/tasks.repository", () => ({
   setStatus: vi.fn(),
   setArchived: vi.fn(),
   setDeleted: vi.fn(),
+  getBoardVersion: vi.fn(),
 }));
 vi.mock("@/server/repositories/profile.repository", () => ({
   findByUserId: vi.fn(),
@@ -47,6 +48,7 @@ import {
   archiveTask,
   createTask,
   deleteTask,
+  getBoardVersion,
   getTask,
   listTasks,
   restoreTask,
@@ -486,5 +488,21 @@ describe("Round C — personal board authorization", () => {
     await expect(
       listTasks(makeSession("owner"), boardQuery("ghost-user")),
     ).rejects.toBeInstanceOf(ValidationError);
+  });
+});
+
+// ============================================================
+// Stage 13 — live board version signal
+// ============================================================
+
+describe("getBoardVersion — org-scoped change signal", () => {
+  it("returns the repo's version string for the caller's org", async () => {
+    vi.mocked(tasksRepo.getBoardVersion).mockResolvedValue(
+      "5:2026-07-11T00:00:00.000Z",
+    );
+    await expect(getBoardVersion(makeSession("employee"))).resolves.toEqual({
+      version: "5:2026-07-11T00:00:00.000Z",
+    });
+    expect(tasksRepo.getBoardVersion).toHaveBeenCalledWith("org-1");
   });
 });

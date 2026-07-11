@@ -40,6 +40,7 @@ import {
   PRIORITY_LABELS,
   kanbanColumnForStatus,
 } from "./task-utils";
+import { useLiveTaskRefresh } from "./use-live-task-refresh";
 
 const SEARCH_DEBOUNCE_MS = 300;
 const PRIORITY_FILTER_ALL = "__all__";
@@ -130,6 +131,10 @@ export function TasksPage({
     }
     void refetch();
   }, [refetch]);
+
+  // Live board refresh: pick up other users' task changes automatically (~3s,
+  // cheap version-signal, paused when the tab is hidden).
+  useLiveTaskRefresh(() => void refetch());
 
   function handleCreateClick() {
     setDialogMode("create");
