@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { EmailDeliveryError } from "@/server/email/email-errors";
 import type { FullSession } from "@/server/auth/session";
-import type { Invitation } from "@/server/db/domain.types";
+import type { Invitation, OrganizationMembership } from "@/server/db/domain.types";
 import type { UserRole } from "@/server/db/domain.types";
 
 // Mock all of team.service's heavy dependencies so importing it does not
@@ -28,6 +28,7 @@ vi.mock("@/server/repositories/memberships.repository", () => ({
   countActiveOwners: vi.fn(),
   updateRole: vi.fn(),
   setActive: vi.fn(),
+  setDashboardAccess: vi.fn(),
 }));
 vi.mock("@/server/services/emails.service", () => ({
   sendInvitationEmail: vi.fn(),
@@ -43,8 +44,13 @@ import {
   deactivateMember,
   inviteMember,
   listMembers,
+  setDashboardAccess,
 } from "@/server/services/team.service";
-import { ForbiddenError, NotFoundError } from "@/server/errors/app-error";
+import {
+  ForbiddenError,
+  NotFoundError,
+  ValidationError,
+} from "@/server/errors/app-error";
 
 const session = {
   user: { id: "owner-user" },
@@ -183,6 +189,7 @@ function memberRow(o: {
   userId: string;
   role: UserRole;
   isActive?: boolean;
+  dashboardAccess?: boolean;
 }): TeamMemberRow {
   return {
     userId: o.userId,
@@ -191,6 +198,7 @@ function memberRow(o: {
     role: o.role,
     isActive: o.isActive ?? true,
     joinedAt: "2026-01-01T00:00:00.000Z",
+    dashboardAccess: o.dashboardAccess ?? false,
   };
 }
 
@@ -349,5 +357,58 @@ describe("deactivateMember — permission + invariants", () => {
     await expect(deactivateMember(ownerS, "ghost")).rejects.toBeInstanceOf(
       NotFoundError,
     );
+  });
+});
+
+describe("setDashboardAccess — owner grants/revokes dashboard access (R4)", () => {
+  beforeEach(() => {
+    vi.mocked(teamRepo.findMemberInOrg).mockResolvedValue(
+      memberRow({ userId: "emp-1", role: "employee" }),
+    );
+    vi.mocked(membershipsRepo.setDashboardAccess).mockResolvedValue(
+      { dashboard_access: true } as unknown as OrganizationMembership,
+    );
+  });
+
+  it("owner can grant a member dashboard access", async () => {
+    const dto = await setDashboardAccess(ownerS, "emp-1", true);
+    expect(membershipsRepo.setDashboardAccess).toHaveBeenCalledWith(
+      "emp-1",
+      "org-1",
+      true,
+    );
+    expect(dto.dashboardAccess).toBe(true);
+  });
+
+  it("owner can revoke a member's access", async () => {
+    vi.mocked(membershipsRepo.setDashboardAccess).mockResolvedValue(
+      { dashboard_access: false } as unknown as OrganizationMembership,
+    );
+    const dto = await setDashboardAccess(ownerS, "emp-1", false);
+    expect(dto.dashboardAccess).toBe(false);
+  });
+
+  it("a non-owner (admin) cannot manage dashboard access", async () => {
+    await expect(
+      setDashboardAccess(adminS, "emp-1", true),
+    ).rejects.toBeInstanceOf(ForbiddenError);
+    expect(membershipsRepo.setDashboardAccess).not.toHaveBeenCalled();
+  });
+
+  it("404 when the target is not a member of the org", async () => {
+    vi.mocked(teamRepo.findMemberInOrg).mockResolvedValue(null);
+    await expect(
+      setDashboardAccess(ownerS, "ghost", true),
+    ).rejects.toBeInstanceOf(NotFoundError);
+  });
+
+  it("refuses to toggle an owner (owners always have access)", async () => {
+    vi.mocked(teamRepo.findMemberInOrg).mockResolvedValue(
+      memberRow({ userId: "owner-2", role: "owner" }),
+    );
+    await expect(
+      setDashboardAccess(ownerS, "owner-2", false),
+    ).rejects.toBeInstanceOf(ValidationError);
+    expect(membershipsRepo.setDashboardAccess).not.toHaveBeenCalled();
   });
 });

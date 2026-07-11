@@ -161,40 +161,100 @@ export async function sendInvitationEmail(
   ].join("\n");
 
   const html = `
-<!doctype html>
-<html lang="he" dir="rtl">
-  <body style="font-family: Arial, Helvetica, sans-serif; background: #f7f9fb; padding: 24px; margin: 0;">
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
-      <tr>
-        <td>
-          <table role="presentation" align="center" cellpadding="0" cellspacing="0" style="max-width: 560px; background: #ffffff; border-radius: 16px; padding: 32px; box-shadow: 0 4px 20px rgba(10,25,47,0.05);">
-            <tr><td>
-              <h1 style="margin: 0 0 12px 0; color: #191c1e; font-size: 22px;">הוזמנת להצטרף למשרד</h1>
-              <p style="margin: 0 0 24px 0; color: #44474d; font-size: 14px;">
-                ${escapeHtml(input.inviterName)} מזמין/מזמינה אותך להצטרף למשרד
-                <strong>${escapeHtml(input.orgName)}</strong> ב-AVI.APP כ<strong>${escapeHtml(roleHe)}</strong>.
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>You've been invited - AVI.APP</title>
+</head>
+<body style="margin: 0; padding: 0; background-color: #f8fafc; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; -webkit-font-smoothing: antialiased; width: 100% !important;">
+  <table border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color: #f8fafc; padding: 40px 20px;">
+    <tr>
+      <td align="center">
+        <table border="0" cellpadding="0" cellspacing="0" width="100%" style="max-width: 500px; background-color: #ffffff; border-radius: 12px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03); overflow: hidden; border: 1px solid #e2e8f0;">
+
+          <tr>
+            <td style="background-color: #0f172a; padding: 32px; text-align: center;">
+              <h1 style="color: #ffffff; margin: 0; font-size: 24px; font-weight: 700; letter-spacing: -0.5px;">AVI<span style="color: #38bdf8;">.APP</span></h1>
+            </td>
+          </tr>
+
+          <tr>
+            <td dir="ltr" style="padding: 40px 32px 20px 32px; background-color: #ffffff; text-align: left;">
+              <h2 style="color: #0f172a; margin: 0 0 14px 0; font-size: 20px; font-weight: 600; line-height: 28px;">You've been invited</h2>
+              <p style="color: #475569; font-size: 15px; line-height: 24px; margin: 0 0 24px 0;">
+                <strong style="color: #0f172a;">${escapeHtml(input.inviterName)}</strong> has invited you to join <strong style="color: #0f172a;">${escapeHtml(input.orgName)}</strong> on AVI.APP. Click the button below to accept your invitation and set up your account.
               </p>
-              <table role="presentation" cellpadding="0" cellspacing="0" style="width: 100%; border: 1px solid #c5c6cd; border-radius: 12px; padding: 16px; margin-bottom: 24px;">
-                <tr><td style="padding: 4px 0;">
-                  <p style="margin: 0; color: #44474d; font-size: 12px;">תוקף ההזמנה</p>
-                  <p style="margin: 0; color: #191c1e; font-size: 14px;">עד ${escapeHtml(expiry)}</p>
-                </td></tr>
+
+              <table border="0" cellpadding="0" cellspacing="0" width="100%">
+                <tr>
+                  <td align="left" style="padding-bottom: 20px;">
+                    <a href="${input.inviteUrl}" target="_blank" style="display: inline-block; background-color: #2563eb; color: #ffffff; font-weight: 600; font-size: 15px; text-decoration: none; padding: 14px 30px; border-radius: 8px; text-align: center;">
+                      Accept Invitation
+                    </a>
+                  </td>
+                </tr>
               </table>
-              <a href="${input.inviteUrl}" style="display: inline-block; background: #0054cc; color: #ffffff; text-decoration: none; padding: 12px 24px; border-radius: 9999px; font-weight: 600; font-size: 14px;">אשר/י את ההזמנה</a>
-              <p style="margin: 24px 0 0 0; color: #75777e; font-size: 12px;">
-                אם הקישור לא עובד, העתק/י אותו לדפדפן ידנית:<br/>
-                <span dir="ltr" style="word-break: break-all;">${escapeHtml(input.inviteUrl)}</span>
+            </td>
+          </tr>
+
+          <tr>
+            <td style="padding: 0 32px;">
+              <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 0;">
+            </td>
+          </tr>
+
+          <tr>
+            <td dir="rtl" style="padding: 32px 32px 20px 32px; background-color: #ffffff; text-align: right; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
+              <h2 style="color: #0f172a; margin: 0 0 14px 0; font-size: 20px; font-weight: 600; line-height: 28px;">הוזמנת להצטרף לצוות</h2>
+              <p style="color: #475569; font-size: 15px; line-height: 24px; margin: 0 0 16px 0;">
+                שלום, <strong style="color: #0f172a;">${escapeHtml(input.inviterName)}</strong> מזמין/מזמינה אותך להצטרף למשרד <strong style="color: #0f172a;">${escapeHtml(input.orgName)}</strong> ב-AVI.APP כ<strong style="color: #0f172a;">${escapeHtml(roleHe)}</strong>. לחצ/י על הכפתור למטה כדי לאשר את ההזמנה ולהתחיל להשתמש בשירות:
               </p>
-              <p style="margin: 24px 0 0 0; color: #75777e; font-size: 12px;">
-                אם לא ביקשת את ההזמנה הזו, אפשר להתעלם מהמייל הזה.
+              <p style="color: #64748b; font-size: 13px; line-height: 20px; margin: 0 0 24px 0;">
+                ההזמנה תקפה עד ${escapeHtml(expiry)}.
               </p>
-              <p style="margin: 32px 0 0 0; color: #75777e; font-size: 12px;">AVI.APP</p>
-            </td></tr>
-          </table>
-        </td>
-      </tr>
-    </table>
-  </body>
+
+              <table border="0" cellpadding="0" cellspacing="0" width="100%">
+                <tr>
+                  <td align="right" style="padding-bottom: 20px;">
+                    <a href="${input.inviteUrl}" target="_blank" style="display: inline-block; background-color: #2563eb; color: #ffffff; font-weight: 600; font-size: 15px; text-decoration: none; padding: 14px 30px; border-radius: 8px; text-align: center;">
+                      קבלת ההזמנה והצטרפות
+                    </a>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <tr>
+            <td style="padding: 0 32px 32px 32px; background-color: #ffffff;">
+              <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 0 0 20px 0;">
+              <p dir="rtl" style="color: #64748b; font-size: 12px; line-height: 18px; margin: 0 0 6px 0; text-align: right;">
+                אם הלחצנים אינם עובדים, ניתן להעתיק ולהדביק את הקישור הבא בדפדפן:
+              </p>
+              <p dir="ltr" style="color: #64748b; font-size: 12px; line-height: 18px; margin: 0 0 12px 0; text-align: left;">
+                If the buttons don't work, copy and paste this URL into your browser:
+              </p>
+              <p dir="ltr" style="margin: 0; text-align: left;">
+                <a href="${input.inviteUrl}" style="color: #2563eb; text-decoration: underline; word-break: break-all; font-size: 12px; line-height: 18px;">${escapeHtml(input.inviteUrl)}</a>
+              </p>
+            </td>
+          </tr>
+
+          <tr>
+            <td style="background-color: #f1f5f9; padding: 24px 32px; text-align: center; border-top: 1px solid #e2e8f0;">
+              <p style="color: #64748b; font-size: 12px; line-height: 18px; margin: 0;">
+                © 2026 AVI.APP. All rights reserved.
+              </p>
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
 </html>
 `;
 

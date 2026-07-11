@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
   CalendarDays,
+  LayoutDashboard,
   ListChecks,
   LogOut,
   Settings,
@@ -49,6 +50,7 @@ export function AppShell({
   memberships = [],
   activeOrgId,
   showRolesNav = false,
+  showDashboardNav = false,
   children,
 }: {
   profile: Profile;
@@ -62,19 +64,34 @@ export function AppShell({
   // ROLES_MANAGEMENT_UI flag AND the viewer's roles.view capability. Default
   // false => nav is byte-for-byte unchanged.
   showRolesNav?: boolean;
+  // Reveal the "דשבורד" (owner analytics) nav entry — owner-only (Stage 13 R4).
+  // Gated server-side by activeRole === "owner". Default false => unchanged.
+  showDashboardNav?: boolean;
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
   const router = useRouter();
 
-  // Insert the roles entry between "צוות" (team) and "הגדרות" (settings).
-  const navItems = showRolesNav
-    ? [
-        ...NAV_ITEMS.slice(0, 4),
-        { href: "/roles", label: "תפקידים", icon: ShieldCheck },
-        ...NAV_ITEMS.slice(4),
-      ]
-    : NAV_ITEMS;
+  // Compose the nav from the base items. Insertions are index-safe (found by
+  // href) so they compose regardless of which flags are on.
+  let navItems = [...NAV_ITEMS];
+  // Roles: between "צוות" (team) and "הגדרות" (settings).
+  if (showRolesNav) {
+    const teamIdx = navItems.findIndex((i) => i.href === "/team");
+    const at = teamIdx >= 0 ? teamIdx + 1 : navItems.length;
+    navItems = [
+      ...navItems.slice(0, at),
+      { href: "/roles", label: "תפקידים", icon: ShieldCheck },
+      ...navItems.slice(at),
+    ];
+  }
+  // Dashboard: owner-only, first entry.
+  if (showDashboardNav) {
+    navItems = [
+      { href: "/dashboard", label: "דשבורד", icon: LayoutDashboard },
+      ...navItems,
+    ];
+  }
 
   async function handleLogout() {
     try {

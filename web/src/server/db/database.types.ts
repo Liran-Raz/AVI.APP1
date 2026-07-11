@@ -331,6 +331,7 @@ export type Database = {
       organization_memberships: {
         Row: {
           created_at: string
+          dashboard_access: boolean
           id: string
           is_active: boolean
           joined_at: string
@@ -342,6 +343,7 @@ export type Database = {
         }
         Insert: {
           created_at?: string
+          dashboard_access?: boolean
           id?: string
           is_active?: boolean
           joined_at?: string
@@ -353,6 +355,7 @@ export type Database = {
         }
         Update: {
           created_at?: string
+          dashboard_access?: boolean
           id?: string
           is_active?: boolean
           joined_at?: string

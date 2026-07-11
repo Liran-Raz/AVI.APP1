@@ -31,6 +31,9 @@ export type Membership = {
   orgCode: string;
   role: UserRole;
   isActive: boolean;
+  // Owner-granted access to the management dashboard (Stage 13 R4). Owners
+  // always have access regardless of this flag; it governs non-owners.
+  dashboardAccess: boolean;
 };
 
 // The session model the rest of the code relies on.
@@ -106,6 +109,9 @@ export async function getCurrentSession(): Promise<Session | null> {
         orgCode: org.org_code,
         role: m.role,
         isActive: m.is_active,
+        // Defensive read: the column may be absent at runtime before migration
+        // 0022 is applied (findByUserId uses select *), so undefined → false.
+        dashboardAccess: m.dashboard_access === true,
       };
     })
     .filter((m): m is Membership => m !== null);

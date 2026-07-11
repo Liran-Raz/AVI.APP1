@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
   Crown,
+  LayoutDashboard,
   Loader2,
   MoreHorizontal,
   Plus,
@@ -75,6 +76,7 @@ type RowPerms = {
   isSelf: boolean;
   canChangeRole: boolean;
   canDeactivate: boolean;
+  canManageDashboard: boolean;
   showMenu: boolean;
 };
 
@@ -99,7 +101,16 @@ function rowPerms(
     m.isActive &&
     (currentUserRole === "owner" ||
       (currentUserRole === "admin" && !isOwner));
-  return { isSelf, canChangeRole, canDeactivate, showMenu: canChangeRole || canDeactivate };
+  // Dashboard access (Stage 13 R4): OWNER-ONLY, on any non-owner row (owners
+  // always have access, so no toggle on an owner). Server re-enforces.
+  const canManageDashboard = currentUserRole === "owner" && !isOwner;
+  return {
+    isSelf,
+    canChangeRole,
+    canDeactivate,
+    canManageDashboard,
+    showMenu: canChangeRole || canDeactivate || canManageDashboard,
+  };
 }
 
 export function TeamPage({
@@ -141,6 +152,34 @@ export function TeamPage({
         prev.map((m) => (m.id === updated.id ? updated : m)),
       );
       toast.success("התפקיד עודכן");
+    } catch (err) {
+      if (err instanceof ApiError) {
+        toast.error(err.message);
+      } else {
+        toast.error("שגיאה לא צפויה");
+        console.error(err);
+      }
+    } finally {
+      setBusyMemberId(null);
+    }
+  }
+
+  async function handleToggleDashboardAccess(member: MemberDTO) {
+    if (busyMemberId) return;
+    setBusyMemberId(member.id);
+    try {
+      const updated = await apiClient.team.setDashboardAccess(
+        member.id,
+        !member.dashboardAccess,
+      );
+      setMembers((prev) =>
+        prev.map((m) => (m.id === updated.id ? updated : m)),
+      );
+      toast.success(
+        updated.dashboardAccess
+          ? "הגישה לדשבורד נפתחה"
+          : "הגישה לדשבורד נחסמה",
+      );
     } catch (err) {
       if (err instanceof ApiError) {
         toast.error(err.message);
@@ -265,11 +304,19 @@ export function TeamPage({
                         </Badge>
                       </TableCell>
                       <TableCell>
-                        {m.isActive ? (
-                          <Badge variant="secondary">פעיל</Badge>
-                        ) : (
-                          <Badge variant="outline">לא פעיל</Badge>
-                        )}
+                        <div className="flex items-center gap-2 flex-wrap">
+                          {m.isActive ? (
+                            <Badge variant="secondary">פעיל</Badge>
+                          ) : (
+                            <Badge variant="outline">לא פעיל</Badge>
+                          )}
+                          {m.dashboardAccess && m.role !== "owner" && (
+                            <Badge variant="outline" className="gap-1">
+                              <LayoutDashboard className="size-3" />
+                              דשבורד
+                            </Badge>
+                          )}
+                        </div>
                       </TableCell>
                       <TableCell>
                         <MemberActionsMenu
@@ -278,6 +325,7 @@ export function TeamPage({
                           busy={busyMemberId === m.id}
                           onChangeRole={handleChangeRole}
                           onDeactivate={handleDeactivate}
+                          onToggleDashboard={handleToggleDashboardAccess}
                         />
                       </TableCell>
                     </TableRow>
@@ -300,6 +348,7 @@ export function TeamPage({
                   busy={busyMemberId === m.id}
                   onChangeRole={handleChangeRole}
                   onDeactivate={handleDeactivate}
+                  onToggleDashboard={handleToggleDashboardAccess}
                 />
               );
             })}
@@ -328,12 +377,14 @@ function MemberActionsMenu({
   busy,
   onChangeRole,
   onDeactivate,
+  onToggleDashboard,
 }: {
   member: MemberDTO;
   perms: RowPerms;
   busy: boolean;
   onChangeRole: (m: MemberDTO, role: AssignableRole) => void;
   onDeactivate: (m: MemberDTO) => void;
+  onToggleDashboard: (m: MemberDTO) => void;
 }) {
   if (!perms.showMenu) return null;
   return (
@@ -368,6 +419,17 @@ function MemberActionsMenu({
             הפוך לעובד
           </DropdownMenuItem>
         )}
+        {perms.canManageDashboard && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={() => onToggleDashboard(member)}>
+              <LayoutDashboard className="size-4" />
+              {member.dashboardAccess
+                ? "חסום גישה לדשבורד"
+                : "פתח גישה לדשבורד"}
+            </DropdownMenuItem>
+          </>
+        )}
         {perms.canDeactivate && (
           <>
             <DropdownMenuSeparator />
@@ -392,12 +454,14 @@ function MemberCard({
   busy,
   onChangeRole,
   onDeactivate,
+  onToggleDashboard,
 }: {
   member: MemberDTO;
   perms: RowPerms;
   busy: boolean;
   onChangeRole: (m: MemberDTO, role: AssignableRole) => void;
   onDeactivate: (m: MemberDTO) => void;
+  onToggleDashboard: (m: MemberDTO) => void;
 }) {
   return (
     <div
@@ -431,9 +495,10 @@ function MemberCard({
           busy={busy}
           onChangeRole={onChangeRole}
           onDeactivate={onDeactivate}
+          onToggleDashboard={onToggleDashboard}
         />
       </div>
-      <div className="flex items-center gap-2 mt-3">
+      <div className="flex items-center gap-2 mt-3 flex-wrap">
         <Badge variant="outline" className="gap-1">
           {roleIcon(m.role)}
           {ROLE_LABEL[m.role]}
@@ -442,6 +507,12 @@ function MemberCard({
           <Badge variant="secondary">פעיל</Badge>
         ) : (
           <Badge variant="outline">לא פעיל</Badge>
+        )}
+        {m.dashboardAccess && m.role !== "owner" && (
+          <Badge variant="outline" className="gap-1">
+            <LayoutDashboard className="size-3" />
+            דשבורד
+          </Badge>
         )}
       </div>
     </div>

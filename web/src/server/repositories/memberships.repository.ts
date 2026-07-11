@@ -103,3 +103,22 @@ export async function setActive(
   if (error) throw error;
   return data as unknown as OrganizationMembership;
 }
+
+// Owner-granted dashboard access for a member (Stage 13 R4). Requires
+// migration 0022 (organization_memberships.dashboard_access).
+export async function setDashboardAccess(
+  userId: string,
+  orgId: string,
+  access: boolean,
+): Promise<OrganizationMembership> {
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("organization_memberships")
+    .update({ dashboard_access: access })
+    .eq("user_id", userId)
+    .eq("org_id", orgId)
+    .select("*")
+    .single();
+  if (error) throw error;
+  return data as unknown as OrganizationMembership;
+}

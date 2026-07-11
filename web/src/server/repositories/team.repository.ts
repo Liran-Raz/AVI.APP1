@@ -21,6 +21,8 @@ export type TeamMemberRow = {
   role: UserRole;
   isActive: boolean;
   joinedAt: string;
+  // Owner-granted dashboard access (Stage 13 R4). Owners always have it.
+  dashboardAccess: boolean;
 };
 
 type MembershipLite = {
@@ -28,6 +30,7 @@ type MembershipLite = {
   role: UserRole;
   is_active: boolean;
   joined_at: string;
+  dashboard_access: boolean;
 };
 
 type ProfileLite = {
@@ -46,7 +49,7 @@ export async function findMembersByOrgId(
 
   const { data: membershipData } = await supabase
     .from("organization_memberships")
-    .select("user_id, role, is_active, joined_at")
+    .select("user_id, role, is_active, joined_at, dashboard_access")
     .eq("org_id", orgId)
     .order("joined_at", { ascending: true });
 
@@ -71,6 +74,7 @@ export async function findMembersByOrgId(
       role: m.role,
       isActive: m.is_active,
       joinedAt: m.joined_at,
+      dashboardAccess: m.dashboard_access === true,
     };
   });
 }
@@ -86,7 +90,7 @@ export async function findMemberInOrg(
 
   const { data: membershipRow } = await supabase
     .from("organization_memberships")
-    .select("user_id, role, is_active, joined_at")
+    .select("user_id, role, is_active, joined_at, dashboard_access")
     .eq("org_id", orgId)
     .eq("user_id", userId)
     .maybeSingle();
@@ -109,6 +113,7 @@ export async function findMemberInOrg(
     role: membership.role,
     isActive: membership.is_active,
     joinedAt: membership.joined_at,
+    dashboardAccess: membership.dashboard_access === true,
   };
 }
 

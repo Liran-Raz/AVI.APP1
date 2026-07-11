@@ -35,6 +35,17 @@ export const changeRoleSchema = z.object({
 export type ChangeRolePayload = z.infer<typeof changeRoleSchema>;
 
 // ============================================================
+// Dashboard access (Stage 13 R4) — owner grants/revokes a member's access
+// to the management dashboard.
+// ============================================================
+
+export const setDashboardAccessSchema = z.object({
+  enabled: z.boolean(),
+});
+
+export type SetDashboardAccessPayload = z.infer<typeof setDashboardAccessSchema>;
+
+// ============================================================
 // Accept invitation (raw token from URL)
 // ============================================================
 
