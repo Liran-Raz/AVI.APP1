@@ -23,6 +23,9 @@ export type ListTasksOptions = {
   priority?: TaskPriority;
   assignedTo?: string;
   clientId?: string;
+  // Personal board (Stage 12): a validated user id. When set, overrides
+  // status/assignedTo with the board's OR-predicate (see below).
+  boardFor?: string;
   lifecycle: LifecycleFilter;
   dueBefore?: string;
   dueAfter?: string;
@@ -39,7 +42,8 @@ export async function findManyByOrgId(
     .from("tasks")
     .select("*")
     .eq("org_id", orgId)
-    .order("due_at", { ascending: true });
+    .order("due_at", { ascending: true })
+    .order("created_at", { ascending: true });
 
   // Lifecycle composition.
   // We apply explicit filters even though partial indexes already gate
@@ -60,14 +64,25 @@ export async function findManyByOrgId(
       break;
   }
 
-  if (opts.status && opts.status.length > 0) {
-    query = query.in("status", opts.status);
+  // Personal board (Stage 12 Round C) overrides status/assignedTo: a task sits
+  // on its ASSIGNEE's board while new/in_progress, and returns to its CREATOR's
+  // board once done. boardFor is a validated uuid (no injection). This .or()
+  // composes with the search .or() below via AND (separate top-level groups).
+  if (opts.boardFor) {
+    const uid = opts.boardFor;
+    query = query.or(
+      `and(assigned_to.eq.${uid},status.in.(new,in_progress)),and(creator_id.eq.${uid},status.eq.done)`,
+    );
+  } else {
+    if (opts.status && opts.status.length > 0) {
+      query = query.in("status", opts.status);
+    }
+    if (opts.assignedTo) {
+      query = query.eq("assigned_to", opts.assignedTo);
+    }
   }
   if (opts.priority) {
     query = query.eq("priority", opts.priority);
-  }
-  if (opts.assignedTo) {
-    query = query.eq("assigned_to", opts.assignedTo);
   }
   if (opts.clientId) {
     query = query.eq("client_id", opts.clientId);

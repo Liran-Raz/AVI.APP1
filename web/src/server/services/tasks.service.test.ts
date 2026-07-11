@@ -4,7 +4,11 @@ import { EmailDeliveryError } from "@/server/email/email-errors";
 import type { FullSession } from "@/server/auth/session";
 import type { Task } from "@/server/db/domain.types";
 import type { UserRole } from "@/server/db/domain.types";
-import { NotFoundError, ValidationError } from "@/server/errors/app-error";
+import {
+  ForbiddenError,
+  NotFoundError,
+  ValidationError,
+} from "@/server/errors/app-error";
 
 // Mock all of tasks.service's heavy dependencies so importing it does not
 // boot env validation or the Supabase client, and so we can drive the
@@ -64,6 +68,7 @@ const session = {
 
 const task = {
   id: "task-123",
+  task_number: 42,
   org_id: "org-1",
   creator_id: "creator-profile",
   title: "BODY_TITLE_SECRET",
@@ -192,6 +197,7 @@ function makeSession(role: UserRole, userId = `${role}-user`): FullSession {
 function taskRow(assignedTo: string | null = null): Task {
   return {
     id: "task-123",
+    task_number: 7,
     org_id: "org-1",
     creator_id: "creator-profile",
     title: "T",
@@ -380,5 +386,105 @@ describe("Phase 4 — task authorization (all roles retain current behavior)", (
         transitionStatus(makeSession("owner"), "ghost", "done"),
       ).rejects.toBeInstanceOf(NotFoundError);
     });
+  });
+});
+
+// ============================================================
+// Stage 12 Round B — create defaults + DTO exposure
+// ============================================================
+
+describe("Round B — create forces status + exposes new DTO fields", () => {
+  beforeEach(() => {
+    vi.mocked(membershipsRepo.findByUserAndOrg).mockResolvedValue({
+      is_active: true,
+    } as unknown as Awaited<ReturnType<typeof membershipsRepo.findByUserAndOrg>>);
+    vi.mocked(clientsRepo.findByIdAndOrgId).mockResolvedValue({
+      id: "cl1",
+      org_id: "org-1",
+    } as unknown as Awaited<ReturnType<typeof clientsRepo.findByIdAndOrgId>>);
+    vi.mocked(sendTaskAssignmentEmail).mockResolvedValue(undefined);
+    // Echo the insert back as the stored row so the DTO can be inspected.
+    vi.mocked(tasksRepo.create).mockImplementation(
+      async (input) =>
+        ({ ...taskRow(), ...input, task_number: 7 }) as unknown as Task,
+    );
+  });
+
+  it("forces status 'new' and persists a null due date", async () => {
+    const dto = await createTask(makeSession("owner"), {
+      title: "X",
+      dueAt: null,
+      assignedTo: "owner-user", // self-assign (== creator)
+    } as Parameters<typeof createTask>[1]);
+
+    const createArg = vi.mocked(tasksRepo.create).mock.calls[0]?.[0] as
+      | { status: string; due_at: string | null }
+      | undefined;
+    expect(createArg?.status).toBe("new");
+    expect(createArg?.due_at).toBeNull();
+
+    // DTO exposes the Stage 12 fields.
+    expect(dto.dueAt).toBeNull();
+    expect(dto.taskNumber).toBe(7);
+    expect(dto.creatorId).toBe("owner-user");
+  });
+
+  it("self-assignment sends no assignment email", async () => {
+    const s = makeSession("owner"); // owner-user == creator
+    await createTask(s, {
+      title: "X",
+      assignedTo: s.profile.id,
+    } as Parameters<typeof createTask>[1]);
+    expect(sendTaskAssignmentEmail).not.toHaveBeenCalled();
+  });
+});
+
+// ============================================================
+// Stage 12 Round C — personal-board authorization
+// ============================================================
+
+describe("Round C — personal board authorization", () => {
+  beforeEach(() => {
+    vi.mocked(tasksRepo.findManyByOrgId).mockResolvedValue([]);
+    vi.mocked(membershipsRepo.findByUserAndOrg).mockResolvedValue({
+      is_active: true,
+    } as unknown as Awaited<ReturnType<typeof membershipsRepo.findByUserAndOrg>>);
+  });
+
+  const boardQuery = (boardFor: string) =>
+    ({
+      lifecycle: "active",
+      boardFor,
+      limit: 50,
+      offset: 0,
+    }) as unknown as Parameters<typeof listTasks>[1];
+
+  it.each(ROLES)("%s can view their OWN board", async (role) => {
+    const s = makeSession(role);
+    await expect(listTasks(s, boardQuery(s.profile.id))).resolves.toEqual({
+      items: [],
+    });
+  });
+
+  it("an employee CANNOT view another member's board → Forbidden", async () => {
+    await expect(
+      listTasks(makeSession("employee"), boardQuery("someone-else")),
+    ).rejects.toBeInstanceOf(ForbiddenError);
+  });
+
+  it.each(["owner", "admin"] as const)(
+    "%s can view another member's board",
+    async (role) => {
+      await expect(
+        listTasks(makeSession(role), boardQuery("someone-else")),
+      ).resolves.toEqual({ items: [] });
+    },
+  );
+
+  it("owner viewing a NON-member's board → ValidationError", async () => {
+    vi.mocked(membershipsRepo.findByUserAndOrg).mockResolvedValue(null);
+    await expect(
+      listTasks(makeSession("owner"), boardQuery("ghost-user")),
+    ).rejects.toBeInstanceOf(ValidationError);
   });
 });

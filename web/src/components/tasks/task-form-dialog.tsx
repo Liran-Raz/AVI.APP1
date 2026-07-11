@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -27,16 +28,15 @@ import {
   ApiError,
   apiClient,
   TASK_PRIORITIES,
-  TASK_STATUSES,
   type ClientDTO,
   type CreateTaskPayload,
+  type MemberDTO,
   type TaskDTO,
   type UpdateTaskPayload,
 } from "@/lib/api-client";
 
 import {
   PRIORITY_LABELS,
-  STATUS_LABELS,
   defaultDueAtLocal,
   isoToLocalDatetime,
   localDatetimeToISO,
@@ -50,6 +50,11 @@ type Props = {
   mode: Mode;
   initial: TaskDTO | null;
   clients: ClientDTO[]; // for the client picker
+  members: MemberDTO[]; // for the "assignee" picker
+  currentUserId: string; // default assignee on create
+  // When opened from the calendar, default the due-date checkbox ON (a task
+  // with no due date wouldn't appear on the calendar).
+  defaultWithDueDate?: boolean;
   onSaved: (saved: TaskDTO) => void;
 };
 
@@ -58,30 +63,36 @@ const NONE = "__none__"; // Radix Select doesn't allow empty string
 type FormState = {
   title: string;
   description: string;
+  hasDueDate: boolean;
   dueAtLocal: string; // datetime-local format
-  status: TaskDTO["status"];
   priority: TaskDTO["priority"];
+  assignedTo: string; // a member UUID (mandatory)
   clientId: string; // NONE or a UUID
 };
 
-function emptyState(): FormState {
+function emptyState(
+  currentUserId: string,
+  defaultWithDueDate: boolean,
+): FormState {
   return {
     title: "",
     description: "",
+    hasDueDate: defaultWithDueDate,
     dueAtLocal: defaultDueAtLocal(),
-    status: "new",
     priority: "normal",
+    assignedTo: currentUserId,
     clientId: NONE,
   };
 }
 
-function stateFromTask(t: TaskDTO): FormState {
+function stateFromTask(t: TaskDTO, currentUserId: string): FormState {
   return {
     title: t.title,
     description: t.description ?? "",
-    dueAtLocal: isoToLocalDatetime(t.dueAt),
-    status: t.status,
+    hasDueDate: t.dueAt !== null,
+    dueAtLocal: t.dueAt ? isoToLocalDatetime(t.dueAt) : defaultDueAtLocal(),
     priority: t.priority,
+    assignedTo: t.assignedTo ?? currentUserId,
     clientId: t.clientId ?? NONE,
   };
 }
@@ -92,6 +103,9 @@ export function TaskFormDialog({
   mode,
   initial,
   clients,
+  members,
+  currentUserId,
+  defaultWithDueDate = false,
   onSaved,
 }: Props) {
   const formKey = mode === "edit" ? (initial?.id ?? "edit") : "create";
@@ -115,6 +129,9 @@ export function TaskFormDialog({
           mode={mode}
           initial={initial}
           clients={clients}
+          members={members}
+          currentUserId={currentUserId}
+          defaultWithDueDate={defaultWithDueDate}
           onCancel={() => onOpenChange(false)}
           onSaved={(saved) => {
             onSaved(saved);
@@ -130,17 +147,25 @@ function TaskFormBody({
   mode,
   initial,
   clients,
+  members,
+  currentUserId,
+  defaultWithDueDate,
   onCancel,
   onSaved,
 }: {
   mode: Mode;
   initial: TaskDTO | null;
   clients: ClientDTO[];
+  members: MemberDTO[];
+  currentUserId: string;
+  defaultWithDueDate: boolean;
   onCancel: () => void;
   onSaved: (saved: TaskDTO) => void;
 }) {
   const [form, setForm] = useState<FormState>(() =>
-    mode === "edit" && initial ? stateFromTask(initial) : emptyState(),
+    mode === "edit" && initial
+      ? stateFromTask(initial, currentUserId)
+      : emptyState(currentUserId, defaultWithDueDate),
   );
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -149,16 +174,20 @@ function TaskFormBody({
     setForm((f) => ({ ...f, [key]: value }));
   }
 
+  // Active members, plus the currently-selected one even if it went inactive
+  // (so editing a task assigned to a deactivated member still shows a name).
+  const assigneeOptions = members.filter(
+    (m) => m.isActive || m.id === form.assignedTo,
+  );
+
   function buildCreatePayload(): CreateTaskPayload {
-    const dueAt = localDatetimeToISO(form.dueAtLocal);
     return {
       title: form.title.trim(),
       description: form.description.trim() || null,
-      dueAt,
-      status: form.status,
+      dueAt: form.hasDueDate ? localDatetimeToISO(form.dueAtLocal) : null,
       priority: form.priority,
+      assignedTo: form.assignedTo,
       clientId: form.clientId === NONE ? null : form.clientId,
-      // assignedTo intentionally omitted in Round A — single-user org
     };
   }
 
@@ -166,9 +195,9 @@ function TaskFormBody({
     return {
       title: form.title.trim(),
       description: form.description.trim() || null,
-      dueAt: localDatetimeToISO(form.dueAtLocal),
-      status: form.status,
+      dueAt: form.hasDueDate ? localDatetimeToISO(form.dueAtLocal) : null,
       priority: form.priority,
+      assignedTo: form.assignedTo,
       clientId: form.clientId === NONE ? null : form.clientId,
     };
   }
@@ -179,8 +208,12 @@ function TaskFormBody({
       setError("כותרת המשימה היא שדה חובה");
       return;
     }
-    if (!form.dueAtLocal) {
-      setError("תאריך יעד הוא שדה חובה");
+    if (!form.assignedTo) {
+      setError("יש לבחור איש צוות לביצוע");
+      return;
+    }
+    if (form.hasDueDate && !form.dueAtLocal) {
+      setError("יש לבחור תאריך יעד או לבטל את הסימון");
       return;
     }
     setSubmitting(true);
@@ -237,19 +270,6 @@ function TaskFormBody({
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="task-due">
-          תאריך יעד <span className="text-destructive">*</span>
-        </Label>
-        <Input
-          id="task-due"
-          type="datetime-local"
-          value={form.dueAtLocal}
-          onChange={(e) => set("dueAtLocal", e.target.value)}
-          required
-        />
-      </div>
-
-      <div className="space-y-2">
         <Label htmlFor="task-priority">עדיפות</Label>
         <Select
           value={form.priority}
@@ -269,25 +289,29 @@ function TaskFormBody({
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="task-status">סטטוס</Label>
+        <Label htmlFor="task-assignee">
+          איש צוות לביצוע <span className="text-destructive">*</span>
+        </Label>
         <Select
-          value={form.status}
-          onValueChange={(v) => set("status", v as TaskDTO["status"])}
+          value={form.assignedTo}
+          onValueChange={(v) => set("assignedTo", v)}
         >
-          <SelectTrigger id="task-status" className="w-full">
-            <SelectValue />
+          <SelectTrigger id="task-assignee" className="w-full">
+            <SelectValue placeholder="בחר איש צוות" />
           </SelectTrigger>
           <SelectContent>
-            {TASK_STATUSES.map((s) => (
-              <SelectItem key={s} value={s}>
-                {STATUS_LABELS[s]}
+            {assigneeOptions.map((m) => (
+              <SelectItem key={m.id} value={m.id}>
+                {m.fullName}
+                {m.id === currentUserId ? " (אני)" : ""}
+                {!m.isActive ? " (לא פעיל)" : ""}
               </SelectItem>
             ))}
           </SelectContent>
         </Select>
       </div>
 
-      <div className="space-y-2">
+      <div className="space-y-2 sm:col-span-2">
         <Label htmlFor="task-client">לקוח (אופציונלי)</Label>
         <Select
           value={form.clientId}
@@ -305,6 +329,28 @@ function TaskFormBody({
             ))}
           </SelectContent>
         </Select>
+      </div>
+
+      <div className="space-y-2 sm:col-span-2">
+        <div className="flex items-center gap-2">
+          <Checkbox
+            id="task-has-due"
+            checked={form.hasDueDate}
+            onCheckedChange={(c) => set("hasDueDate", c === true)}
+          />
+          <Label htmlFor="task-has-due" className="cursor-pointer">
+            האם להוסיף תאריך יעד?
+          </Label>
+        </div>
+        {form.hasDueDate && (
+          <Input
+            id="task-due"
+            type="datetime-local"
+            value={form.dueAtLocal}
+            onChange={(e) => set("dueAtLocal", e.target.value)}
+            aria-label="תאריך יעד"
+          />
+        )}
       </div>
 
       {error && (

@@ -532,15 +532,18 @@ export type Database = {
           creator_id: string
           deleted_at: string | null
           description: string | null
-          due_at: string
+          due_at: string | null
           id: string
           org_id: string
           priority: Database["public"]["Enums"]["task_priority"]
           status: Database["public"]["Enums"]["task_status"]
+          task_number: number
           title: string
           updated_at: string
         }
         Insert: {
+          // task_number is trigger-owned (assign_task_number, migration 0020) —
+          // never supplied by the app on insert, always allocated per org.
           archived_at?: string | null
           assigned_to?: string | null
           client_id?: string | null
@@ -549,7 +552,7 @@ export type Database = {
           creator_id: string
           deleted_at?: string | null
           description?: string | null
-          due_at: string
+          due_at?: string | null
           id?: string
           org_id: string
           priority?: Database["public"]["Enums"]["task_priority"]
@@ -558,6 +561,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          // task_number is immutable (the 0020 trigger restores it on update).
           archived_at?: string | null
           assigned_to?: string | null
           client_id?: string | null
@@ -566,7 +570,7 @@ export type Database = {
           creator_id?: string
           deleted_at?: string | null
           description?: string | null
-          due_at?: string
+          due_at?: string | null
           id?: string
           org_id?: string
           priority?: Database["public"]["Enums"]["task_priority"]

@@ -26,6 +26,8 @@ import {
   type ClientDTO,
   type LifecycleFilter,
   type ListTasksQuery,
+  type MemberDTO,
+  type MeRole,
   type TaskDTO,
   type TaskPriorityValue,
 } from "@/lib/api-client";
@@ -45,11 +47,25 @@ const PRIORITY_FILTER_ALL = "__all__";
 type Props = {
   initialItems: TaskDTO[];
   initialClients: ClientDTO[]; // for picker + name lookup
+  initialMembers: MemberDTO[]; // for the assignee picker
+  currentUserId: string; // default assignee on create + own board
+  currentUserRole: MeRole; // owner/admin may view another member's board
 };
 
-export function TasksPage({ initialItems, initialClients }: Props) {
+export function TasksPage({
+  initialItems,
+  initialClients,
+  initialMembers,
+  currentUserId,
+  currentUserRole,
+}: Props) {
   const [items, setItems] = useState<TaskDTO[]>(initialItems);
   const [clients] = useState<ClientDTO[]>(initialClients);
+  const [members] = useState<MemberDTO[]>(initialMembers);
+  // Personal board (Stage 12 Round C): default to the viewer's own board.
+  const [boardFor, setBoardFor] = useState<string>(currentUserId);
+  const canSelectBoard =
+    currentUserRole === "owner" || currentUserRole === "admin";
   const [searchInput, setSearchInput] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [lifecycle, setLifecycle] = useState<LifecycleFilter>("active");
@@ -89,6 +105,9 @@ export function TasksPage({ initialItems, initialClients }: Props) {
             ? undefined
             : (priorityFilter as TaskPriorityValue),
         search: debouncedSearch || undefined,
+        // The personal board applies only to the active view; the flat
+        // lifecycle views (archived/deleted/all) stay office-wide.
+        boardFor: lifecycle === "active" ? boardFor : undefined,
       };
       const result = await apiClient.tasks.list(query);
       setItems(result.items);
@@ -102,7 +121,7 @@ export function TasksPage({ initialItems, initialClients }: Props) {
     } finally {
       setLoading(false);
     }
-  }, [lifecycle, priorityFilter, debouncedSearch]);
+  }, [lifecycle, priorityFilter, debouncedSearch, boardFor]);
 
   useEffect(() => {
     if (isFirstRun.current) {
@@ -125,11 +144,12 @@ export function TasksPage({ initialItems, initialClients }: Props) {
   }
 
   async function handleAdvance(task: TaskDTO) {
-    // Move to next status (new -> received -> in_progress -> done)
+    // Move to next status (new -> in_progress -> done). 'received' is retired
+    // (Stage 12); any legacy row also advances straight to in_progress.
     let nextStatus: TaskDTO["status"] | null;
     switch (task.status) {
       case "new":
-        nextStatus = "received";
+        nextStatus = "in_progress";
         break;
       case "received":
         nextStatus = "in_progress";
@@ -211,6 +231,22 @@ export function TasksPage({ initialItems, initialClients }: Props) {
     }
   }
 
+  async function handleReturnToWork(task: TaskDTO) {
+    // A completed task (in the creator's "הושלמו" column) goes back to the
+    // assignee's "חדשות" — status → new.
+    try {
+      await apiClient.tasks.setStatus(task.id, { status: "new" });
+      toast.success("המשימה הוחזרה לביצוע");
+      await refetch();
+    } catch (err) {
+      if (err instanceof ApiError) toast.error(`שגיאה: ${err.message}`);
+      else {
+        toast.error("שגיאה לא צפויה");
+        console.error(err);
+      }
+    }
+  }
+
   function handleSaved(saved: TaskDTO) {
     setItems((prev) => {
       const idx = prev.findIndex((t) => t.id === saved.id);
@@ -243,6 +279,7 @@ export function TasksPage({ initialItems, initialClients }: Props) {
     onUnarchive: handleUnarchive,
     onDelete: handleDelete,
     onRestore: handleRestore,
+    onReturnToWork: handleReturnToWork,
   };
 
   return (
@@ -253,7 +290,7 @@ export function TasksPage({ initialItems, initialClients }: Props) {
             תור משימות
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            לביצוע, בתהליך והושלם — ממוין לפי תאריך יעד
+            הלוח האישי — חדשות, במעקב והושלמו
           </p>
         </div>
         <Button onClick={handleCreateClick}>
@@ -273,6 +310,24 @@ export function TasksPage({ initialItems, initialClients }: Props) {
             maxLength={100}
           />
         </div>
+
+        {canSelectBoard && lifecycle === "active" && (
+          <Select value={boardFor} onValueChange={setBoardFor}>
+            <SelectTrigger className="w-[190px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={currentUserId}>הלוח שלי</SelectItem>
+              {members
+                .filter((m) => m.isActive && m.id !== currentUserId)
+                .map((m) => (
+                  <SelectItem key={m.id} value={m.id}>
+                    הלוח של: {m.fullName}
+                  </SelectItem>
+                ))}
+            </SelectContent>
+          </Select>
+        )}
 
         <Select
           value={priorityFilter}
@@ -348,6 +403,8 @@ export function TasksPage({ initialItems, initialClients }: Props) {
         mode={dialogMode}
         initial={dialogTarget}
         clients={clients}
+        members={members}
+        currentUserId={currentUserId}
         onSaved={handleSaved}
       />
     </div>
@@ -365,6 +422,7 @@ type CardHandlers = {
   onUnarchive: (t: TaskDTO) => void;
   onDelete: (t: TaskDTO) => void;
   onRestore: (t: TaskDTO) => void;
+  onReturnToWork: (t: TaskDTO) => void;
 };
 
 function KanbanView({
@@ -472,7 +530,7 @@ function EmptyState({
       </div>
       <h2 className="font-semibold text-lg mb-2">עוד אין משימות בתור</h2>
       <p className="text-muted-foreground text-sm max-w-md mx-auto mb-4">
-        צור את המשימה הראשונה — תיכנס לעמודה &quot;לביצוע&quot;.
+        צור את המשימה הראשונה — תיכנס לעמודה &quot;חדשות&quot; של איש הביצוע.
       </p>
       <Button onClick={onAddTask}>
         <Plus className="size-4" />

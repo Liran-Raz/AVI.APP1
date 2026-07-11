@@ -57,6 +57,10 @@ export function WeekGrid({
   const byDay: Positioned[][] = Array.from({ length: 7 }, () => []);
   const outsideWindow: TaskDTO[] = [];
   for (const t of tasks) {
+    // Tasks with no due date don't belong on the calendar. The list query is
+    // windowed by dueAfter/dueBefore so nulls don't arrive here anyway — this
+    // is a type guard now that dueAt is nullable (Stage 12).
+    if (!t.dueAt) continue;
     const pos = gridPosition(t.dueAt, weekStart);
     if (!pos) {
       outsideWindow.push(t);
