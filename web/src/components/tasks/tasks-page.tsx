@@ -232,11 +232,12 @@ export function TasksPage({
   }
 
   async function handleReturnToWork(task: TaskDTO) {
-    // A completed task (in the creator's "הושלמו" column) goes back to the
-    // assignee's "חדשות" — status → new.
+    // Move a task back to its assignee's "חדשות" (status → new). Used from the
+    // "הושלמו" column (a done task returns for rework) and from "במעקב" (send an
+    // in-progress task back to the new queue).
     try {
       await apiClient.tasks.setStatus(task.id, { status: "new" });
-      toast.success("המשימה הוחזרה לביצוע");
+      toast.success("המשימה הוחזרה לחדשות");
       await refetch();
     } catch (err) {
       if (err instanceof ApiError) toast.error(`שגיאה: ${err.message}`);
