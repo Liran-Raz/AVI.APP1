@@ -46,6 +46,7 @@ export default async function ClientDetailRoute({ params }: Props) {
       client={client}
       initialContacts={contactsResult.items}
       handlerName={handlerName}
+      members={membersResult.items}
       capabilities={resolveCapabilities(fullSession)}
     />
   );
