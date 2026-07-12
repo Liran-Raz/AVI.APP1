@@ -31,6 +31,19 @@ are + how to continue" brief.
 The email/domain/auth story, the "Liquid Glass" redesign, the full settings
 screen, **Stage 12**, and **Stage 13** are all shipped. Recent arc (newest first):
 
+- **DEV-014 — mute the in-app bell badge on task assignment (2026-07-12).** A
+  per-user "פעמון בשיוך משימה" toggle beside the email toggle (Settings →
+  התראות). **Soft mute (badge-only):** the assignment notification still shows
+  in the bell list — it just no longer counts toward the red unread badge.
+  Status-change bells (completion/return) always badge. **No migration** — a new
+  `bellOnTaskAssignment` key in the existing `notification_prefs` jsonb;
+  suppression is a read-layer filter on the unread COUNT only
+  (`notifications.service.mutedBellTypes` → `countUnreadByUserId excludeTypes`),
+  the DB triggers untouched, non-destructive. [PR #68]; tsc/lint/397 tests green.
+- **DEV-021 — mobile navigation drawer (2026-07-12).** Navy-glass right-side
+  drawer (full nav + account card + office switcher + logout) + a slim bottom bar
+  (tasks · clients · messages + "תפריט"); desktop unchanged. `app-shell.tsx` only,
+  no migration ([PR #65](https://github.com/Liran-Raz/AVI.APP1/pull/65), `aae0a05`).
 - **DEV-020 — Stage 13 (2nd client-meeting requirements) COMPLETE (2026-07-12).**
   3 rounds. **Round 1** (PR #59/#60) — clicking a client row/card opens the client
   page; an "ערוך" button on client detail; migration `0021` (`notify_on_task_status_change`
@@ -104,9 +117,9 @@ Nothing is blocked. Pick from the backlog when Liran wants:
 
 - **DEV-010→016 (P3 nice-to-haves, added 2026-07-11):** EN form-field labels
   (010) · client testimonial block (011, needs a real quote) · office logo+ח.פ.
-  (012, needs migration + Storage) · 2FA (013, security — could be P2) · mute
-  in-app bell notifications (014, needs trigger migration) · staging env (015) ·
-  landing `<noscript>` (016).
+  (012, needs migration + Storage) · 2FA (013, security — could be P2) ·
+  ~~mute in-app bell (014)~~ **DONE 2026-07-12 (PR #68 — soft mute, no migration)** ·
+  staging env (015) · landing `<noscript>` (016).
 - **DEV-001 / DEV-003 (deferred by Liran):** the custom-roles activation +
   authoritative cutover. Infra is live but dormant; the existing 3-tier
   Owner/Manager/Employee system already meets the client's need.
