@@ -57,10 +57,15 @@ export async function updateMyProfile(
 export type NotificationPrefs = {
   // Email the assignee when a task is assigned to them.
   emailOnTaskAssignment: boolean;
+  // Count the in-app bell (red unread badge) for a task assigned to the
+  // assignee. OFF = soft-mute (DEV-014): the notification is still created and
+  // still shows in the bell list — it just doesn't increment the unread badge.
+  bellOnTaskAssignment: boolean;
 };
 
 export const NOTIFICATION_PREFS_DEFAULTS: NotificationPrefs = {
   emailOnTaskAssignment: true,
+  bellOnTaskAssignment: true,
 };
 
 // Resolve a raw jsonb value (possibly null / partial / from before the
@@ -73,6 +78,10 @@ export function readNotificationPrefs(raw: unknown): NotificationPrefs {
       typeof stored.emailOnTaskAssignment === "boolean"
         ? stored.emailOnTaskAssignment
         : NOTIFICATION_PREFS_DEFAULTS.emailOnTaskAssignment,
+    bellOnTaskAssignment:
+      typeof stored.bellOnTaskAssignment === "boolean"
+        ? stored.bellOnTaskAssignment
+        : NOTIFICATION_PREFS_DEFAULTS.bellOnTaskAssignment,
   };
 }
 

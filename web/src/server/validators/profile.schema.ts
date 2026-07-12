@@ -34,6 +34,7 @@ export type UpdateProfilePayload = z.infer<typeof updateProfileSchema>;
 export const updateNotificationPrefsSchema = z
   .object({
     emailOnTaskAssignment: z.boolean().optional(),
+    bellOnTaskAssignment: z.boolean().optional(),
   })
   .refine((obj) => Object.keys(obj).length > 0, {
     message: "At least one preference is required",
