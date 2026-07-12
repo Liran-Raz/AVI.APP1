@@ -3,6 +3,7 @@ import "server-only";
 import type { FullSession } from "@/server/auth/session";
 import { ValidationError } from "@/server/errors/app-error";
 import * as messagesRepo from "@/server/repositories/messages.repository";
+import * as conversationsRepo from "@/server/repositories/conversations.repository";
 import * as membershipsRepo from "@/server/repositories/memberships.repository";
 import * as teamRepo from "@/server/repositories/team.repository";
 import type { Message } from "@/server/db/domain.types";
@@ -62,22 +63,31 @@ export async function sendMessage(
   session: FullSession,
   input: SendMessagePayload,
 ): Promise<MessageDTO> {
+  const orgId = session.organization.id;
   const recipientId = input.recipientId ?? null;
+
+  // Resolve the target conversation. recipient_id is ALSO populated (office=null,
+  // dm=recipient) so the legacy indexes + rollback stay consistent (Stage 14 R1).
+  let conversationId: string;
   if (recipientId) {
     if (recipientId === session.user.id) {
       throw new ValidationError("Cannot send a direct message to yourself");
     }
     await assertRecipientInOrg(session, recipientId);
+    conversationId = await conversationsRepo.ensureDm(orgId, recipientId);
+  } else {
+    conversationId = await conversationsRepo.ensureOffice(orgId);
   }
 
   const row = await messagesRepo.create({
-    org_id: session.organization.id,
+    org_id: orgId,
     sender_id: session.user.id,
     recipient_id: recipientId,
+    conversation_id: conversationId,
     body: input.body,
   });
 
-  const name = await nameResolver(session.organization.id);
+  const name = await nameResolver(orgId);
   return toDTO(row, name);
 }
 
@@ -88,9 +98,10 @@ export async function listMessages(
   const orgId = session.organization.id;
   const opts = { after: query.after, limit: query.limit };
 
-  let rows: Message[];
+  let conversationId: string | null;
   if (query.with === "group") {
-    rows = await messagesRepo.findGroup(orgId, opts);
+    // Read-only: no office conversation yet (new org, no messages) → empty feed.
+    conversationId = (await conversationsRepo.findOffice(orgId))?.id ?? null;
   } else {
     // DM thread: the counterpart must be (or have been) a member of THIS org.
     // Unlike SENDING, we do NOT require them to still be active — a deactivated
@@ -100,8 +111,14 @@ export async function listMessages(
     if (!membership) {
       throw new ValidationError("Not a member of this organization");
     }
-    rows = await messagesRepo.findThread(orgId, session.user.id, query.with, opts);
+    // Read-only: merely OPENING a never-messaged DM must not create a row.
+    conversationId =
+      (await conversationsRepo.findDm(orgId, session.user.id, query.with))?.id ?? null;
   }
+
+  if (!conversationId) return { items: [] };
+
+  const rows = await messagesRepo.findByConversation(orgId, conversationId, opts);
 
   // The repo returns newest-first for the initial page (no `after`) and
   // oldest-first for polling deltas — normalize to ascending for display.
