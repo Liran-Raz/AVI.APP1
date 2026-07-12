@@ -15,13 +15,16 @@ are + how to continue" brief.
   shadcn/ui · Supabase (Postgres + Auth + Realtime + RLS) · Vercel.
 - **Production:** **https://www.aviapp1.com** (Cloudflare→Vercel; old
   `avi-app-1.vercel.app` still alive). Auto-deploys on push to `main`.
-- **`main` at `75eae69`** (2026-07-12). Shipped: **Stage 12 (DEV-019)** + **Stage 13
+- **`main` at `d6166b9`** (2026-07-13). Shipped: **Stage 12 (DEV-019)** + **Stage 13
   (DEV-020)** — clients-UX + task-flow bell notifications (mig `0021`), owner analytics
   **dashboard** + owner-granted **per-member dashboard access** (`0022`) + a new bilingual
   invite email + the **office chat** ("הודעות" — group + DMs, 3s polling, `0023`); then
   **DEV-021** (mobile nav drawer, PR #65) and **DEV-014** (soft-mute the in-app bell badge
-  on task assignment, PR #68). Latest commit = a docs-only backlog log of **DEV-023**
-  (mobile Web Push, deferred, PR #69). Migrations through `0023`. `git log -8` to confirm.
+  on task assignment, PR #68); **DEV-023** (mobile Web Push) logged to the backlog (PR #69);
+  and **DEV-024 / Stage 14 R1** — the chat conversation-model foundation, behavior-preserving
+  (PR #71, migration `0024` applied + verified). Migrations through `0024`. An adversarial
+  multi-agent review caught + closed a CRITICAL RLS self-join in the 0024 draft pre-apply.
+  `git log -8` to confirm.
 - **User = Liran**, Hebrew-speaking founder / product owner. Reply in Hebrew.
   He drives product; Claude drives implementation. Honest tradeoffs, not hype.
 - **Nothing is pending/blocked.** No open bugs. Next work is optional backlog.
@@ -105,8 +108,9 @@ screen, **Stage 12**, and **Stage 13** are all shipped. Recent arc (newest first
   sends from `aviapp1.com`), reset-password PKCE fix, Custom SMTP, same-password
   indicator. All Production-verified.
 
-**Migrations applied to Production: through `0023`** (0001–0023; `0021` task-flow
-notifications · `0022` per-member `dashboard_access` · `0023` chat `messages`).
+**Migrations applied to Production: through `0024`** (0001–0024; `0021` task-flow
+notifications · `0022` per-member `dashboard_access` · `0023` chat `messages` ·
+`0024` chat conversation model — DEV-024 R1, fail-closed RPC-only + backfill).
 Legacy `role` enum (owner/admin/employee) + `ROLE_GRANTS` are still the SOLE
 authority; the custom-roles infra (0011–0017) is live but 100% DORMANT (Liran
 chose to stop — DEV-001/003).
