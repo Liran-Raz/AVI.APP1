@@ -280,10 +280,119 @@ export type Database = {
           },
         ]
       }
+      conversation_participants: {
+        Row: {
+          conversation_id: string
+          id: string
+          is_admin: boolean
+          joined_at: string
+          last_read_at: string | null
+          left_at: string | null
+          org_id: string
+          user_id: string
+        }
+        Insert: {
+          conversation_id: string
+          id?: string
+          is_admin?: boolean
+          joined_at?: string
+          last_read_at?: string | null
+          left_at?: string | null
+          org_id: string
+          user_id: string
+        }
+        Update: {
+          conversation_id?: string
+          id?: string
+          is_admin?: boolean
+          joined_at?: string
+          last_read_at?: string | null
+          left_at?: string | null
+          org_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "conversation_participants_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "conversation_participants_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "conversation_participants_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      conversations: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          deleted_at: string | null
+          dm_key: string | null
+          id: string
+          kind: Database["public"]["Enums"]["conversation_kind"]
+          last_message_at: string | null
+          org_id: string
+          title: string | null
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          deleted_at?: string | null
+          dm_key?: string | null
+          id?: string
+          kind: Database["public"]["Enums"]["conversation_kind"]
+          last_message_at?: string | null
+          org_id: string
+          title?: string | null
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          deleted_at?: string | null
+          dm_key?: string | null
+          id?: string
+          kind?: Database["public"]["Enums"]["conversation_kind"]
+          last_message_at?: string | null
+          org_id?: string
+          title?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "conversations_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "conversations_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       messages: {
         Row: {
           body: string
+          conversation_id: string
           created_at: string
+          deleted_at: string | null
+          edited_at: string | null
           id: string
           org_id: string
           recipient_id: string | null
@@ -291,7 +400,10 @@ export type Database = {
         }
         Insert: {
           body: string
+          conversation_id?: string
           created_at?: string
+          deleted_at?: string | null
+          edited_at?: string | null
           id?: string
           org_id: string
           recipient_id?: string | null
@@ -299,13 +411,23 @@ export type Database = {
         }
         Update: {
           body?: string
+          conversation_id?: string
           created_at?: string
+          deleted_at?: string | null
+          edited_at?: string | null
           id?: string
           org_id?: string
           recipient_id?: string | null
           sender_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "messages_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "messages_org_id_fkey"
             columns: ["org_id"]
@@ -677,6 +799,18 @@ export type Database = {
     }
     Functions: {
       accept_invitation: { Args: { p_token: string }; Returns: Json }
+      ensure_dm_conversation: {
+        Args: { p_org_id: string; p_other_user: string }
+        Returns: string
+      }
+      ensure_office_conversation: {
+        Args: { p_org_id: string }
+        Returns: string
+      }
+      create_group_conversation: {
+        Args: { p_org_id: string; p_title: string; p_member_ids: string[] }
+        Returns: string
+      }
       bootstrap_org: {
         Args: { p_full_name: string; p_org_code: string; p_org_name: string }
         Returns: Json
@@ -754,6 +888,7 @@ export type Database = {
     }
     Enums: {
       business_type: "patur" | "murshe" | "ltd" | "amuta" | "agudat_shitufit"
+      conversation_kind: "office" | "dm" | "group"
       invitation_status: "pending" | "accepted" | "expired" | "revoked"
       notification_type:
         | "task_assigned"
