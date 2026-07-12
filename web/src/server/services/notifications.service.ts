@@ -5,6 +5,7 @@ import * as notificationsRepo from "@/server/repositories/notifications.reposito
 import type { Notification } from "@/server/db/domain.types";
 import type { NotificationType } from "@/server/db/domain.types";
 import type { ListNotificationsQuery } from "@/server/validators/notifications.schema";
+import { readNotificationPrefs } from "@/server/services/profile.service";
 
 // ============================================================
 // DTO
@@ -36,17 +37,29 @@ function toDTO(row: Notification): NotificationDTO {
 // Public API
 // ============================================================
 
+// Notification types the caller has soft-muted for the bell badge. Soft-mute
+// (DEV-014) means the rows still exist and still appear in the list — they
+// just don't count toward the unread badge. Keyed off the caller's own prefs.
+function mutedBellTypes(session: FullSession): NotificationType[] {
+  const prefs = readNotificationPrefs(session.profile.notification_prefs);
+  return prefs.bellOnTaskAssignment ? [] : ["task_assigned"];
+}
+
 export async function listNotifications(
   session: FullSession,
   query: ListNotificationsQuery,
 ): Promise<{ items: NotificationDTO[]; unreadCount: number }> {
   const userId = session.profile.id;
+  // The LIST is intentionally NOT filtered — a soft-muted assignment still
+  // shows in the bell. Only the COUNT (the red badge) excludes muted types.
   const [rows, unreadCount] = await Promise.all([
     notificationsRepo.findManyByUserId(userId, {
       unreadOnly: query.unreadOnly,
       limit: query.limit,
     }),
-    notificationsRepo.countUnreadByUserId(userId),
+    notificationsRepo.countUnreadByUserId(userId, {
+      excludeTypes: mutedBellTypes(session),
+    }),
   ]);
   return { items: rows.map(toDTO), unreadCount };
 }
@@ -54,7 +67,9 @@ export async function listNotifications(
 export async function getUnreadCount(
   session: FullSession,
 ): Promise<{ count: number }> {
-  const count = await notificationsRepo.countUnreadByUserId(session.profile.id);
+  const count = await notificationsRepo.countUnreadByUserId(session.profile.id, {
+    excludeTypes: mutedBellTypes(session),
+  });
   return { count };
 }
 

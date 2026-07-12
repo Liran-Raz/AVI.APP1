@@ -1,7 +1,7 @@
 import "server-only";
 
 import { createSupabaseServerClient } from "@/server/db/supabase";
-import type { Notification } from "@/server/db/domain.types";
+import type { Notification, NotificationType } from "@/server/db/domain.types";
 
 // Notifications repository. RLS isolates by user_id automatically, but
 // every method still filters explicitly — defense in depth and
@@ -31,13 +31,28 @@ export async function findManyByUserId(
   return (data as unknown as Notification[]) ?? [];
 }
 
-export async function countUnreadByUserId(userId: string): Promise<number> {
+export type CountUnreadOptions = {
+  // Notification types to EXCLUDE from the unread count. Soft-mute (DEV-014):
+  // the rows still exist and still appear in the list — they just don't count
+  // toward the red badge. Applied as chained .neq (avoids the fragile
+  // PostgREST `in`-negation syntax).
+  excludeTypes?: NotificationType[];
+};
+
+export async function countUnreadByUserId(
+  userId: string,
+  opts: CountUnreadOptions = {},
+): Promise<number> {
   const supabase = await createSupabaseServerClient();
-  const { count, error } = await supabase
+  let query = supabase
     .from("notifications")
     .select("*", { count: "exact", head: true })
     .eq("user_id", userId)
     .is("read_at", null);
+  for (const type of opts.excludeTypes ?? []) {
+    query = query.neq("type", type);
+  }
+  const { count, error } = await query;
   if (error) throw error;
   return count ?? 0;
 }
