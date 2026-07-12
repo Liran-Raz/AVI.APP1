@@ -15,11 +15,13 @@ are + how to continue" brief.
   shadcn/ui · Supabase (Postgres + Auth + Realtime + RLS) · Vercel.
 - **Production:** **https://www.aviapp1.com** (Cloudflare→Vercel; old
   `avi-app-1.vercel.app` still alive). Auto-deploys on push to `main`.
-- **`main` at `8a99918`** (2026-07-12) — **Stage 13 (DEV-020) fully shipped** (all
-  3 rounds): clients-UX + task-flow bell notifications (mig `0021`); the owner
-  analytics **dashboard** + owner-granted **per-member dashboard access** (`0022`)
-  + a new bilingual invite email; and the **office chat** ("הודעות" — group + DMs,
-  3s polling, `0023`). Stage 12 (DEV-019) shipped just before. `git log -8` to confirm.
+- **`main` at `75eae69`** (2026-07-12). Shipped: **Stage 12 (DEV-019)** + **Stage 13
+  (DEV-020)** — clients-UX + task-flow bell notifications (mig `0021`), owner analytics
+  **dashboard** + owner-granted **per-member dashboard access** (`0022`) + a new bilingual
+  invite email + the **office chat** ("הודעות" — group + DMs, 3s polling, `0023`); then
+  **DEV-021** (mobile nav drawer, PR #65) and **DEV-014** (soft-mute the in-app bell badge
+  on task assignment, PR #68). Latest commit = a docs-only backlog log of **DEV-023**
+  (mobile Web Push, deferred, PR #69). Migrations through `0023`. `git log -8` to confirm.
 - **User = Liran**, Hebrew-speaking founder / product owner. Reply in Hebrew.
   He drives product; Claude drives implementation. Honest tradeoffs, not hype.
 - **Nothing is pending/blocked.** No open bugs. Next work is optional backlog.
@@ -120,6 +122,11 @@ Nothing is blocked. Pick from the backlog when Liran wants:
   (012, needs migration + Storage) · 2FA (013, security — could be P2) ·
   ~~mute in-app bell (014)~~ **DONE 2026-07-12 (PR #68 — soft mute, no migration)** ·
   staging env (015) · landing `<noscript>` (016).
+- **DEV-023 (Web Push) + DEV-022 (realtime) — logged, deferred (2026-07-12):**
+  DEV-023 mobile Web Push notifications (PR #69 — needs a service worker + VAPID +
+  a `push_subscriptions` migration + server-side send; iOS works only for an installed
+  home-screen PWA). DEV-022 realtime via Supabase Realtime (LLM-council vetted, Firebase
+  rejected; trigger = heavy chat use / customer ask / scale).
 - **DEV-001 / DEV-003 (deferred by Liran):** the custom-roles activation +
   authoritative cutover. Infra is live but dormant; the existing 3-tier
   Owner/Manager/Employee system already meets the client's need.
