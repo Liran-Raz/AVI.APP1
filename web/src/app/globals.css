@@ -234,6 +234,36 @@
     display: none;
   }
 
+  /* ------------------------------------------------------------
+     Native-shell safe areas (Capacitor / installed PWA).
+     iOS uses a "black-translucent" status bar, so the WebView draws
+     UNDER the notch and the home indicator. These insets push the
+     sticky chrome clear of both while the frosted background still
+     fills the inset area (edge-to-edge look). env() resolves to 0 on
+     desktop and in ordinary browser tabs, so every rule below is a
+     no-op off-device — the web app is byte-for-byte unchanged.
+     Requires viewport `viewportFit: "cover"` (set in layout.tsx).
+     ------------------------------------------------------------ */
+
+  /* Top bar: keep a full 4rem content row BELOW the notch; the bar's
+     background fills up into the inset. */
+  .topbar-safe {
+    height: calc(4rem + env(safe-area-inset-top, 0px));
+    padding-top: env(safe-area-inset-top, 0px);
+  }
+  /* Bottom nav: lift the tab row above the home indicator. */
+  .pb-safe {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  /* Drawer header: the usual 1rem top padding PLUS the notch inset. */
+  .pt-drawer-safe {
+    padding-top: calc(1rem + env(safe-area-inset-top, 0px));
+  }
+  /* Drawer footer: the usual 1rem bottom padding PLUS the home-indicator inset. */
+  .pb-drawer-safe {
+    padding-bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
+  }
+
   /* Glassmorphism panel — frosted glass over the mesh gradient.
      Use sparingly on featured cards (e.g., dashboard widgets,
      calendar event chips). Reads best on light surfaces. */

@@ -23,16 +23,19 @@ are + how to continue" brief.
   on task assignment, PR #68); **DEV-023** (mobile Web Push) logged to the backlog (PR #69);
   and **DEV-024 / Stage 14** — the WhatsApp-style chat upgrade: **R1** (conversation-model
   foundation, behavior-preserving, PR #71, mig `0024`) + **R2** (full group management —
-  create/rename/add/remove/leave/delete, admin-only, PR #74, mig `0025`). Migrations through
-  `0025`. Adversarial multi-agent reviews gate each round (caught + closed a CRITICAL RLS
+  create/rename/add/remove/leave/delete, admin-only, PR #74, mig `0025`) + **R3+R4** (read
+  receipts + unread badge + edit/delete ≤10 min, mig `0026`, in flight). Migrations through
+  `0026`. Adversarial multi-agent reviews gate each round (caught + closed a CRITICAL RLS
   self-join in the 0024 draft pre-apply; 0 CRITICAL/HIGH on R2). `git log -8` to confirm.
 - **User = Liran**, Hebrew-speaking founder / product owner. Reply in Hebrew.
   He drives product; Claude drives implementation. Honest tradeoffs, not hype.
 - **DEV-024 R2 (full group management) shipped 2026-07-13** — PR #74, main
-  `15a1aa7`, migration `0025` applied+verified in Prod, Vercel deploy + prod smoke
-  green (`/api/conversations`→401 unauth). Single-user QA approved by Liran.
-  **Nothing pending/blocked.** R3 (read receipts + badge) + R4 (edit/delete,
-  code-only) are the remaining chat rounds; multi-user group QA is Liran's in Prod.
+  `15a1aa7`. **R3 (read receipts + unread badge) + R4 (edit/delete ≤10 min) built
+  together + in flight 2026-07-14** — branch `feat/chat-r3r4-receipts-edit`, migration
+  `0026` applied+verified in Prod, **in a PR pending Liran's QA + merge.** With R4,
+  **Stage 14 (DEV-024) completes.** Adversarial review = 0 CRITICAL/HIGH (caught +
+  fixed a HIGH: others' edits/deletes now propagate via recent-window + reconcile).
+  Multi-user chat QA is Liran's in Prod.
 
 ---
 
@@ -113,10 +116,11 @@ screen, **Stage 12**, and **Stage 13** are all shipped. Recent arc (newest first
   sends from `aviapp1.com`), reset-password PKCE fix, Custom SMTP, same-password
   indicator. All Production-verified.
 
-**Migrations applied to Production: through `0025`** (0001–0025; `0022` per-member
-`dashboard_access` · `0023` chat `messages` · `0024` chat conversation model —
-DEV-024 R1, fail-closed RPC-only + backfill · `0025` group-management RPCs —
-DEV-024 R2, additive SECURITY DEFINER RPCs, applied+verified before the R2 merge).
+**Migrations applied to Production: through `0026`** (0001–0026; `0023` chat `messages` ·
+`0024` chat conversation model — DEV-024 R1, fail-closed RPC-only + backfill · `0025`
+group-management RPCs — DEV-024 R2 · `0026` read-receipts (`mark_conversation_read` +
+`get_unread_counts`) + edit-policy membership hardening — DEV-024 R3+R4, applied+verified
+before merge). `0025`/`0026` are additive; the R3+R4 code is in a PR pending merge.
 Legacy `role` enum (owner/admin/employee) + `ROLE_GRANTS` are still the SOLE
 authority; the custom-roles infra (0011–0017) is live but 100% DORMANT (Liran
 chose to stop — DEV-001/003).
@@ -244,7 +248,7 @@ Critical do-nots:
 | GitHub repo | https://github.com/Liran-Raz/AVI.APP1 |
 | Supabase project ref | `xsuvwihfcxinorzutbve` (region Central EU / Frankfurt) |
 | Domain / mail | `aviapp1.com` at Cloudflare; Resend Verified (sends via `send.aviapp1.com`); Supabase Auth Custom SMTP → Resend. All mail from `AVI.APP <noreply@aviapp1.com>` |
-| Migrations applied in Prod | through **0025** (manual apply; `0023` chat `messages` · `0024` conversation model · `0025` group-management RPCs) |
+| Migrations applied in Prod | through **0026** (manual apply; `0024` conversation model · `0025` group-management RPCs · `0026` read-receipts + edit-policy hardening) |
 | Vercel env (Production scope only) | `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `NEXT_PUBLIC_SITE_URL=https://www.aviapp1.com`, `MAIL_FROM`, `RESEND_API_KEY`, `BUG_REPORT_NOTIFY_EMAIL`. **No service role key.** |
 | Google OAuth | **enabled in Production** (DEV-017, 2026-07-11) — `/api/auth/oauth/google` PKCE; live-tested with an existing user |
 | Service role key | not used, not stored (intentional) |

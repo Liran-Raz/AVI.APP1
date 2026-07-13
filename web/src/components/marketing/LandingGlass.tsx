@@ -620,6 +620,8 @@ function LandingInner() {
             <a href={LOGIN_URL}>{t("התחברות", "Log in")}</a>
             <a href={SIGNUP_URL}>{t("הרשמה", "Sign up")}</a>
             <a href={FORGOT_URL}>{t("שחזור סיסמה", "Reset password")}</a>
+            <a href="/privacy">{t("פרטיות", "Privacy")}</a>
+            <a href="/terms">{t("תנאי שימוש", "Terms")}</a>
           </nav>
         </div>
       </footer>

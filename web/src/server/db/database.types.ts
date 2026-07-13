@@ -831,6 +831,19 @@ export type Database = {
         Args: { p_conv_id: string }
         Returns: undefined
       }
+      mark_conversation_read: {
+        Args: { p_conversation_id: string }
+        Returns: undefined
+      }
+      get_unread_counts: {
+        Args: Record<PropertyKey, never>
+        Returns: {
+          conversation_id: string
+          kind: Database["public"]["Enums"]["conversation_kind"]
+          dm_key: string | null
+          unread: number
+        }[]
+      }
       bootstrap_org: {
         Args: { p_full_name: string; p_org_code: string; p_org_name: string }
         Returns: Json

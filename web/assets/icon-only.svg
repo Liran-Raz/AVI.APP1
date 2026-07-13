@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!-- Full-bleed master (no rounding): iOS + Android legacy mask it themselves. -->
+  <rect width="1024" height="1024" fill="#0054cc"/>
+  <text x="512" y="736" font-family="Arial, Heebo, sans-serif" font-size="640" font-weight="800" text-anchor="middle" fill="#ffffff">א</text>
+</svg>

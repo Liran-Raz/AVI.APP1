@@ -92,6 +92,9 @@ export function AppShell({
   // scrim, the X, Escape, or tapping any nav link. Desktop is untouched.
   const [drawerOpen, setDrawerOpen] = useState(false);
 
+  // Unread chat messages → a badge on the "הודעות" nav entry (Stage 14 / R3).
+  const [unreadMessages, setUnreadMessages] = useState(0);
+
   useEffect(() => {
     if (!drawerOpen) return;
     const onKey = (e: KeyboardEvent) => {
@@ -106,6 +109,31 @@ export function AppShell({
       document.body.style.overflow = prevOverflow;
     };
   }, [drawerOpen]);
+
+  // Poll the unread-messages total for the nav badge; paused when the tab is hidden.
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      if (document.hidden) return;
+      try {
+        const u = await apiClient.messages.unread();
+        if (!cancelled) setUnreadMessages(u.total);
+      } catch {
+        // non-critical
+      }
+    };
+    void load();
+    const t = setInterval(load, 5000);
+    const onVis = () => {
+      if (!document.hidden) void load();
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      cancelled = true;
+      clearInterval(t);
+      document.removeEventListener("visibilitychange", onVis);
+    };
+  }, []);
 
   // Compose the nav from the base items. Insertions are index-safe (found by
   // href) so they compose regardless of which flags are on.
@@ -189,7 +217,12 @@ export function AppShell({
                 )}
               >
                 <item.icon className="size-4" />
-                {item.label}
+                <span className="flex-1">{item.label}</span>
+                {item.href === "/messages" && unreadMessages > 0 ? (
+                  <span className="min-w-[20px] rounded-full bg-[#16a34a] px-1.5 text-center text-[11px] font-bold text-white">
+                    {unreadMessages > 99 ? "99+" : unreadMessages}
+                  </span>
+                ) : null}
               </Link>
             );
           })}
@@ -209,7 +242,7 @@ export function AppShell({
           scrolls INTERNALLY as intended. */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* Top bar */}
-        <header className="h-16 border-b border-border glass-topbar flex items-center justify-between px-4 md:px-6 sticky top-0 z-30">
+        <header className="topbar-safe border-b border-border glass-topbar flex items-center justify-between px-4 md:px-6 sticky top-0 z-30">
           <div className="md:hidden flex items-center gap-2">
             <div className="size-8 rounded-lg bg-primary text-primary-foreground flex items-center justify-center font-bold text-sm">
               א
@@ -267,7 +300,7 @@ export function AppShell({
         {/* Mobile bottom bar — the 4 everyday screens + a "תפריט" button that
             opens the full navigation drawer. Fixed set, so no scrolling needed;
             overflow-x-auto stays as a safety net for very narrow screens. */}
-        <nav className="md:hidden order-last border-t border-border glass-mobilenav flex overflow-x-auto no-scrollbar sticky bottom-0 z-30">
+        <nav className="md:hidden order-last border-t border-border glass-mobilenav flex overflow-x-auto no-scrollbar sticky bottom-0 z-30 pb-safe">
           {mobileBarItems.map((item) => {
             const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
             return (
@@ -279,7 +312,14 @@ export function AppShell({
                   active ? "text-primary" : "text-muted-foreground",
                 )}
               >
-                <item.icon className="size-5" />
+                <span className="relative">
+                  <item.icon className="size-5" />
+                  {item.href === "/messages" && unreadMessages > 0 ? (
+                    <span className="absolute -end-2 -top-1.5 flex min-w-[16px] items-center justify-center rounded-full bg-[#16a34a] px-1 text-[10px] font-bold leading-tight text-white">
+                      {unreadMessages > 99 ? "99+" : unreadMessages}
+                    </span>
+                  ) : null}
+                </span>
                 <span className="text-xs whitespace-nowrap">{item.label}</span>
               </Link>
             );
@@ -318,7 +358,7 @@ export function AppShell({
           )}
         >
           {/* Header: logo + office (or switcher) + close */}
-          <div className="flex items-center gap-2.5 px-4 pt-4 pb-3">
+          <div className="flex items-center gap-2.5 px-4 pt-drawer-safe pb-3">
             <div className="size-9 rounded-lg bg-primary text-primary-foreground flex items-center justify-center font-bold shadow-[0_8px_18px_-6px_rgba(2,106,255,0.6)]">
               א
             </div>
@@ -377,7 +417,12 @@ export function AppShell({
                   )}
                 >
                   <item.icon className="size-4" />
-                  {item.label}
+                  <span className="flex-1">{item.label}</span>
+                  {item.href === "/messages" && unreadMessages > 0 ? (
+                    <span className="min-w-[20px] rounded-full bg-[#16a34a] px-1.5 text-center text-[11px] font-bold text-white">
+                      {unreadMessages > 99 ? "99+" : unreadMessages}
+                    </span>
+                  ) : null}
                 </Link>
               );
             })}
@@ -403,7 +448,7 @@ export function AppShell({
           </nav>
 
           {/* Footer: office code + logout */}
-          <div className="border-t border-white/10 px-3 pb-4 pt-2">
+          <div className="border-t border-white/10 px-3 pb-drawer-safe pt-2">
             <div className="text-xs text-sidebar-foreground/70 px-3 pb-2">
               קוד משרד: <span className="font-mono text-white/90">{organization.org_code}</span>
             </div>

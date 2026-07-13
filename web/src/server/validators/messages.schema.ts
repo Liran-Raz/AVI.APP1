@@ -43,16 +43,20 @@ export type SendMessagePayload = z.infer<typeof sendMessageSchema>;
 // List query for a conversation. `with` = "group" (office feed), a member's uuid
 // (DM thread), or "conv:<uuid>" (a custom group). `after` (ISO timestamp) drives the
 // polling delta — only messages newer than it are returned. `limit` bounds the page.
+// A conversation address (shared by list + mark-read): "group" (office), a member
+// uuid (DM), or "conv:<uuid>" (a custom group).
+export const conversationWith = z
+  .string()
+  .refine(
+    (v) =>
+      v === "group" ||
+      z.string().uuid().safeParse(v).success ||
+      parseConversationRef(v) !== null,
+    { message: "with must be 'group', a member id, or a group conversation id" },
+  );
+
 export const listMessagesQuerySchema = z.object({
-  with: z
-    .string()
-    .refine(
-      (v) =>
-        v === "group" ||
-        z.string().uuid().safeParse(v).success ||
-        parseConversationRef(v) !== null,
-      { message: "with must be 'group', a member id, or a group conversation id" },
-    ),
+  with: conversationWith,
   // The poll cursor is a DB `created_at` round-tripped verbatim. PostgREST
   // serializes timestamptz with a numeric offset (…+00:00), NOT a bare `Z`, so
   // { offset: true } is REQUIRED — without it Zod rejects the value and every
@@ -62,3 +66,22 @@ export const listMessagesQuerySchema = z.object({
 });
 
 export type ListMessagesQuery = z.infer<typeof listMessagesQuerySchema>;
+
+// POST /api/messages/read — mark a conversation read (Stage 14 / R3). Reuses `with`.
+export const markReadSchema = z.object({ with: conversationWith });
+export type MarkReadPayload = z.infer<typeof markReadSchema>;
+
+// PATCH /api/messages/[id] — edit a message body (R4; sender + ≤10 min, DB-enforced).
+export const editMessageSchema = z.object({
+  body: z
+    .string()
+    .trim()
+    .min(1, "Message is empty")
+    .max(MESSAGE_MAX_LEN, "Message is too long"),
+});
+export type EditMessagePayload = z.infer<typeof editMessageSchema>;
+
+// Route param for edit / delete.
+export const messageIdParamSchema = z.object({
+  id: z.string().uuid("Invalid message id"),
+});

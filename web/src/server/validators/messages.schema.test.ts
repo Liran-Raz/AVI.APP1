@@ -2,7 +2,10 @@ import { describe, expect, it } from "vitest";
 
 import {
   CONVERSATION_PREFIX,
+  editMessageSchema,
   listMessagesQuerySchema,
+  markReadSchema,
+  messageIdParamSchema,
   parseConversationRef,
   sendMessageSchema,
 } from "@/server/validators/messages.schema";
@@ -91,5 +94,28 @@ describe("group conversation addressing (Stage 14 / R2)", () => {
     expect(
       sendMessageSchema.safeParse({ body: "x", conversationId: CONV, recipientId: MEMBER }).success,
     ).toBe(false); // mutually exclusive
+  });
+});
+
+describe("read receipts + edit validators (Stage 14 / R3 + R4)", () => {
+  const CONV = "22222222-2222-4222-8222-222222222222";
+  const MEMBER = "11111111-1111-4111-8111-111111111111";
+
+  it("markReadSchema accepts the same addresses as list, rejects garbage", () => {
+    expect(markReadSchema.safeParse({ with: "group" }).success).toBe(true);
+    expect(markReadSchema.safeParse({ with: MEMBER }).success).toBe(true);
+    expect(markReadSchema.safeParse({ with: `conv:${CONV}` }).success).toBe(true);
+    expect(markReadSchema.safeParse({ with: "nope" }).success).toBe(false);
+  });
+
+  it("editMessageSchema trims + requires a non-empty, bounded body", () => {
+    expect(editMessageSchema.safeParse({ body: "   " }).success).toBe(false);
+    expect(editMessageSchema.parse({ body: "  שלום  " }).body).toBe("שלום");
+    expect(editMessageSchema.safeParse({ body: "x".repeat(2001) }).success).toBe(false);
+  });
+
+  it("messageIdParamSchema requires a uuid", () => {
+    expect(messageIdParamSchema.safeParse({ id: MEMBER }).success).toBe(true);
+    expect(messageIdParamSchema.safeParse({ id: "not-a-uuid" }).success).toBe(false);
   });
 });

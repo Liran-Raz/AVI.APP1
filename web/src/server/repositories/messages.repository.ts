@@ -56,3 +56,49 @@ export async function findByConversation(
   if (error) throw error;
   return (data as unknown as Message[]) ?? [];
 }
+
+// Edit a message body (Stage 14 / R4). RLS enforces sender + ≤10-minute window +
+// membership; a disallowed edit updates 0 rows → returns null (not an error).
+export async function updateBody(
+  id: string,
+  orgId: string,
+  body: string,
+): Promise<Message | null> {
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("messages")
+    .update({ body, edited_at: new Date().toISOString() } as never)
+    .eq("id", id)
+    .eq("org_id", orgId)
+    .select("*")
+    .maybeSingle();
+  if (error) throw error;
+  return (data as unknown as Message | null) ?? null;
+}
+
+// Soft-delete a message (Stage 14 / R4) — tombstone via deleted_at. The original
+// body is OVERWRITTEN with a sentinel (not "" — the messages CHECK requires
+// length(btrim(body)) > 0, so an empty body would be rejected and the delete would
+// silently fail) so the deleted content doesn't linger at rest; toDTO also blanks
+// the body for any deleted row, so no client ever receives it. RLS enforces sender +
+// window + membership; disallowed → 0 rows → null. Never hard-deleted (revoked).
+const DELETED_SENTINEL = "[deleted]"; // non-empty (messages CHECK needs length>0); never shown to clients (toDTO blanks it)
+
+export async function softDelete(
+  id: string,
+  orgId: string,
+): Promise<Message | null> {
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("messages")
+    .update({
+      body: DELETED_SENTINEL,
+      deleted_at: new Date().toISOString(),
+    } as never)
+    .eq("id", id)
+    .eq("org_id", orgId)
+    .select("*")
+    .maybeSingle();
+  if (error) throw error;
+  return (data as unknown as Message | null) ?? null;
+}

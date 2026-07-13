@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">AVI.APP</string>
+    <string name="title_activity_main">AVI.APP</string>
+    <string name="package_name">com.aviapp1.app</string>
+    <string name="custom_url_scheme">com.aviapp1.app</string>
+</resources>

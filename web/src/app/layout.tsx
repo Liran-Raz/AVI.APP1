@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Heebo } from "next/font/google";
 import "./globals.css";
+import { NativeBridge } from "@/components/native/native-bridge";
 
 const heebo = Heebo({
   variable: "--font-heebo",
@@ -34,6 +35,10 @@ export const viewport: Viewport = {
   ],
   width: "device-width",
   initialScale: 1,
+  // Draw into the notch / home-indicator area so env(safe-area-inset-*)
+  // resolves to real values inside the native shell (Capacitor) and
+  // installed PWA. The sticky chrome then pads itself clear of both.
+  viewportFit: "cover",
 };
 
 export default function RootLayout({
@@ -49,6 +54,7 @@ export default function RootLayout({
       suppressHydrationWarning
     >
       <body className="min-h-full flex flex-col font-sans bg-background text-foreground">
+        <NativeBridge />
         {children}
       </body>
     </html>

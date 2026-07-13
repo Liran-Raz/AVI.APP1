@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!-- Android adaptive FOREGROUND: transparent, glyph kept inside the central
+       safe zone so circle/squircle masks never clip it. -->
+  <text x="512" y="666" font-family="Arial, Heebo, sans-serif" font-size="440" font-weight="800" text-anchor="middle" fill="#ffffff">א</text>
+</svg>
