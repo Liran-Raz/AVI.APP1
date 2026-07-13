@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  CONVERSATION_PREFIX,
   listMessagesQuerySchema,
+  parseConversationRef,
   sendMessageSchema,
 } from "@/server/validators/messages.schema";
 
@@ -65,5 +67,29 @@ describe("sendMessageSchema", () => {
       }).success,
     ).toBe(true);
     expect(sendMessageSchema.safeParse({ body: "x", recipientId: "nope" }).success).toBe(false);
+  });
+});
+
+describe("group conversation addressing (Stage 14 / R2)", () => {
+  const CONV = "22222222-2222-4222-8222-222222222222";
+  const MEMBER = "11111111-1111-4111-8111-111111111111";
+
+  it("parseConversationRef extracts a conv:<uuid>, else null", () => {
+    expect(parseConversationRef(`${CONVERSATION_PREFIX}${CONV}`)).toBe(CONV);
+    expect(parseConversationRef(CONV)).toBeNull(); // a bare uuid is a DM, not a group
+    expect(parseConversationRef("conv:not-a-uuid")).toBeNull();
+    expect(parseConversationRef("group")).toBeNull();
+  });
+
+  it("listMessagesQuerySchema accepts with=conv:<uuid>, rejects a malformed ref", () => {
+    expect(listMessagesQuerySchema.safeParse({ with: `conv:${CONV}` }).success).toBe(true);
+    expect(listMessagesQuerySchema.safeParse({ with: "conv:not-a-uuid" }).success).toBe(false);
+  });
+
+  it("sendMessageSchema accepts a conversationId (group), but not together with recipientId", () => {
+    expect(sendMessageSchema.safeParse({ body: "x", conversationId: CONV }).success).toBe(true);
+    expect(
+      sendMessageSchema.safeParse({ body: "x", conversationId: CONV, recipientId: MEMBER }).success,
+    ).toBe(false); // mutually exclusive
   });
 });

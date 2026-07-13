@@ -13,6 +13,7 @@ vi.mock("@/server/repositories/conversations.repository", () => ({
   ensureDm: vi.fn(),
   findOffice: vi.fn(),
   findDm: vi.fn(),
+  getGroupById: vi.fn(),
 }));
 vi.mock("@/server/repositories/memberships.repository", () => ({
   findByUserAndOrg: vi.fn(),
@@ -32,6 +33,7 @@ const ME = "user-me";
 const OTHER = "user-other";
 const OFFICE_CONV = "office-conv";
 const DM_CONV = "dm-conv";
+const GROUP_CONV = "22222222-2222-4222-8222-222222222222";
 
 function session(): FullSession {
   return {
@@ -70,6 +72,7 @@ beforeEach(() => {
   vi.mocked(conversationsRepo.ensureDm).mockResolvedValue(DM_CONV);
   vi.mocked(conversationsRepo.findOffice).mockResolvedValue({ id: OFFICE_CONV, org_id: ORG, kind: "office" } as never);
   vi.mocked(conversationsRepo.findDm).mockResolvedValue({ id: DM_CONV, org_id: ORG, kind: "dm" } as never);
+  vi.mocked(conversationsRepo.getGroupById).mockResolvedValue({ id: GROUP_CONV, org_id: ORG, kind: "group" } as never);
 });
 
 describe("sendMessage", () => {
@@ -184,5 +187,54 @@ describe("listMessages", () => {
       listMessages(session(), { with: OTHER, limit: 50 }),
     ).resolves.toBeDefined();
     expect(conversationsRepo.findDm).toHaveBeenCalledWith(ORG, ME, OTHER);
+  });
+});
+
+describe("group conversations (Stage 14 / R2)", () => {
+  it("sends a group message (recipient null, target = the group conversation)", async () => {
+    const dto = await sendMessage(session(), {
+      body: "לקבוצה",
+      conversationId: GROUP_CONV,
+    });
+    expect(conversationsRepo.getGroupById).toHaveBeenCalledWith(ORG, GROUP_CONV);
+    expect(conversationsRepo.ensureOffice).not.toHaveBeenCalled();
+    expect(conversationsRepo.ensureDm).not.toHaveBeenCalled();
+    expect(messagesRepo.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        recipient_id: null,
+        conversation_id: GROUP_CONV,
+        sender_id: ME,
+        org_id: ORG,
+      }),
+    );
+    expect(dto.recipientId).toBeNull();
+  });
+
+  it("rejects sending to a group the caller can't read (not a participant / deleted)", async () => {
+    vi.mocked(conversationsRepo.getGroupById).mockResolvedValue(null);
+    await expect(
+      sendMessage(session(), { body: "x", conversationId: GROUP_CONV }),
+    ).rejects.toBeInstanceOf(ValidationError);
+    expect(messagesRepo.create).not.toHaveBeenCalled();
+  });
+
+  it("lists a group thread by its conv:<id> address", async () => {
+    vi.mocked(messagesRepo.findByConversation).mockResolvedValue([]);
+    await listMessages(session(), { with: `conv:${GROUP_CONV}`, limit: 50 });
+    expect(conversationsRepo.getGroupById).toHaveBeenCalledWith(ORG, GROUP_CONV);
+    expect(messagesRepo.findByConversation).toHaveBeenCalledWith(ORG, GROUP_CONV, {
+      after: undefined,
+      limit: 50,
+    });
+  });
+
+  it("returns an empty feed for a group the caller can't read (no leak)", async () => {
+    vi.mocked(conversationsRepo.getGroupById).mockResolvedValue(null);
+    const { items } = await listMessages(session(), {
+      with: `conv:${GROUP_CONV}`,
+      limit: 50,
+    });
+    expect(items).toEqual([]);
+    expect(messagesRepo.findByConversation).not.toHaveBeenCalled();
   });
 });

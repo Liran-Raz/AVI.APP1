@@ -64,6 +64,15 @@ import type { CreateBugReportPayload } from "@/server/validators/bug-reports.sch
 import type { DashboardStatsDTO } from "@/server/services/dashboard.service";
 import type { MessageDTO } from "@/server/services/messages.service";
 import type { SendMessagePayload } from "@/server/validators/messages.schema";
+import type {
+  GroupSummaryDTO,
+  GroupDetailDTO,
+} from "@/server/services/conversations.service";
+import type {
+  CreateGroupPayload,
+  RenameGroupPayload,
+  AddGroupMemberPayload,
+} from "@/server/validators/conversations.schema";
 
 // Re-export DTOs so client components have one stable import path.
 export type { ClientDTO } from "@/server/services/clients.service";
@@ -129,6 +138,17 @@ export type {
   SendMessagePayload,
   ListMessagesQuery,
 } from "@/server/validators/messages.schema";
+
+export type {
+  GroupSummaryDTO,
+  GroupDetailDTO,
+  GroupMemberDTO,
+} from "@/server/services/conversations.service";
+export type {
+  CreateGroupPayload,
+  RenameGroupPayload,
+  AddGroupMemberPayload,
+} from "@/server/validators/conversations.schema";
 
 export type { RoleDTO, RoleGrantDTO } from "@/server/services/roles.service";
 export type {
@@ -449,12 +469,38 @@ export const apiClient = {
     stats: () => getJson<DashboardStatsDTO>("/api/dashboard/stats"),
   },
   messages: {
-    // Office chat (Stage 13 R5). `with` = "group" or a member id; `after` (ISO)
-    // pulls only newer messages for the 3s poll.
+    // Office chat. `with` = "group" (office), a member id (DM), or "conv:<id>" (a
+    // custom group). `after` (ISO) pulls only newer messages for the 3s poll.
     list: (params: { with: string; after?: string; limit?: number }) =>
       getJson<{ items: MessageDTO[] }>(`/api/messages${toQueryString(params)}`),
+    // `input.conversationId` targets a group; `input.recipientId` a DM; neither = office.
     send: (input: SendMessagePayload) =>
       postJson<MessageDTO>("/api/messages", input),
+  },
+  conversations: {
+    // Stage 14 / R2 — group management. Office + DMs are derived client-side from the
+    // roster; only custom GROUPS live here. Every write goes through a validated
+    // SECURITY DEFINER RPC (the client has no direct write on conversations).
+    list: () => getJson<{ items: GroupSummaryDTO[] }>("/api/conversations"),
+    create: (input: CreateGroupPayload) =>
+      postJson<GroupSummaryDTO>("/api/conversations", input),
+    get: (conversationId: string) =>
+      getJson<GroupDetailDTO>(`/api/conversations/${conversationId}`),
+    rename: (conversationId: string, input: RenameGroupPayload) =>
+      patchJson<GroupDetailDTO>(`/api/conversations/${conversationId}`, input),
+    remove: (conversationId: string) =>
+      deleteJson<{ deleted: boolean }>(`/api/conversations/${conversationId}`),
+    addMember: (conversationId: string, input: AddGroupMemberPayload) =>
+      postJson<GroupDetailDTO>(
+        `/api/conversations/${conversationId}/members`,
+        input,
+      ),
+    removeMember: (conversationId: string, userId: string) =>
+      deleteJson<GroupDetailDTO>(
+        `/api/conversations/${conversationId}/members/${userId}`,
+      ),
+    leave: (conversationId: string) =>
+      postJson<{ left: boolean }>(`/api/conversations/${conversationId}/leave`),
   },
   team: {
     list: () => getJson<{ items: MemberDTO[] }>("/api/team"),

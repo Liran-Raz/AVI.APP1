@@ -74,3 +74,156 @@ export async function ensureDm(
   if (error) throw error;
   return data as unknown as string;
 }
+
+// ---------------------------------------------------------------------------
+// Stage 14 / R2 — group conversations. Reads are RLS-gated (participant-only for
+// groups); every WRITE goes through a SECURITY DEFINER RPC (0024 create + 0025
+// manage) — the client has no direct write grant on conversations/participants
+// (fail-closed). Every read still filters org_id explicitly (defense in depth).
+// ---------------------------------------------------------------------------
+
+export type ParticipantRow = {
+  conversation_id: string;
+  user_id: string;
+  is_admin: boolean;
+  joined_at: string;
+};
+
+// My ACTIVE group memberships in this org: the conversation id + whether I'm its
+// admin. (RLS lets me read my own participant rows.)
+export async function listMyGroupParticipations(
+  orgId: string,
+  userId: string,
+): Promise<{ conversationId: string; isAdmin: boolean }[]> {
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("conversation_participants")
+    .select("conversation_id, is_admin")
+    .eq("org_id", orgId)
+    .eq("user_id", userId)
+    .is("left_at", null);
+  if (error) throw error;
+  const rows =
+    (data as unknown as { conversation_id: string; is_admin: boolean }[]) ?? [];
+  return rows.map((r) => ({
+    conversationId: r.conversation_id,
+    isAdmin: r.is_admin === true,
+  }));
+}
+
+// Live (non-deleted) GROUP conversations by id, scoped to the org. RLS additionally
+// restricts to conversations the caller participates in.
+export async function findGroupsByIds(
+  orgId: string,
+  ids: string[],
+): Promise<Conversation[]> {
+  if (ids.length === 0) return [];
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("conversations")
+    .select("*")
+    .eq("org_id", orgId)
+    .eq("kind", "group")
+    .is("deleted_at", null)
+    .in("id", ids);
+  if (error) throw error;
+  return (data as unknown as Conversation[]) ?? [];
+}
+
+// A single live GROUP conversation (RLS: participant-only). Null when it doesn't
+// exist, is deleted, isn't a group, or the caller isn't a participant.
+export async function getGroupById(
+  orgId: string,
+  convId: string,
+): Promise<Conversation | null> {
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("conversations")
+    .select("*")
+    .eq("org_id", orgId)
+    .eq("id", convId)
+    .eq("kind", "group")
+    .is("deleted_at", null)
+    .maybeSingle();
+  if (error) throw error;
+  return (data as unknown as Conversation | null) ?? null;
+}
+
+// Active participants of the given conversations (RLS: only conversations the
+// caller is in). Ordered by join time. Used for member lists + counts.
+export async function listActiveParticipants(
+  convIds: string[],
+): Promise<ParticipantRow[]> {
+  if (convIds.length === 0) return [];
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("conversation_participants")
+    .select("conversation_id, user_id, is_admin, joined_at")
+    .in("conversation_id", convIds)
+    .is("left_at", null)
+    .order("joined_at", { ascending: true });
+  if (error) throw error;
+  return (data as unknown as ParticipantRow[]) ?? [];
+}
+
+// ----- WRITES: SECURITY DEFINER RPCs. The client has no direct write grant. -----
+
+// Create a group (creator becomes admin; non-member/self ids are ignored in the
+// RPC). Returns the new conversation id.
+export async function createGroup(
+  orgId: string,
+  title: string,
+  memberIds: string[],
+): Promise<string> {
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase.rpc("create_group_conversation", {
+    p_org_id: orgId,
+    p_title: title,
+    p_member_ids: memberIds,
+  });
+  if (error) throw error;
+  return data as unknown as string;
+}
+
+export async function renameGroup(convId: string, title: string): Promise<void> {
+  const supabase = await createSupabaseServerClient();
+  const { error } = await supabase.rpc("rename_group_conversation", {
+    p_conv_id: convId,
+    p_title: title,
+  });
+  if (error) throw error;
+}
+
+export async function addMember(convId: string, userId: string): Promise<void> {
+  const supabase = await createSupabaseServerClient();
+  const { error } = await supabase.rpc("add_group_member", {
+    p_conv_id: convId,
+    p_user_id: userId,
+  });
+  if (error) throw error;
+}
+
+export async function removeMember(convId: string, userId: string): Promise<void> {
+  const supabase = await createSupabaseServerClient();
+  const { error } = await supabase.rpc("remove_group_member", {
+    p_conv_id: convId,
+    p_user_id: userId,
+  });
+  if (error) throw error;
+}
+
+export async function leaveGroup(convId: string): Promise<void> {
+  const supabase = await createSupabaseServerClient();
+  const { error } = await supabase.rpc("leave_group_conversation", {
+    p_conv_id: convId,
+  });
+  if (error) throw error;
+}
+
+export async function deleteGroup(convId: string): Promise<void> {
+  const supabase = await createSupabaseServerClient();
+  const { error } = await supabase.rpc("delete_group_conversation", {
+    p_conv_id: convId,
+  });
+  if (error) throw error;
+}
