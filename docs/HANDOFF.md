@@ -15,22 +15,24 @@ are + how to continue" brief.
   shadcn/ui · Supabase (Postgres + Auth + Realtime + RLS) · Vercel.
 - **Production:** **https://www.aviapp1.com** (Cloudflare→Vercel; old
   `avi-app-1.vercel.app` still alive). Auto-deploys on push to `main`.
-- **`main` at `d6166b9`** (2026-07-13). Shipped: **Stage 12 (DEV-019)** + **Stage 13
+- **`main` at `15a1aa7`** (2026-07-13). Shipped: **Stage 12 (DEV-019)** + **Stage 13
   (DEV-020)** — clients-UX + task-flow bell notifications (mig `0021`), owner analytics
   **dashboard** + owner-granted **per-member dashboard access** (`0022`) + a new bilingual
   invite email + the **office chat** ("הודעות" — group + DMs, 3s polling, `0023`); then
   **DEV-021** (mobile nav drawer, PR #65) and **DEV-014** (soft-mute the in-app bell badge
   on task assignment, PR #68); **DEV-023** (mobile Web Push) logged to the backlog (PR #69);
-  and **DEV-024 / Stage 14 R1** — the chat conversation-model foundation, behavior-preserving
-  (PR #71, migration `0024` applied + verified). Migrations through `0024`. An adversarial
-  multi-agent review caught + closed a CRITICAL RLS self-join in the 0024 draft pre-apply.
-  `git log -8` to confirm.
+  and **DEV-024 / Stage 14** — the WhatsApp-style chat upgrade: **R1** (conversation-model
+  foundation, behavior-preserving, PR #71, mig `0024`) + **R2** (full group management —
+  create/rename/add/remove/leave/delete, admin-only, PR #74, mig `0025`). Migrations through
+  `0025`. Adversarial multi-agent reviews gate each round (caught + closed a CRITICAL RLS
+  self-join in the 0024 draft pre-apply; 0 CRITICAL/HIGH on R2). `git log -8` to confirm.
 - **User = Liran**, Hebrew-speaking founder / product owner. Reply in Hebrew.
   He drives product; Claude drives implementation. Honest tradeoffs, not hype.
-- **In flight:** DEV-024 **R2 (full group management)** is built + adversarially
-  reviewed (0 CRITICAL/HIGH), migration **`0025`** applied+verified in Prod, on
-  branch `feat/chat-r2-groups` in a PR — **pending Liran's QA + merge.** No open
-  bugs otherwise. R3 (read receipts) + R4 (edit/delete) are the remaining rounds.
+- **DEV-024 R2 (full group management) shipped 2026-07-13** — PR #74, main
+  `15a1aa7`, migration `0025` applied+verified in Prod, Vercel deploy + prod smoke
+  green (`/api/conversations`→401 unauth). Single-user QA approved by Liran.
+  **Nothing pending/blocked.** R3 (read receipts + badge) + R4 (edit/delete,
+  code-only) are the remaining chat rounds; multi-user group QA is Liran's in Prod.
 
 ---
 
