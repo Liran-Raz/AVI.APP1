@@ -34,6 +34,10 @@ export const viewport: Viewport = {
   ],
   width: "device-width",
   initialScale: 1,
+  // Draw into the notch / home-indicator area so env(safe-area-inset-*)
+  // resolves to real values inside the native shell (Capacitor) and
+  // installed PWA. The sticky chrome then pads itself clear of both.
+  viewportFit: "cover",
 };
 
 export default function RootLayout({

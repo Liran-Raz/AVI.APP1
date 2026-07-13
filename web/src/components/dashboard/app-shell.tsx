@@ -209,7 +209,7 @@ export function AppShell({
           scrolls INTERNALLY as intended. */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* Top bar */}
-        <header className="h-16 border-b border-border glass-topbar flex items-center justify-between px-4 md:px-6 sticky top-0 z-30">
+        <header className="topbar-safe border-b border-border glass-topbar flex items-center justify-between px-4 md:px-6 sticky top-0 z-30">
           <div className="md:hidden flex items-center gap-2">
             <div className="size-8 rounded-lg bg-primary text-primary-foreground flex items-center justify-center font-bold text-sm">
               א
@@ -267,7 +267,7 @@ export function AppShell({
         {/* Mobile bottom bar — the 4 everyday screens + a "תפריט" button that
             opens the full navigation drawer. Fixed set, so no scrolling needed;
             overflow-x-auto stays as a safety net for very narrow screens. */}
-        <nav className="md:hidden order-last border-t border-border glass-mobilenav flex overflow-x-auto no-scrollbar sticky bottom-0 z-30">
+        <nav className="md:hidden order-last border-t border-border glass-mobilenav flex overflow-x-auto no-scrollbar sticky bottom-0 z-30 pb-safe">
           {mobileBarItems.map((item) => {
             const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
             return (
@@ -318,7 +318,7 @@ export function AppShell({
           )}
         >
           {/* Header: logo + office (or switcher) + close */}
-          <div className="flex items-center gap-2.5 px-4 pt-4 pb-3">
+          <div className="flex items-center gap-2.5 px-4 pt-drawer-safe pb-3">
             <div className="size-9 rounded-lg bg-primary text-primary-foreground flex items-center justify-center font-bold shadow-[0_8px_18px_-6px_rgba(2,106,255,0.6)]">
               א
             </div>
@@ -403,7 +403,7 @@ export function AppShell({
           </nav>
 
           {/* Footer: office code + logout */}
-          <div className="border-t border-white/10 px-3 pb-4 pt-2">
+          <div className="border-t border-white/10 px-3 pb-drawer-safe pt-2">
             <div className="text-xs text-sidebar-foreground/70 px-3 pb-2">
               קוד משרד: <span className="font-mono text-white/90">{organization.org_code}</span>
             </div>
