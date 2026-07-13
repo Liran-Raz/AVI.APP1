@@ -15,7 +15,7 @@ are + how to continue" brief.
   shadcn/ui · Supabase (Postgres + Auth + Realtime + RLS) · Vercel.
 - **Production:** **https://www.aviapp1.com** (Cloudflare→Vercel; old
   `avi-app-1.vercel.app` still alive). Auto-deploys on push to `main`.
-- **`main` at `15a1aa7`** (2026-07-13). Shipped: **Stage 12 (DEV-019)** + **Stage 13
+- **`main` at `9b0b041`** (2026-07-14). Shipped: **Stage 12 (DEV-019)** + **Stage 13
   (DEV-020)** — clients-UX + task-flow bell notifications (mig `0021`), owner analytics
   **dashboard** + owner-granted **per-member dashboard access** (`0022`) + a new bilingual
   invite email + the **office chat** ("הודעות" — group + DMs, 3s polling, `0023`); then
@@ -24,18 +24,25 @@ are + how to continue" brief.
   and **DEV-024 / Stage 14** — the WhatsApp-style chat upgrade: **R1** (conversation-model
   foundation, behavior-preserving, PR #71, mig `0024`) + **R2** (full group management —
   create/rename/add/remove/leave/delete, admin-only, PR #74, mig `0025`) + **R3+R4** (read
-  receipts + unread badge + edit/delete ≤10 min, mig `0026`, in flight). Migrations through
-  `0026`. Adversarial multi-agent reviews gate each round (caught + closed a CRITICAL RLS
-  self-join in the 0024 draft pre-apply; 0 CRITICAL/HIGH on R2). `git log -8` to confirm.
+  receipts + unread badge + edit/delete ≤10 min, PR #76, mig `0026`). **Stage 14 DONE.**
+  Migrations through `0026`. Adversarial multi-agent reviews gate each round (0 CRITICAL/HIGH
+  on R2–R4). **⚠️ PR #76 also swept in DEV-025 M1 mobile work — concurrent-session incident,
+  see below.** `git log -8` to confirm.
 - **User = Liran**, Hebrew-speaking founder / product owner. Reply in Hebrew.
   He drives product; Claude drives implementation. Honest tradeoffs, not hype.
-- **DEV-024 R2 (full group management) shipped 2026-07-13** — PR #74, main
-  `15a1aa7`. **R3 (read receipts + unread badge) + R4 (edit/delete ≤10 min) built
-  together + in flight 2026-07-14** — branch `feat/chat-r3r4-receipts-edit`, migration
-  `0026` applied+verified in Prod, **in a PR pending Liran's QA + merge.** With R4,
-  **Stage 14 (DEV-024) completes.** Adversarial review = 0 CRITICAL/HIGH (caught +
-  fixed a HIGH: others' edits/deletes now propagate via recent-window + reconcile).
-  Multi-user chat QA is Liran's in Prod.
+- **DEV-024 / Stage 14 COMPLETE (R1→R4) — live 2026-07-14** (R3+R4 = PR #76, main
+  `9b0b041`, mig `0026`). WhatsApp-style chat: groups + read receipts + unread badge +
+  edit/delete ≤10 min. Multi-user chat QA is Liran's in Prod.
+- **⚠️ Concurrent-session incident (2026-07-14):** two Claude sessions shared ONE git
+  working-tree/HEAD (this `D:\AVI.APP`); Session B's DEV-025 mobile work landed on Session
+  A's branch, so **PR #76 squash-merged 146 files** (R3/R4 **+ all DEV-025 M1**: Capacitor +
+  iOS project + native-bridge + native-OAuth deep-link + package-lock) to prod. Verified
+  SAFE: prod healthy, native web-inert by design, web Google-OAuth path byte-unchanged
+  (native branches gated on `isNativeApp()`). **LLM-council verdict: do NOT revert** (a
+  146-file revert is the more dangerous act — deletes live R3/R4). **Decision: leave.** Open
+  owner action: live OAuth verification in prod. **Prevention now in force: single git-owner
+  at a time** (one session touches git, the other frozen); going forward use a separate
+  `git worktree` per session. DEV-025 M1 foundation is therefore shipped-inert on prod.
 
 ---
 
@@ -194,6 +201,15 @@ Critical do-nots:
 
 ## 💡 Reusable lessons (learned the hard way this session)
 
+- **NEVER run two Claude sessions on the same git working-tree at once.** Two sessions
+  share ONE HEAD + index; each other's commits accumulate on the shared branch, so one
+  session's squash-merge silently bundles the other's work (this bit us — PR #76 shipped
+  146 files, R3/R4 + all of DEV-025 M1, to prod). Explicit `git add` does NOT protect you —
+  the collision is at the branch/HEAD level, not staging. Fixes: (1) **single git-owner at a
+  time** — one session does all git ops, the other stays fully frozen (read-only) until
+  handed ownership; (2) durably, **one `git worktree` (or clone) + branch per session** so
+  each has its own HEAD. Before any commit, `git status` + `git diff --cached --name-only`
+  and sanity-check the file COUNT/scope vs the PR's intent.
 - **Vercel transient build failures:** a deploy can fail at the git-clone/setup
   stage with "unexpected error… try rebuilding" — that's Vercel infra, NOT the
   code. If local `next build` + all GitHub CI checks are green, just RETRIGGER
