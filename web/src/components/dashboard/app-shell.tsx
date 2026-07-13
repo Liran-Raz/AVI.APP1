@@ -92,6 +92,9 @@ export function AppShell({
   // scrim, the X, Escape, or tapping any nav link. Desktop is untouched.
   const [drawerOpen, setDrawerOpen] = useState(false);
 
+  // Unread chat messages → a badge on the "הודעות" nav entry (Stage 14 / R3).
+  const [unreadMessages, setUnreadMessages] = useState(0);
+
   useEffect(() => {
     if (!drawerOpen) return;
     const onKey = (e: KeyboardEvent) => {
@@ -106,6 +109,31 @@ export function AppShell({
       document.body.style.overflow = prevOverflow;
     };
   }, [drawerOpen]);
+
+  // Poll the unread-messages total for the nav badge; paused when the tab is hidden.
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      if (document.hidden) return;
+      try {
+        const u = await apiClient.messages.unread();
+        if (!cancelled) setUnreadMessages(u.total);
+      } catch {
+        // non-critical
+      }
+    };
+    void load();
+    const t = setInterval(load, 5000);
+    const onVis = () => {
+      if (!document.hidden) void load();
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      cancelled = true;
+      clearInterval(t);
+      document.removeEventListener("visibilitychange", onVis);
+    };
+  }, []);
 
   // Compose the nav from the base items. Insertions are index-safe (found by
   // href) so they compose regardless of which flags are on.
@@ -189,7 +217,12 @@ export function AppShell({
                 )}
               >
                 <item.icon className="size-4" />
-                {item.label}
+                <span className="flex-1">{item.label}</span>
+                {item.href === "/messages" && unreadMessages > 0 ? (
+                  <span className="min-w-[20px] rounded-full bg-[#16a34a] px-1.5 text-center text-[11px] font-bold text-white">
+                    {unreadMessages > 99 ? "99+" : unreadMessages}
+                  </span>
+                ) : null}
               </Link>
             );
           })}
@@ -279,7 +312,14 @@ export function AppShell({
                   active ? "text-primary" : "text-muted-foreground",
                 )}
               >
-                <item.icon className="size-5" />
+                <span className="relative">
+                  <item.icon className="size-5" />
+                  {item.href === "/messages" && unreadMessages > 0 ? (
+                    <span className="absolute -end-2 -top-1.5 flex min-w-[16px] items-center justify-center rounded-full bg-[#16a34a] px-1 text-[10px] font-bold leading-tight text-white">
+                      {unreadMessages > 99 ? "99+" : unreadMessages}
+                    </span>
+                  ) : null}
+                </span>
                 <span className="text-xs whitespace-nowrap">{item.label}</span>
               </Link>
             );
@@ -377,7 +417,12 @@ export function AppShell({
                   )}
                 >
                   <item.icon className="size-4" />
-                  {item.label}
+                  <span className="flex-1">{item.label}</span>
+                  {item.href === "/messages" && unreadMessages > 0 ? (
+                    <span className="min-w-[20px] rounded-full bg-[#16a34a] px-1.5 text-center text-[11px] font-bold text-white">
+                      {unreadMessages > 99 ? "99+" : unreadMessages}
+                    </span>
+                  ) : null}
                 </Link>
               );
             })}

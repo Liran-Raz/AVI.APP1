@@ -227,3 +227,52 @@ export async function deleteGroup(convId: string): Promise<void> {
   });
   if (error) throw error;
 }
+
+// ---------------------------------------------------------------------------
+// Stage 14 / R3 — read state. mark-read is a SECURITY DEFINER RPC (fail-closed:
+// the client has no direct write on last_read_at). Reads are RLS-gated.
+// ---------------------------------------------------------------------------
+
+// Set the caller's last_read_at for a conversation (office row created lazily;
+// dm/group require an existing active participant row). Fail-closed via the RPC.
+export async function markRead(convId: string): Promise<void> {
+  const supabase = await createSupabaseServerClient();
+  const { error } = await supabase.rpc("mark_conversation_read", {
+    p_conversation_id: convId,
+  });
+  if (error) throw error;
+}
+
+export type UnreadCountRow = {
+  conversation_id: string;
+  kind: "office" | "dm" | "group";
+  dm_key: string | null;
+  unread: number;
+};
+
+// The caller's unread count per conversation (SECURITY DEFINER, scoped to auth.uid()).
+export async function getUnreadCounts(): Promise<UnreadCountRow[]> {
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase.rpc("get_unread_counts");
+  if (error) throw error;
+  return (data as unknown as UnreadCountRow[]) ?? [];
+}
+
+// The active participants of a conversation with their read cursor (last_read_at).
+// RLS restricts this to conversations the caller is in. Used for ✓/✓✓ + "read by".
+export async function listReadState(
+  orgId: string,
+  convId: string,
+): Promise<{ user_id: string; last_read_at: string | null }[]> {
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("conversation_participants")
+    .select("user_id, last_read_at")
+    .eq("org_id", orgId)
+    .eq("conversation_id", convId)
+    .is("left_at", null);
+  if (error) throw error;
+  return (
+    (data as unknown as { user_id: string; last_read_at: string | null }[]) ?? []
+  );
+}

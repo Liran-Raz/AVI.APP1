@@ -7,6 +7,8 @@ import { ValidationError } from "@/server/errors/app-error";
 vi.mock("@/server/repositories/messages.repository", () => ({
   create: vi.fn(),
   findByConversation: vi.fn(),
+  updateBody: vi.fn(),
+  softDelete: vi.fn(),
 }));
 vi.mock("@/server/repositories/conversations.repository", () => ({
   ensureOffice: vi.fn(),
@@ -14,6 +16,9 @@ vi.mock("@/server/repositories/conversations.repository", () => ({
   findOffice: vi.fn(),
   findDm: vi.fn(),
   getGroupById: vi.fn(),
+  listReadState: vi.fn(),
+  markRead: vi.fn(),
+  getUnreadCounts: vi.fn(),
 }));
 vi.mock("@/server/repositories/memberships.repository", () => ({
   findByUserAndOrg: vi.fn(),
@@ -26,7 +31,14 @@ import * as messagesRepo from "@/server/repositories/messages.repository";
 import * as conversationsRepo from "@/server/repositories/conversations.repository";
 import * as membershipsRepo from "@/server/repositories/memberships.repository";
 import * as teamRepo from "@/server/repositories/team.repository";
-import { listMessages, sendMessage } from "@/server/services/messages.service";
+import {
+  deleteMessage,
+  editMessage,
+  getUnreadCounts,
+  listMessages,
+  markRead,
+  sendMessage,
+} from "@/server/services/messages.service";
 
 const ORG = "org-1";
 const ME = "user-me";
@@ -73,6 +85,7 @@ beforeEach(() => {
   vi.mocked(conversationsRepo.findOffice).mockResolvedValue({ id: OFFICE_CONV, org_id: ORG, kind: "office" } as never);
   vi.mocked(conversationsRepo.findDm).mockResolvedValue({ id: DM_CONV, org_id: ORG, kind: "dm" } as never);
   vi.mocked(conversationsRepo.getGroupById).mockResolvedValue({ id: GROUP_CONV, org_id: ORG, kind: "group" } as never);
+  vi.mocked(conversationsRepo.listReadState).mockResolvedValue([]);
 });
 
 describe("sendMessage", () => {
@@ -236,5 +249,78 @@ describe("group conversations (Stage 14 / R2)", () => {
     });
     expect(items).toEqual([]);
     expect(messagesRepo.findByConversation).not.toHaveBeenCalled();
+  });
+});
+
+describe("read state + mark-read (Stage 14 / R3)", () => {
+  it("listMessages returns readState recipients (group: participants except me)", async () => {
+    vi.mocked(messagesRepo.findByConversation).mockResolvedValue([]);
+    vi.mocked(conversationsRepo.listReadState).mockResolvedValue([
+      { user_id: ME, last_read_at: "2026-07-14T10:00:00+00:00" },
+      { user_id: OTHER, last_read_at: "2026-07-14T09:00:00+00:00" },
+    ]);
+    const { readState } = await listMessages(session(), {
+      with: `conv:${GROUP_CONV}`,
+      limit: 50,
+    });
+    expect(readState.recipients.map((r) => r.id)).toEqual([OTHER]); // me excluded
+    expect(readState.recipients[0].lastReadAt).toBe("2026-07-14T09:00:00+00:00");
+    expect(readState.recipients[0].name).toBe("עמית");
+  });
+
+  it("markRead resolves the conversation and calls the repo", async () => {
+    await markRead(session(), `conv:${GROUP_CONV}`);
+    expect(conversationsRepo.markRead).toHaveBeenCalledWith(GROUP_CONV);
+  });
+
+  it("markRead is a no-op when a DM has never been messaged", async () => {
+    vi.mocked(conversationsRepo.findDm).mockResolvedValue(null);
+    await markRead(session(), OTHER);
+    expect(conversationsRepo.markRead).not.toHaveBeenCalled();
+  });
+
+  it("getUnreadCounts maps rows to office / dms / groups / total (skips zero)", async () => {
+    vi.mocked(conversationsRepo.getUnreadCounts).mockResolvedValue([
+      { conversation_id: OFFICE_CONV, kind: "office", dm_key: null, unread: 2 },
+      { conversation_id: "g1", kind: "group", dm_key: null, unread: 3 },
+      { conversation_id: DM_CONV, kind: "dm", dm_key: `${ME}:${OTHER}`, unread: 1 },
+      { conversation_id: "z", kind: "group", dm_key: null, unread: 0 },
+    ]);
+    const u = await getUnreadCounts(session());
+    expect(u.office).toBe(2);
+    expect(u.groups["g1"]).toBe(3);
+    expect(u.dms[OTHER]).toBe(1);
+    expect(u.groups["z"]).toBeUndefined();
+    expect(u.total).toBe(6);
+  });
+});
+
+describe("edit + delete (Stage 14 / R4)", () => {
+  it("editMessage returns the updated DTO with editedAt set", async () => {
+    vi.mocked(messagesRepo.updateBody).mockResolvedValue(
+      msg({ id: "m1", body: "מתוקן", edited_at: "2026-07-14T10:05:00+00:00" }),
+    );
+    const dto = await editMessage(session(), "m1", "מתוקן");
+    expect(dto.body).toBe("מתוקן");
+    expect(dto.editedAt).toBe("2026-07-14T10:05:00+00:00");
+  });
+
+  it("editMessage throws when the 10-minute window passed (repo returns null)", async () => {
+    vi.mocked(messagesRepo.updateBody).mockResolvedValue(null);
+    await expect(editMessage(session(), "m1", "x")).rejects.toBeInstanceOf(ValidationError);
+  });
+
+  it("deleteMessage tombstones and NEVER leaks the deleted body", async () => {
+    vi.mocked(messagesRepo.softDelete).mockResolvedValue(
+      msg({ id: "m1", body: "secret", deleted_at: "2026-07-14T10:00:00+00:00" }),
+    );
+    const dto = await deleteMessage(session(), "m1");
+    expect(dto.deletedAt).toBe("2026-07-14T10:00:00+00:00");
+    expect(dto.body).toBe(""); // blanked in the DTO regardless of the stored value
+  });
+
+  it("deleteMessage throws when not allowed (repo returns null)", async () => {
+    vi.mocked(messagesRepo.softDelete).mockResolvedValue(null);
+    await expect(deleteMessage(session(), "m1")).rejects.toBeInstanceOf(ValidationError);
   });
 });

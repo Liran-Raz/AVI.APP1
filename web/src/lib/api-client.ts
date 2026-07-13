@@ -62,8 +62,15 @@ import type {
 } from "@/server/validators/roles.schema";
 import type { CreateBugReportPayload } from "@/server/validators/bug-reports.schema";
 import type { DashboardStatsDTO } from "@/server/services/dashboard.service";
-import type { MessageDTO } from "@/server/services/messages.service";
-import type { SendMessagePayload } from "@/server/validators/messages.schema";
+import type {
+  MessageDTO,
+  ReadStateDTO,
+  UnreadCountsDTO,
+} from "@/server/services/messages.service";
+import type {
+  SendMessagePayload,
+  EditMessagePayload,
+} from "@/server/validators/messages.schema";
 import type {
   GroupSummaryDTO,
   GroupDetailDTO,
@@ -133,10 +140,17 @@ export type {
   WeekPoint,
 } from "@/server/services/dashboard.service";
 
-export type { MessageDTO } from "@/server/services/messages.service";
+export type {
+  MessageDTO,
+  ReadStateDTO,
+  ReadRecipientDTO,
+  UnreadCountsDTO,
+} from "@/server/services/messages.service";
 export type {
   SendMessagePayload,
   ListMessagesQuery,
+  EditMessagePayload,
+  MarkReadPayload,
 } from "@/server/validators/messages.schema";
 
 export type {
@@ -470,12 +484,22 @@ export const apiClient = {
   },
   messages: {
     // Office chat. `with` = "group" (office), a member id (DM), or "conv:<id>" (a
-    // custom group). `after` (ISO) pulls only newer messages for the 3s poll.
+    // custom group). Returns messages + the conversation's read state (✓/✓✓ + "read by").
     list: (params: { with: string; after?: string; limit?: number }) =>
-      getJson<{ items: MessageDTO[] }>(`/api/messages${toQueryString(params)}`),
+      getJson<{ items: MessageDTO[]; readState: ReadStateDTO }>(
+        `/api/messages${toQueryString(params)}`,
+      ),
     // `input.conversationId` targets a group; `input.recipientId` a DM; neither = office.
     send: (input: SendMessagePayload) =>
       postJson<MessageDTO>("/api/messages", input),
+    // R3 — mark a conversation read; and the caller's unread counts (office/dms/groups/total).
+    markRead: (withValue: string) =>
+      postJson<{ ok: boolean }>("/api/messages/read", { with: withValue }),
+    unread: () => getJson<UnreadCountsDTO>("/api/messages/unread"),
+    // R4 — edit / soft-delete a message (sender + ≤10 min; enforced in the DB).
+    edit: (id: string, input: EditMessagePayload) =>
+      patchJson<MessageDTO>(`/api/messages/${id}`, input),
+    remove: (id: string) => deleteJson<MessageDTO>(`/api/messages/${id}`),
   },
   conversations: {
     // Stage 14 / R2 — group management. Office + DMs are derived client-side from the

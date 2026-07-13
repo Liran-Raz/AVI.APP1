@@ -22,12 +22,17 @@ import {
   type GroupSummaryDTO,
   type MemberDTO,
   type MessageDTO,
+  type ReadStateDTO,
+  type UnreadCountsDTO,
 } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
+import { mergeNew, newestMs, reconcile } from "./message-merge";
+import { MessageItem } from "./message-item";
 import { NewGroupDialog } from "./new-group-dialog";
 import { GroupManageDialog } from "./group-manage-dialog";
 
 const POLL_INTERVAL_MS = 3_000; // 3s, paused when the tab is hidden (Stage 13)
+const UNREAD_POLL_MS = 4_000; // unread badge cadence (all conversations)
 const OFFICE = "group"; // `with` value for the office-wide feed (unchanged since R1)
 const CONV_PREFIX = "conv:"; // a custom group is addressed as "conv:<conversationId>"
 
@@ -36,30 +41,27 @@ function initials(name: string): string {
   return (p[0]?.[0] ?? "") + (p[1]?.[0] ?? "");
 }
 
-function fmtTime(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  return d.toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit" });
-}
-
-function mergeNew(prev: MessageDTO[], incoming: MessageDTO[]): MessageDTO[] {
-  if (incoming.length === 0) return prev;
-  const seen = new Set(prev.map((m) => m.id));
-  const fresh = incoming.filter((m) => !seen.has(m.id));
-  if (fresh.length === 0) return prev;
-  // Sort the merged list by (createdAt, id). An optimistic send does NOT advance the
-  // poll cursor, so an earlier message from someone else can still arrive AFTER mine;
-  // sorting keeps the thread in chronological order regardless of arrival order.
-  return [...prev, ...fresh].sort((a, b) => {
-    const ta = Date.parse(a.createdAt);
-    const tb = Date.parse(b.createdAt);
-    if (ta !== tb) return ta - tb;
-    return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
-  });
-}
-
 function groupKey(id: string): string {
   return CONV_PREFIX + id;
+}
+
+// Optimistically zero a conversation's unread when I open it (the server catches up
+// on the next poll after mark-read). Keeps the badge from lingering while I read.
+function clearUnreadFor(u: UnreadCountsDTO, key: string): UnreadCountsDTO {
+  if (key === OFFICE) {
+    return { ...u, office: 0, total: Math.max(0, u.total - u.office) };
+  }
+  if (key.startsWith(CONV_PREFIX)) {
+    const id = key.slice(CONV_PREFIX.length);
+    const n = u.groups[id] ?? 0;
+    const groups = { ...u.groups };
+    delete groups[id];
+    return { ...u, groups, total: Math.max(0, u.total - n) };
+  }
+  const n = u.dms[key] ?? 0;
+  const dms = { ...u.dms };
+  delete dms[key];
+  return { ...u, dms, total: Math.max(0, u.total - n) };
 }
 
 export function MessagesPage({
@@ -76,13 +78,15 @@ export function MessagesPage({
   const [activeKey, setActiveKey] = useState<string>(OFFICE);
   const [showListMobile, setShowListMobile] = useState(true);
   const [messages, setMessages] = useState<MessageDTO[]>([]);
+  const [readState, setReadState] = useState<ReadStateDTO>({ recipients: [] });
+  const [unread, setUnread] = useState<UnreadCountsDTO | null>(null);
   const [loading, setLoading] = useState(false);
   const [body, setBody] = useState("");
   const [sending, setSending] = useState(false);
   const [newGroupOpen, setNewGroupOpen] = useState(false);
   const [manageOpen, setManageOpen] = useState(false);
 
-  const lastTsRef = useRef<string | undefined>(undefined);
+  const lastTsRef = useRef<number>(0); // newest message time (ms) seen — gates mark-read
   const bottomRef = useRef<HTMLDivElement | null>(null);
 
   const activeGroupId = activeKey.startsWith(CONV_PREFIX)
@@ -102,6 +106,21 @@ export function MessagesPage({
         ? "קבוצה"
         : (dmMembers.find((m) => m.id === activeKey)?.fullName ?? "שיחה");
 
+  // The timestamp through which EVERY recipient has read (min of their last_read_at,
+  // or null if any recipient has never read). A message of mine is ✓✓ (read-by-all)
+  // when its createdAt <= readThrough.
+  const readThrough = (() => {
+    const recs = readState.recipients;
+    if (recs.length === 0) return null;
+    let min = Number.POSITIVE_INFINITY;
+    for (const r of recs) {
+      if (!r.lastReadAt) return null;
+      const t = Date.parse(r.lastReadAt);
+      if (t < min) min = t;
+    }
+    return min;
+  })();
+
   // Load the caller's group conversations once on mount. (Office + DMs come from the
   // roster prop.) Local updates from the dialogs keep this in sync afterward.
   useEffect(() => {
@@ -119,30 +138,42 @@ export function MessagesPage({
     };
   }, []);
 
-  // Load the active conversation and poll it for new messages. ONE effect keyed on
-  // activeKey: switching conversations cancels any in-flight load/poll from the
-  // previous one via the `cancelled` flag, so a late response can never render into
-  // the wrong thread or clobber the shared cursor. The cursor resets on each switch.
+  // Load the active conversation and poll it. ONE effect keyed on activeKey: switching
+  // conversations cancels any in-flight load/poll from the previous one via `cancelled`,
+  // so a late response can never render into the wrong thread or clobber the cursor.
   useEffect(() => {
     let cancelled = false;
     const key = activeKey;
-    lastTsRef.current = undefined;
+    lastTsRef.current = 0;
+
+    // Mark the conversation read (best-effort) + optimistically clear its badge.
+    const markRead = async () => {
+      try {
+        await apiClient.messages.markRead(key);
+      } catch {
+        // non-critical
+      }
+      if (!cancelled) setUnread((u) => (u ? clearUnreadFor(u, key) : u));
+    };
 
     const loadInitial = async () => {
       setLoading(true);
       // Clear the previous thread immediately so a switch never renders the old
-      // conversation's messages under the new header while the fetch is in flight.
+      // conversation's messages/read-state under the new header while loading.
       setMessages([]);
+      setReadState({ recipients: [] });
       try {
-        const { items } = await apiClient.messages.list({ with: key, limit: 50 });
+        const res = await apiClient.messages.list({ with: key, limit: 50 });
         if (cancelled) return;
-        setMessages(items);
-        lastTsRef.current = items.at(-1)?.createdAt;
+        setMessages(res.items);
+        setReadState(res.readState);
+        lastTsRef.current = newestMs(res.items);
+        void markRead();
       } catch (err) {
         if (cancelled) return;
         if (err instanceof ApiError) toast.error(err.message);
         setMessages([]);
-        lastTsRef.current = undefined;
+        lastTsRef.current = 0;
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -151,14 +182,18 @@ export function MessagesPage({
     const poll = async () => {
       if (document.hidden) return;
       try {
-        const { items } = await apiClient.messages.list({
-          with: key,
-          after: lastTsRef.current,
-          limit: 100,
-        });
-        if (cancelled || items.length === 0) return;
-        setMessages((prev) => mergeNew(prev, items));
-        lastTsRef.current = items.at(-1)?.createdAt ?? lastTsRef.current;
+        // Re-fetch the recent window (NOT a created_at delta) so edits/soft-deletes by
+        // others — which don't move created_at — are reflected. reconcile() returns the
+        // same reference (no re-render) when nothing changed.
+        const res = await apiClient.messages.list({ with: key, limit: 50 });
+        if (cancelled) return;
+        setReadState(res.readState); // refresh ✓/✓✓ live
+        setMessages((prev) => reconcile(prev, res.items));
+        const newest = newestMs(res.items);
+        if (newest > lastTsRef.current) {
+          lastTsRef.current = newest;
+          void markRead(); // a genuinely-new message arrived while I'm viewing
+        }
       } catch {
         // stay quiet on transient poll blips
       }
@@ -177,6 +212,31 @@ export function MessagesPage({
     };
   }, [activeKey]);
 
+  // Poll unread counts across ALL conversations (for the row badges), paused when hidden.
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      if (document.hidden) return;
+      try {
+        const u = await apiClient.messages.unread();
+        if (!cancelled) setUnread(u);
+      } catch {
+        // non-critical
+      }
+    };
+    void load();
+    const t = setInterval(load, UNREAD_POLL_MS);
+    const onVis = () => {
+      if (!document.hidden) void load();
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      cancelled = true;
+      clearInterval(t);
+      document.removeEventListener("visibilitychange", onVis);
+    };
+  }, []);
+
   // Keep the view pinned to the newest message.
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ block: "end" });
@@ -192,15 +252,38 @@ export function MessagesPage({
         recipientId: isOffice || activeGroupId ? null : activeKey,
         conversationId: activeGroupId ?? undefined,
       });
-      // Show my message immediately, but do NOT advance the poll cursor past it:
-      // an earlier not-yet-polled message from someone else must still arrive.
+      // Show my message immediately. The recent-window poll re-fetches + reconciles by
+      // id, so nothing is missed; advancing the mark-read gate past my own send just
+      // avoids a redundant mark-read on the next poll.
       setMessages((prev) => mergeNew(prev, [msg]));
+      lastTsRef.current = Math.max(lastTsRef.current, Date.parse(msg.createdAt));
       setBody("");
     } catch (err) {
       if (err instanceof ApiError) toast.error(err.message);
       else toast.error("שליחת ההודעה נכשלה");
     } finally {
       setSending(false);
+    }
+  }
+
+  // R4 — edit / delete my own message (≤10 min; the DB is authoritative). Errors are
+  // surfaced as a toast and swallowed so the message item can exit its busy state.
+  async function handleEdit(id: string, newBody: string) {
+    try {
+      const updated = await apiClient.messages.edit(id, { body: newBody });
+      setMessages((prev) => prev.map((m) => (m.id === id ? updated : m)));
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "עריכת ההודעה נכשלה");
+      throw err; // keep the editor open + preserve the typed draft on failure
+    }
+  }
+
+  async function handleDelete(id: string) {
+    try {
+      const updated = await apiClient.messages.remove(id);
+      setMessages((prev) => prev.map((m) => (m.id === id ? updated : m)));
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "מחיקת ההודעה נכשלה");
     }
   }
 
@@ -265,6 +348,7 @@ export function MessagesPage({
             icon={<Users className="size-4" />}
             title="כל המשרד"
             subtitle="הודעה לכל חברי הצוות"
+            unreadCount={unread?.office ?? 0}
           />
 
           {groups.length > 0 ? (
@@ -280,6 +364,7 @@ export function MessagesPage({
               icon={<UsersRound className="size-4" />}
               title={g.title}
               subtitle={`${g.memberCount} חברים`}
+              unreadCount={unread?.groups[g.id] ?? 0}
             />
           ))}
 
@@ -294,6 +379,7 @@ export function MessagesPage({
               icon={<span className="text-xs font-medium">{initials(m.fullName)}</span>}
               title={m.fullName}
               subtitle="הודעה פרטית"
+              unreadCount={unread?.dms[m.id] ?? 0}
             />
           ))}
           {dmMembers.length === 0 ? (
@@ -374,39 +460,19 @@ export function MessagesPage({
           ) : (
             messages.map((m) => {
               const mine = m.senderId === currentUserId;
-              const showName = showSenderNames && !mine;
               return (
-                <div
+                <MessageItem
                   key={m.id}
-                  className={cn("flex", mine ? "justify-start" : "justify-end")}
-                >
-                  <div
-                    className={cn(
-                      "max-w-[78%] rounded-2xl px-3 py-2 text-sm shadow-card",
-                      mine
-                        ? "rounded-bl-sm bg-primary text-primary-foreground"
-                        : "glass-card rounded-br-sm border border-border",
-                    )}
-                  >
-                    {showName ? (
-                      <div className="mb-0.5 text-[11px] font-semibold opacity-80">
-                        {m.senderName}
-                      </div>
-                    ) : null}
-                    <div className="break-words whitespace-pre-wrap">{m.body}</div>
-                    <div
-                      className={cn(
-                        "mt-1 text-left text-[10px]",
-                        mine
-                          ? "text-primary-foreground/70"
-                          : "text-muted-foreground",
-                      )}
-                      dir="ltr"
-                    >
-                      {fmtTime(m.createdAt)}
-                    </div>
-                  </div>
-                </div>
+                  message={m}
+                  mine={mine}
+                  showSenderName={showSenderNames && !mine}
+                  readByAll={
+                    readThrough != null && Date.parse(m.createdAt) <= readThrough
+                  }
+                  recipients={readState.recipients}
+                  onEdit={handleEdit}
+                  onDelete={handleDelete}
+                />
               );
             })
           )}
@@ -470,13 +536,17 @@ function ConversationRow({
   icon,
   title,
   subtitle,
+  unreadCount = 0,
 }: {
   active: boolean;
   onClick: () => void;
   icon: React.ReactNode;
   title: string;
   subtitle: string;
+  unreadCount?: number;
 }) {
+  // The active conversation is being read, so never badge it.
+  const showBadge = !active && unreadCount > 0;
   return (
     <button
       type="button"
@@ -490,11 +560,23 @@ function ConversationRow({
         {icon}
       </span>
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-sm font-medium">{title}</span>
+        <span
+          className={cn(
+            "block truncate text-sm",
+            showBadge ? "font-bold" : "font-medium",
+          )}
+        >
+          {title}
+        </span>
         <span className="block truncate text-xs text-muted-foreground">
           {subtitle}
         </span>
       </span>
+      {showBadge ? (
+        <span className="flex min-w-[20px] shrink-0 items-center justify-center rounded-full bg-[#16a34a] px-1.5 text-[11px] font-bold text-white">
+          {unreadCount > 99 ? "99+" : unreadCount}
+        </span>
+      ) : null}
     </button>
   );
 }
