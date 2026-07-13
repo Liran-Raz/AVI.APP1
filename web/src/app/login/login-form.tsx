@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { ApiError, apiClient } from "@/lib/api-client";
+import { isNativeApp } from "@/lib/native";
 
 // NOTE: this client component no longer imports anything from
 // @supabase/* or @/lib/supabase/*. All auth flows — including Google
@@ -46,11 +47,24 @@ export function LoginForm() {
   async function handleGoogleLogin() {
     setLoading(true);
     try {
-      const { url } = await apiClient.auth.startOAuthGoogle({ redirect });
-      window.location.assign(url);
-      // Intentionally do not reset loading — the browser is about to
-      // navigate away, and re-enabling the button would only let the
-      // user click twice.
+      const native = isNativeApp();
+      const { url } = await apiClient.auth.startOAuthGoogle({ redirect, native });
+      if (native) {
+        // Google blocks OAuth inside embedded WebViews, so open the flow in the
+        // system browser (where the user's Google session lives). Supabase
+        // redirects back to our deep link, which NativeBridge catches and hands
+        // to the WebView to finish the exchange. Re-enable the button: the
+        // browser now covers the app, and the deep link — not this handler —
+        // resumes the flow (so the user isn't stuck if they cancel).
+        const { Browser } = await import("@capacitor/browser");
+        await Browser.open({ url });
+        setLoading(false);
+      } else {
+        window.location.assign(url);
+        // Intentionally do not reset loading — the browser is about to
+        // navigate away, and re-enabling the button would only let the
+        // user click twice.
+      }
     } catch (err) {
       if (err instanceof ApiError) {
         toast.error(err.message);

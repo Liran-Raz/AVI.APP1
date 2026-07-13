@@ -15,14 +15,18 @@ import * as authService from "@/server/services/auth.service";
 // /auth/callback request can complete the exchange.
 const startOAuthSchema = z.object({
   redirect: z.string().optional(),
+  // Set by the Capacitor shell so the flow returns to the app's deep link
+  // (Google blocks OAuth in embedded WebViews). Absent/false on the web.
+  native: z.boolean().optional(),
 });
 
 export const POST = withErrorHandler(async (request: NextRequest) => {
   const body = await request.json().catch(() => ({}));
-  const { redirect } = startOAuthSchema.parse(body);
+  const { redirect, native } = startOAuthSchema.parse(body);
   const result = await authService.startOAuth({
     provider: "google",
     redirect,
+    native,
   });
   return ok(result);
 });

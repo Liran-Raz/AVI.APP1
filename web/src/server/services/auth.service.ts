@@ -12,6 +12,7 @@ import {
   ValidationError,
 } from "@/server/errors/app-error";
 import { env } from "@/server/env";
+import { NATIVE_OAUTH_CALLBACK } from "@/lib/native-auth";
 
 // Auth service — the only consumer of AuthAdapter for sign-in/up/out,
 // OAuth, and email OTP flows. API routes call these functions; they
@@ -105,6 +106,10 @@ export type StartOAuthInput = {
   // Optional post-login path (e.g., the route the user was originally
   // trying to reach). Validated to be a same-origin path.
   redirect?: string;
+  // Set by the Capacitor shell: return to the app's custom-scheme deep link
+  // instead of the same-origin web callback (Google blocks OAuth in embedded
+  // WebViews). See lib/native-auth. Ignored on the web.
+  native?: boolean;
 };
 
 export type StartOAuthResult = {
@@ -116,10 +121,14 @@ export async function startOAuth(
 ): Promise<StartOAuthResult> {
   // Defend against open-redirect: only allow same-origin paths.
   const next = sanitizeNextPath(input.redirect, "/tasks");
-  // Provider returns the user to /auth/callback. We pass `next` through
-  // so the callback can finish the redirect chain to the intended page.
-  const redirectTo =
-    `${env.NEXT_PUBLIC_SITE_URL}/auth/callback?next=${encodeURIComponent(next)}`;
+  // Provider returns the user to the callback. We pass `next` through so the
+  // callback can finish the redirect chain to the intended page.
+  //   web    → same-origin /auth/callback (unchanged).
+  //   native → the app's deep link; the shell then hands the code to the
+  //            WebView's /auth/callback, which holds the PKCE verifier cookie.
+  const redirectTo = input.native
+    ? `${NATIVE_OAUTH_CALLBACK}?next=${encodeURIComponent(next)}`
+    : `${env.NEXT_PUBLIC_SITE_URL}/auth/callback?next=${encodeURIComponent(next)}`;
   return authAdapter.startOAuth({ provider: input.provider, redirectTo });
 }
 

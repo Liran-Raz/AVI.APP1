@@ -18,6 +18,17 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+
+            <!-- OAuth return leg: com.aviapp1.app://auth/callback (Google blocks
+                 OAuth in embedded WebViews, so the flow runs in the system
+                 browser and returns here). Handled by @capacitor/app appUrlOpen
+                 → NativeBridge. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="com.aviapp1.app" android:host="auth" />
+            </intent-filter>
         </activity>
 
         <provider

@@ -328,7 +328,7 @@ export const apiClient = {
     // navigate to (window.location.assign). Cookies for PKCE/state are
     // already set by the server response, so the subsequent /auth/callback
     // can complete the exchange.
-    startOAuthGoogle: (input?: { redirect?: string }) =>
+    startOAuthGoogle: (input?: { redirect?: string; native?: boolean }) =>
       postJson<StartOAuthResult>("/api/auth/oauth/google", input ?? {}),
     // Request a password-reset email. The server ALWAYS returns success
     // regardless of whether the email matches a real user — do not

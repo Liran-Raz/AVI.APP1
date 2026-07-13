@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Heebo } from "next/font/google";
 import "./globals.css";
+import { NativeBridge } from "@/components/native/native-bridge";
 
 const heebo = Heebo({
   variable: "--font-heebo",
@@ -53,6 +54,7 @@ export default function RootLayout({
       suppressHydrationWarning
     >
       <body className="min-h-full flex flex-col font-sans bg-background text-foreground">
+        <NativeBridge />
         {children}
       </body>
     </html>
