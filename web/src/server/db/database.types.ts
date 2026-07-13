@@ -811,6 +811,26 @@ export type Database = {
         Args: { p_org_id: string; p_title: string; p_member_ids: string[] }
         Returns: string
       }
+      rename_group_conversation: {
+        Args: { p_conv_id: string; p_title: string }
+        Returns: undefined
+      }
+      add_group_member: {
+        Args: { p_conv_id: string; p_user_id: string }
+        Returns: undefined
+      }
+      remove_group_member: {
+        Args: { p_conv_id: string; p_user_id: string }
+        Returns: undefined
+      }
+      leave_group_conversation: {
+        Args: { p_conv_id: string }
+        Returns: undefined
+      }
+      delete_group_conversation: {
+        Args: { p_conv_id: string }
+        Returns: undefined
+      }
       bootstrap_org: {
         Args: { p_full_name: string; p_org_code: string; p_org_name: string }
         Returns: Json

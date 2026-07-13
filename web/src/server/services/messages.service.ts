@@ -7,9 +7,10 @@ import * as conversationsRepo from "@/server/repositories/conversations.reposito
 import * as membershipsRepo from "@/server/repositories/memberships.repository";
 import * as teamRepo from "@/server/repositories/team.repository";
 import type { Message } from "@/server/db/domain.types";
-import type {
-  ListMessagesQuery,
-  SendMessagePayload,
+import {
+  parseConversationRef,
+  type ListMessagesQuery,
+  type SendMessagePayload,
 } from "@/server/validators/messages.schema";
 
 // Office chat service (Stage 13 R5). Sends (group or DM) + lists a conversation.
@@ -64,12 +65,22 @@ export async function sendMessage(
   input: SendMessagePayload,
 ): Promise<MessageDTO> {
   const orgId = session.organization.id;
-  const recipientId = input.recipientId ?? null;
 
-  // Resolve the target conversation. recipient_id is ALSO populated (office=null,
-  // dm=recipient) so the legacy indexes + rollback stay consistent (Stage 14 R1).
+  // Resolve the target conversation. recipient_id is ALSO populated (office/group
+  // = null, dm = recipient) so the legacy indexes + rollback stay consistent (R1).
   let conversationId: string;
-  if (recipientId) {
+  let recipientId: string | null = null;
+
+  if (input.conversationId) {
+    // Group message: the target must be a live group the caller participates in
+    // (RLS would block the insert regardless; this yields a clean 400, not a 500).
+    const group = await conversationsRepo.getGroupById(orgId, input.conversationId);
+    if (!group) {
+      throw new ValidationError("Group not found or you are not a member");
+    }
+    conversationId = group.id;
+  } else if (input.recipientId) {
+    recipientId = input.recipientId;
     if (recipientId === session.user.id) {
       throw new ValidationError("Cannot send a direct message to yourself");
     }
@@ -99,9 +110,14 @@ export async function listMessages(
   const opts = { after: query.after, limit: query.limit };
 
   let conversationId: string | null;
+  const groupRef = parseConversationRef(query.with);
   if (query.with === "group") {
     // Read-only: no office conversation yet (new org, no messages) → empty feed.
     conversationId = (await conversationsRepo.findOffice(orgId))?.id ?? null;
+  } else if (groupRef) {
+    // Custom group: only a readable (participant) live group returns rows; a
+    // non-participant / deleted group resolves to null → empty feed (no leak).
+    conversationId = (await conversationsRepo.getGroupById(orgId, groupRef))?.id ?? null;
   } else {
     // DM thread: the counterpart must be (or have been) a member of THIS org.
     // Unlike SENDING, we do NOT require them to still be active — a deactivated

@@ -27,7 +27,10 @@ are + how to continue" brief.
   `git log -8` to confirm.
 - **User = Liran**, Hebrew-speaking founder / product owner. Reply in Hebrew.
   He drives product; Claude drives implementation. Honest tradeoffs, not hype.
-- **Nothing is pending/blocked.** No open bugs. Next work is optional backlog.
+- **In flight:** DEV-024 **R2 (full group management)** is built + adversarially
+  reviewed (0 CRITICAL/HIGH), migration **`0025`** applied+verified in Prod, on
+  branch `feat/chat-r2-groups` in a PR — **pending Liran's QA + merge.** No open
+  bugs otherwise. R3 (read receipts) + R4 (edit/delete) are the remaining rounds.
 
 ---
 
@@ -108,9 +111,10 @@ screen, **Stage 12**, and **Stage 13** are all shipped. Recent arc (newest first
   sends from `aviapp1.com`), reset-password PKCE fix, Custom SMTP, same-password
   indicator. All Production-verified.
 
-**Migrations applied to Production: through `0024`** (0001–0024; `0021` task-flow
-notifications · `0022` per-member `dashboard_access` · `0023` chat `messages` ·
-`0024` chat conversation model — DEV-024 R1, fail-closed RPC-only + backfill).
+**Migrations applied to Production: through `0025`** (0001–0025; `0022` per-member
+`dashboard_access` · `0023` chat `messages` · `0024` chat conversation model —
+DEV-024 R1, fail-closed RPC-only + backfill · `0025` group-management RPCs —
+DEV-024 R2, additive SECURITY DEFINER RPCs, applied+verified before the R2 merge).
 Legacy `role` enum (owner/admin/employee) + `ROLE_GRANTS` are still the SOLE
 authority; the custom-roles infra (0011–0017) is live but 100% DORMANT (Liran
 chose to stop — DEV-001/003).
@@ -238,7 +242,7 @@ Critical do-nots:
 | GitHub repo | https://github.com/Liran-Raz/AVI.APP1 |
 | Supabase project ref | `xsuvwihfcxinorzutbve` (region Central EU / Frankfurt) |
 | Domain / mail | `aviapp1.com` at Cloudflare; Resend Verified (sends via `send.aviapp1.com`); Supabase Auth Custom SMTP → Resend. All mail from `AVI.APP <noreply@aviapp1.com>` |
-| Migrations applied in Prod | through **0023** (manual apply; `0021` task-flow notify · `0022` `dashboard_access` · `0023` chat `messages`) |
+| Migrations applied in Prod | through **0025** (manual apply; `0023` chat `messages` · `0024` conversation model · `0025` group-management RPCs) |
 | Vercel env (Production scope only) | `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `NEXT_PUBLIC_SITE_URL=https://www.aviapp1.com`, `MAIL_FROM`, `RESEND_API_KEY`, `BUG_REPORT_NOTIFY_EMAIL`. **No service role key.** |
 | Google OAuth | **enabled in Production** (DEV-017, 2026-07-11) — `/api/auth/oauth/google` PKCE; live-tested with an existing user |
 | Service role key | not used, not stored (intentional) |
