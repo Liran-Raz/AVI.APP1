@@ -221,6 +221,14 @@ export async function rpcCreateCreditNote(documentId: string): Promise<string> {
   return data as unknown as string;
 }
 
+export async function rpcMarkDelivered(documentId: string): Promise<void> {
+  const supabase = await createSupabaseServerClient();
+  const { error } = await supabase.rpc("mark_document_delivered", {
+    p_document_id: documentId,
+  } as never);
+  if (error) throw error;
+}
+
 // ============================================================
 // VAT rates (global read-only reference)
 // ============================================================

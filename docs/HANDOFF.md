@@ -1,9 +1,55 @@
-# AVI.APP — Session Handoff (2026-07-12)
+# AVI.APP — Session Handoff (2026-07-16)
 
 **You are continuing AVI.APP from a fresh chat.** Read this top-to-bottom first.
 Deep detail lives in the auto-loaded memory (`project_avi_app.md`) and in the
 git-tracked backlog (`docs/DEV_TRACKING.md`) — this file is the fast "where we
 are + how to continue" brief.
+
+---
+
+## 🔴 ACTIVE WORK — DEV-026 invoicing module (הנהלת חשבונות) — READ FIRST
+
+**What it is:** a tax-compliant Invoices/Receipts + Reports module heading to
+official **software registration** with the Israel Tax Authority ("תוכנה מוכרת").
+Full plan approved by Liran 2026-07-16, based on the two official PDFs
+(חוזר 24/2004 + מבנה-אחיד v1.31) + web verification. Multi-round R1→R7.
+Plan file: `C:\Users\User\.claude\plans\hashed-herding-honey.md` (DEV-026 section).
+
+**Shipped / in flight (2026-07-16):**
+- **R1 (ledgers foundation) — MERGED to main** (PR #79 → `f96fc86`). Ledger-first
+  model (`ledgers` = בית-עסק; self-ledger per org). **Migration `0027` APPLIED +
+  VERIFIED in Production** (operator Liran, postflight PASS 10/10). Documents/lines/
+  payments/counters(gap-free)/consents/vat_rates + immutability triggers + SECURITY
+  DEFINER RPCs (issue/cancel/credit/deliver + role belt).
+- **R2 (document lifecycle) — MERGED to main** (PR #81 → `308cf35`). Draft→issue
+  (gap-free number, frozen snapshot, server totals) → cancel/credit. Full UI:
+  list + wizard (305/320/400/330) + document view. `lib/money.ts` (agorot).
+  **Liran's local QA PASSED** + 3 fixes (float-safe quantity, credit link, 330).
+- **R3 (Hebrew PDF) — in OPEN PR #82** (`feat/dev-026-r3-pdf`). @react-pdf/renderer
+  (spike passed, puppeteer rejected), Rubik OFL base64-embedded, מקור/העתק +
+  print, first-original marks delivered. **Liran confirmed local PDF download
+  works.** No migration. Merge when Vercel green.
+- **Prod state: code live but INERT** — `INVOICING_UI` flag OFF in Vercel (zero
+  UI for real users). Liran QAs locally (`web/.env.local` has `INVOICING_UI=1`).
+  Enable in prod = Vercel env var + Redeploy, Liran's call.
+
+**NEXT = R4** (per the plan): מבנה-אחיד export engine ("ממשק פתוח"/OPEN FORMAT —
+`iconv-lite` ISO-8859-8-i + `jszip`, INI field 1013=0, omit B100/B110/M100,
+נספח-4 report, misim.gov.il simulator loop) + **Reports page** (ספר מכירות/תקבולים,
+VAT summary, **client balance/מאזן-לקוח** — Liran requested, legally OK as
+informational) + CSV. Then R5 חשבוניות-ישראל, R6 signing+Storage, R7 registration.
+
+**Housekeeping:** remind Liran to cancel the leftover QA demo documents (some
+issued-uncancelled in prod DB). Migration `0027` was taken by DEV-026 → mobile
+DEV-025 M2 push moves to next-free. Open PR **#78** (mobile docs) is from an
+earlier session — do NOT touch `docs/MOBILE_APP_TRACKING.md` on the DEV-026
+branches (conflict risk).
+
+**Working rules reminder:** single git-owner at a time (one session touches git);
+migrations are drafted by Claude as guarded packages, Liran runs them in the
+Supabase SQL Editor (no DDL creds for Claude); local `next build` crashes are
+environmental — Vercel CI is the build gate; ask before commit/push/merge;
+zero Claude/Anthropic trace in the repo. Reply to Liran in Hebrew.
 
 ---
 

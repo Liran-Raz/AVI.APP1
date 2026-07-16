@@ -1,7 +1,7 @@
 import "server-only";
 
 import type { FullSession } from "@/server/auth/session";
-import { requireCapability } from "@/server/auth/authorization";
+import { can, requireCapability } from "@/server/auth/authorization";
 import { PERMISSIONS } from "@/server/auth/permissions";
 import {
   NotFoundError,
@@ -15,6 +15,7 @@ import type {
 import * as documentsRepo from "@/server/repositories/documents.repository";
 import * as ledgersRepo from "@/server/repositories/ledgers.repository";
 import * as clientsRepo from "@/server/repositories/clients.repository";
+import { ledgerRowToDto } from "@/server/services/ledgers.service";
 import type {
   CreateDocumentPayload,
   ListDocumentsQuery,
@@ -78,6 +79,9 @@ export type DocumentDTO = DocumentSummaryDTO & {
   buyerPhone: string | null;
   sellerLegalName: string | null;
   sellerBusinessId: string | null;
+  sellerAddressStreet: string | null;
+  sellerAddressCity: string | null;
+  sellerAddressZip: string | null;
   valueDate: string | null;
   issuedAt: string | null;
   amountBeforeDiscount: number;
@@ -161,6 +165,9 @@ function toFullDTO(
     buyerPhone: row.buyer_phone,
     sellerLegalName: row.seller_legal_name,
     sellerBusinessId: row.seller_business_id,
+    sellerAddressStreet: row.seller_address_street,
+    sellerAddressCity: row.seller_address_city,
+    sellerAddressZip: row.seller_address_zip,
     valueDate: row.value_date,
     issuedAt: row.issued_at,
     amountBeforeDiscount: row.amount_before_discount,
@@ -464,6 +471,64 @@ export async function createCreditNote(
   } catch (err) {
     rethrowRpcError(err);
   }
+}
+
+// ============================================================
+// PDF rendering (R3) — on-demand, deterministic from the frozen snapshot.
+// The first "מקור" download marks the document delivered (which then gates
+// cancellation → credit-note-only), and subsequent downloads are "העתק".
+// ============================================================
+
+export type RenderedPdf = { buffer: Buffer; filename: string; copy: "original" | "copy" };
+
+export async function renderDocumentPdf(
+  session: FullSession,
+  id: string,
+  requested: "original" | "copy",
+): Promise<RenderedPdf> {
+  requireCapability(session, PERMISSIONS.INVOICES_VIEW);
+
+  const doc = await getDocument(session, id);
+  if (doc.status === "draft") {
+    throw new ValidationError("Draft documents have no printable original — issue it first");
+  }
+
+  const ledger = await ledgersRepo.findByIdAndOrgId(
+    doc.ledgerId,
+    session.organization.id,
+  );
+  if (!ledger) throw new NotFoundError("Ledger not found");
+  const ledgerDto = ledgerRowToDto(ledger);
+
+  // "Original" is delivered at most once (legal מקור-printed-once). Delivering
+  // requires the send capability; a cancelled doc can only ever be a copy.
+  let copy: "original" | "copy" = requested;
+  if (requested === "original") {
+    const canSend = can(session, PERMISSIONS.INVOICES_SEND);
+    if (doc.status === "cancelled" || doc.deliveredAt !== null || !canSend) {
+      copy = "copy";
+    } else {
+      try {
+        await documentsRepo.rpcMarkDelivered(id);
+      } catch {
+        // If marking fails we still hand back a copy (never a second מקור).
+        copy = "copy";
+      }
+    }
+  }
+
+  // Lazy import: keep @react-pdf/renderer out of any non-PDF server path.
+  const { renderToBuffer } = await import("@react-pdf/renderer");
+  const { ensureFontsRegistered } = await import("@/server/pdf/fonts");
+  const { InvoicePdf } = await import("@/server/pdf/invoice-document");
+  ensureFontsRegistered();
+
+  const element = InvoicePdf({ doc, ledger: ledgerDto, copy });
+  const buffer = await renderToBuffer(element as never);
+
+  const typeSlug = doc.docType;
+  const filename = `${typeSlug}-${doc.number ?? "draft"}.pdf`;
+  return { buffer, filename, copy };
 }
 
 // ============================================================

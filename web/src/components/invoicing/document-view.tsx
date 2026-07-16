@@ -4,7 +4,16 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Ban, FileMinus2, Loader2, Pencil, Stamp, Trash2 } from "lucide-react";
+import {
+  Ban,
+  Download,
+  FileMinus2,
+  Loader2,
+  Pencil,
+  Printer,
+  Stamp,
+  Trash2,
+} from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -57,6 +66,38 @@ export function DocumentView({
   const canCancel = hasCapability(capabilities, PERMISSIONS.INVOICES_CANCEL);
   const canCredit = hasCapability(capabilities, PERMISSIONS.INVOICES_CREDIT);
   const canCreate = hasCapability(capabilities, PERMISSIONS.INVOICES_CREATE);
+  const canSend = hasCapability(capabilities, PERMISSIONS.INVOICES_SEND);
+
+  // The מקור (original) is deliverable once, by a sender, on a live document.
+  const canDeliverOriginal =
+    canSend && doc.status === "issued" && doc.deliveredAt === null;
+
+  function pdfUrl(copy: "original" | "copy"): string {
+    return `/api/documents/${doc.id}/pdf?copy=${copy}`;
+  }
+
+  async function openPdf(copy: "original" | "copy", forPrint: boolean) {
+    setBusy(forPrint ? "print" : "pdf");
+    try {
+      const res = await fetch(pdfUrl(copy));
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        toast.error(body?.error?.message ?? "יצירת ה-PDF נכשלה");
+        return;
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const win = window.open(url, "_blank");
+      if (forPrint && win) win.addEventListener("load", () => win.print());
+      // Give the tab time to load before revoking.
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      if (copy === "original") await reload(); // reflect delivered state
+    } catch {
+      toast.error("שגיאה ביצירת ה-PDF");
+    } finally {
+      setBusy(null);
+    }
+  }
 
   async function reload() {
     try {
@@ -256,7 +297,58 @@ export function DocumentView({
         </p>
       )}
 
-      {/* Actions */}
+      {/* PDF (issued/cancelled only) */}
+      {!isDraft && (
+        <div className="flex flex-wrap gap-2 items-center">
+          {canDeliverOriginal ? (
+            <Button
+              onClick={() => void openPdf("original", false)}
+              disabled={busy !== null}
+            >
+              {busy === "pdf" ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Download className="size-4" />
+              )}
+              הורדת מקור
+            </Button>
+          ) : (
+            <Button
+              variant="outline"
+              onClick={() => void openPdf("copy", false)}
+              disabled={busy !== null}
+            >
+              {busy === "pdf" ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Download className="size-4" />
+              )}
+              הורדת העתק
+            </Button>
+          )}
+          <Button
+            variant="outline"
+            onClick={() =>
+              void openPdf(canDeliverOriginal ? "original" : "copy", true)
+            }
+            disabled={busy !== null}
+          >
+            {busy === "print" ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <Printer className="size-4" />
+            )}
+            הדפסה
+          </Button>
+          {doc.deliveredAt && (
+            <span className="text-xs text-muted-foreground">
+              המקור נמסר · הורדות נוספות מסומנות ״העתק״
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* Lifecycle actions */}
       <div className="flex flex-wrap gap-2">
         {isDraft && canIssue && (
           <Button
