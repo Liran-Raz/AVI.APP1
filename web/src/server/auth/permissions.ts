@@ -79,6 +79,24 @@ export const PERMISSIONS = {
   // billing (future)
   BILLING_VIEW: "billing.view",
   BILLING_MANAGE: "billing.manage",
+
+  // ledgers — בתי-עסק (DEV-026; business/tax identity that prints on documents)
+  LEDGERS_VIEW: "ledgers.view",
+  LEDGERS_MANAGE: "ledgers.manage", // owner-only: legal identity + numbering + credentials
+
+  // invoices — tax documents (DEV-026). Contextless in v1 (org-wide, role-gated);
+  // a record-scoped document context can be added when a finer model is needed.
+  INVOICES_VIEW: "invoices.view",
+  INVOICES_CREATE: "invoices.create", // drafts
+  INVOICES_ISSUE: "invoices.issue", // legal transition (number + freeze)
+  INVOICES_CANCEL: "invoices.cancel",
+  INVOICES_CREDIT: "invoices.credit",
+  INVOICES_SEND: "invoices.send", // deliver מקור (print/email)
+  INVOICES_EXPORT: "invoices.export", // מבנה אחיד / OPEN FORMAT (owner-only)
+
+  // reports (DEV-026)
+  REPORTS_VIEW: "reports.view",
+  REPORTS_EXPORT: "reports.export", // CSV/print of reports
 } as const;
 
 export type Permission = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
@@ -131,6 +149,9 @@ export const SUPPORTED_RECORD_SCOPES: readonly RecordScope[] = ["all", "own"];
 //     settings.* , billing.*                  owner-only / coarse-belt / future / not engine-enforced.
 //   * notifications.*                         inherently self-scoped; a role grant is meaningless.
 //   * clients.delete/export , team.remove     not implemented (future); cannot be enforced yet.
+//   * ledgers.* , invoices.* , reports.*      DEV-026 (post-0012 keys): financial surfaces gated by
+//                                             the env flag + system roles only; excluded from custom
+//                                             roles until the dormant DB grants are synced + enforced.
 //
 // Conservative + forward-safe: widen this list only when the excluded surfaces
 // gain complete grant-driven enforcement. Kept framework-free so the UI catalog,
@@ -289,6 +310,20 @@ export const PERMISSION_META = {
 
   "billing.view": { context: "none", scoped: false },
   "billing.manage": { context: "none", scoped: false },
+
+  "ledgers.view": { context: "none", scoped: false },
+  "ledgers.manage": { context: "none", scoped: false },
+
+  "invoices.view": { context: "none", scoped: false },
+  "invoices.create": { context: "none", scoped: false },
+  "invoices.issue": { context: "none", scoped: false },
+  "invoices.cancel": { context: "none", scoped: false },
+  "invoices.credit": { context: "none", scoped: false },
+  "invoices.send": { context: "none", scoped: false },
+  "invoices.export": { context: "none", scoped: false },
+
+  "reports.view": { context: "none", scoped: false },
+  "reports.export": { context: "none", scoped: false },
 } as const satisfies Record<Permission, PermissionMeta>;
 
 // ============================================================

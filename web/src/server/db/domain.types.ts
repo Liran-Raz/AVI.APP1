@@ -7,6 +7,9 @@ export type UserRole = Enums<"user_role">;
 export type NotificationType = Enums<"notification_type">;
 export type InvitationStatus = Enums<"invitation_status">;
 export type ConversationKind = Enums<"conversation_kind">;
+export type InvoiceDocType = Enums<"invoice_doc_type">;
+export type InvoiceDocStatus = Enums<"invoice_doc_status">;
+export type AllocationStatus = Enums<"allocation_status">;
 
 export type BootstrapOrgResult = {
   org_id: string;
@@ -38,3 +41,4 @@ export type ConversationParticipant = Tables<"conversation_participants">;
 export type Notification = Tables<"notifications">;
 export type Invitation = Tables<"invitations">;
 export type OrganizationMembership = Tables<"organization_memberships">;
+export type Ledger = Tables<"ledgers">;

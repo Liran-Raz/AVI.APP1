@@ -80,9 +80,13 @@ import type {
   RenameGroupPayload,
   AddGroupMemberPayload,
 } from "@/server/validators/conversations.schema";
+import type { LedgerDTO } from "@/server/services/ledgers.service";
+import type { UpdateLedgerPayload } from "@/server/validators/ledgers.schema";
 
 // Re-export DTOs so client components have one stable import path.
 export type { ClientDTO } from "@/server/services/clients.service";
+export type { LedgerDTO } from "@/server/services/ledgers.service";
+export type { UpdateLedgerPayload } from "@/server/validators/ledgers.schema";
 export type {
   CreateClientPayload,
   UpdateClientPayload,
@@ -401,6 +405,13 @@ export const apiClient = {
       postJson<ClientDTO>(`/api/clients/${id}/archive`),
     restore: (id: string) =>
       postJson<ClientDTO>(`/api/clients/${id}/restore`),
+  },
+  // DEV-026 — ledgers (בתי-עסק). Stage A exposes the org's self-ledger; the
+  // list shape is already plural for Stage B (client-owned ledgers).
+  ledgers: {
+    list: () => getJson<{ items: LedgerDTO[] }>("/api/ledgers"),
+    update: (id: string, patch: UpdateLedgerPayload) =>
+      patchJson<LedgerDTO>(`/api/ledgers/${id}`, patch),
   },
   tasks: {
     list: (query?: Partial<ListTasksQuery>) => {

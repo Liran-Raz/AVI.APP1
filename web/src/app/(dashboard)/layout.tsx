@@ -5,6 +5,7 @@ import { getCurrentSession, type FullSession } from "@/server/auth/session";
 import { can } from "@/server/auth/authorization";
 import { PERMISSIONS } from "@/server/auth/permissions";
 import { isRoleManagementUiEnabled } from "@/server/auth/role-management.flags";
+import { isInvoicingUiEnabled } from "@/server/auth/invoicing.flags";
 import { canViewDashboard } from "@/server/services/dashboard.service";
 
 export default async function DashboardLayout({
@@ -37,6 +38,12 @@ export default async function DashboardLayout({
   // re-check with the same rule.
   const showDashboardNav = canViewDashboard(session as FullSession);
 
+  // Reveal the invoicing nav (DEV-026) only when the INVOICING_UI flag is on AND
+  // the viewer can view invoices. Display-only — pages + services re-check.
+  const showInvoicingNav =
+    isInvoicingUiEnabled() &&
+    can(session as FullSession, PERMISSIONS.INVOICES_VIEW);
+
   return (
     <AppShell
       profile={session.profile}
@@ -45,6 +52,7 @@ export default async function DashboardLayout({
       activeOrgId={session.activeOrg.id}
       showRolesNav={showRolesNav}
       showDashboardNav={showDashboardNav}
+      showInvoicingNav={showInvoicingNav}
     >
       {children}
     </AppShell>

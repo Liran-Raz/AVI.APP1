@@ -18,11 +18,34 @@ const keyOf = (t: Tuple) => `${t.role}|${t.permission}|${t.scope ?? "NULL"}`;
 const PERMISSION_KEYS = new Set<string>(Object.values(PERMISSIONS));
 const VALID_SCOPES = new Set<string>(RECORD_SCOPES);
 
+// Permissions added to the TS catalog AFTER the 0012 production seed was applied.
+// The DB system-role grants are DORMANT (non-authoritative — all custom-role flags
+// OFF; the legacy enum + this repo's ROLE_GRANTS are the live authority), so new
+// TS-only grants are intentionally NOT in the 0012 SQL. They are excluded from the
+// TS side of the parity diff and asserted ABSENT from SQL (no partial seeding).
+// When a future migration syncs the dormant DB roles, move these into 0012-parity
+// by deleting them from this set and seeding the SQL in that migration.
+const POST_0012_PERMISSIONS = new Set<string>([
+  // DEV-026 invoicing (R1):
+  "ledgers.view",
+  "ledgers.manage",
+  "invoices.view",
+  "invoices.create",
+  "invoices.issue",
+  "invoices.cancel",
+  "invoices.credit",
+  "invoices.send",
+  "invoices.export",
+  "reports.view",
+  "reports.export",
+]);
+
 // ---- TypeScript side: flatten ROLE_GRANTS into tuples ----
 function tsTuples(): Tuple[] {
   const out: Tuple[] = [];
   for (const [role, grants] of Object.entries(ROLE_GRANTS)) {
     for (const [permission, value] of Object.entries(grants)) {
+      if (POST_0012_PERMISSIONS.has(permission)) continue; // see note above
       out.push({
         role,
         permission,
@@ -100,6 +123,16 @@ describe("0012 seed ↔ ROLE_GRANTS parity", () => {
   it("ownership.transfer is never granted (protected action)", () => {
     expect(sql.some((t) => t.permission === "ownership.transfer")).toBe(false);
     expect(ts.some((t) => t.permission === "ownership.transfer")).toBe(false);
+  });
+
+  it("post-0012 permissions are absent from the 0012 SQL (no partial seeding)", () => {
+    // They live only in TS until a dedicated migration syncs the dormant DB roles.
+    for (const t of sql) {
+      expect(
+        POST_0012_PERMISSIONS.has(t.permission),
+        `post-0012 permission unexpectedly seeded in 0012 SQL: ${t.permission}`,
+      ).toBe(false);
+    }
   });
 
   it("preserves the recorded behavioral invariants", () => {

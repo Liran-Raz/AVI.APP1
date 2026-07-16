@@ -64,6 +64,18 @@ const OWNER: GrantMap = {
   "notifications.manage": true,
   "billing.view": true,
   "billing.manage": true,
+  // DEV-026 invoicing (post-0012 keys — dormant DB roles not yet synced):
+  "ledgers.view": true,
+  "ledgers.manage": true, // owner-only: legal identity, numbering ranges, credentials
+  "invoices.view": true,
+  "invoices.create": true,
+  "invoices.issue": true,
+  "invoices.cancel": true,
+  "invoices.credit": true,
+  "invoices.send": true,
+  "invoices.export": true, // owner-only: מבנה אחיד export
+  "reports.view": true,
+  "reports.export": true,
 };
 
 // Manager (internal key `admin`).
@@ -104,6 +116,19 @@ const MANAGER: GrantMap = {
   "notifications.view": true,
   "notifications.manage": true,
   // billing: DENY
+  // DEV-026 invoicing — Manager runs day-to-day billing ops; the legal identity,
+  // numbering ranges, credentials and the מבנה-אחיד export stay owner-only:
+  "ledgers.view": true,
+  // ledgers.manage: DENY (owner-only)
+  "invoices.view": true,
+  "invoices.create": true,
+  "invoices.issue": true,
+  "invoices.cancel": true,
+  "invoices.credit": true,
+  "invoices.send": true,
+  // invoices.export: DENY (owner-only)
+  "reports.view": true,
+  "reports.export": true,
 };
 
 const EMPLOYEE: GrantMap = {
@@ -129,6 +154,11 @@ const EMPLOYEE: GrantMap = {
   "tasks.assign_others": true, // Phase 1 preserves current open assignment; target model = self-only
   "notifications.view": true,
   "notifications.manage": true,
+  // DEV-026 invoicing — employees may view documents and prepare drafts; the
+  // legal transitions (issue/cancel/credit/send) and exports are denied:
+  "ledgers.view": true,
+  "invoices.view": true,
+  "invoices.create": true,
 };
 
 export const ROLE_GRANTS: Record<UserRole, GrantMap> = {

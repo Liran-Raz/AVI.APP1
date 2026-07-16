@@ -386,6 +386,84 @@ export type Database = {
           },
         ]
       }
+      ledgers: {
+        Row: {
+          address_city: string | null
+          address_street: string | null
+          address_zip: string | null
+          bookkeeping_managed: boolean
+          business_id: string | null
+          business_type: Database["public"]["Enums"]["business_type"] | null
+          client_id: string | null
+          created_at: string
+          currency: string
+          email: string | null
+          id: string
+          is_self: boolean
+          legal_name: string
+          logo_url: string | null
+          org_id: string
+          phone: string | null
+          trade_name: string | null
+          updated_at: string
+        }
+        Insert: {
+          address_city?: string | null
+          address_street?: string | null
+          address_zip?: string | null
+          bookkeeping_managed?: boolean
+          business_id?: string | null
+          business_type?: Database["public"]["Enums"]["business_type"] | null
+          client_id?: string | null
+          created_at?: string
+          currency?: string
+          email?: string | null
+          id?: string
+          is_self?: boolean
+          legal_name: string
+          logo_url?: string | null
+          org_id: string
+          phone?: string | null
+          trade_name?: string | null
+          updated_at?: string
+        }
+        Update: {
+          address_city?: string | null
+          address_street?: string | null
+          address_zip?: string | null
+          bookkeeping_managed?: boolean
+          business_id?: string | null
+          business_type?: Database["public"]["Enums"]["business_type"] | null
+          client_id?: string | null
+          created_at?: string
+          currency?: string
+          email?: string | null
+          id?: string
+          is_self?: boolean
+          legal_name?: string
+          logo_url?: string | null
+          org_id?: string
+          phone?: string | null
+          trade_name?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ledgers_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ledgers_client_org_fk"
+            columns: ["client_id", "org_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id", "org_id"]
+          },
+        ]
+      }
       messages: {
         Row: {
           body: string
@@ -920,9 +998,17 @@ export type Database = {
       }
     }
     Enums: {
+      allocation_status:
+        | "not_required"
+        | "pending"
+        | "obtained"
+        | "failed"
+        | "exempt"
       business_type: "patur" | "murshe" | "ltd" | "amuta" | "agudat_shitufit"
       conversation_kind: "office" | "dm" | "group"
       invitation_status: "pending" | "accepted" | "expired" | "revoked"
+      invoice_doc_status: "draft" | "issued" | "cancelled"
+      invoice_doc_type: "305" | "320" | "330" | "400"
       notification_type:
         | "task_assigned"
         | "task_status_changed"
@@ -1058,8 +1144,17 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
+      allocation_status: [
+        "not_required",
+        "pending",
+        "obtained",
+        "failed",
+        "exempt",
+      ],
       business_type: ["patur", "murshe", "ltd", "amuta", "agudat_shitufit"],
       invitation_status: ["pending", "accepted", "expired", "revoked"],
+      invoice_doc_status: ["draft", "issued", "cancelled"],
+      invoice_doc_type: ["305", "320", "330", "400"],
       notification_type: [
         "task_assigned",
         "task_status_changed",
