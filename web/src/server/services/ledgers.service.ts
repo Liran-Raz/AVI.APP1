@@ -40,7 +40,7 @@ export type LedgerDTO = {
   updatedAt: string;
 };
 
-function toDTO(row: Ledger): LedgerDTO {
+export function ledgerRowToDto(row: Ledger): LedgerDTO {
   return {
     id: row.id,
     isSelf: row.is_self,
@@ -68,7 +68,7 @@ function toDTO(row: Ledger): LedgerDTO {
 export async function listLedgers(session: FullSession): Promise<LedgerDTO[]> {
   requireCapability(session, PERMISSIONS.LEDGERS_VIEW);
   const rows = await ledgersRepo.findManyByOrgId(session.organization.id);
-  return rows.map(toDTO);
+  return rows.map(ledgerRowToDto);
 }
 
 export async function getSelfLedger(session: FullSession): Promise<LedgerDTO> {
@@ -81,7 +81,7 @@ export async function getSelfLedger(session: FullSession): Promise<LedgerDTO> {
       "Self ledger not found — has migration 0027 been applied?",
     );
   }
-  return toDTO(row);
+  return ledgerRowToDto(row);
 }
 
 // ============================================================
@@ -122,5 +122,5 @@ export async function updateLedger(
     patch,
   );
   if (!updated) throw new NotFoundError("Ledger not found");
-  return toDTO(updated);
+  return ledgerRowToDto(updated);
 }
