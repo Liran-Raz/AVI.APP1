@@ -92,6 +92,15 @@ import type {
   ListDocumentsQuery,
   UpdateDocumentPayload,
 } from "@/server/validators/documents.schema";
+import type {
+  ClientBalanceRow,
+  DocTypeSummaryRow,
+  OpenFormatSummaryDTO,
+  ReceiptsBookDTO,
+  SalesBookDTO,
+  VatSummaryDTO,
+} from "@/server/services/reports.service";
+import type { ReportRangeQuery } from "@/server/validators/reports.schema";
 
 // Re-export DTOs so client components have one stable import path.
 export type { ClientDTO } from "@/server/services/clients.service";
@@ -111,6 +120,18 @@ export type {
   DocumentLinePayload,
   DocumentPaymentPayload,
 } from "@/server/validators/documents.schema";
+export type {
+  ClientBalanceRow,
+  DocTypeSummaryRow,
+  OpenFormatSummaryDTO,
+  ReceiptsBookDTO,
+  ReceiptsBookRow,
+  SalesBookDTO,
+  SalesBookRow,
+  VatSummaryDTO,
+  VatSummaryRow,
+} from "@/server/services/reports.service";
+export type { ReportRangeQuery } from "@/server/validators/reports.schema";
 export type {
   CreateClientPayload,
   UpdateClientPayload,
@@ -458,6 +479,35 @@ export const apiClient = {
       postJson<null>(`/api/documents/${id}/cancel`, input),
     credit: (id: string) =>
       postJson<{ id: string }>(`/api/documents/${id}/credit`),
+  },
+  // DEV-026 R4 — reports (ספרי מכירות/תקבולים, מע"מ, מאזן-לקוחות) + the
+  // מבנה-אחיד export. CSV/ZIP downloads navigate the BROWSER to the API URL
+  // (cookie-authenticated) — use the url builders with an <a href> / window.open.
+  reports: {
+    summary: (range: ReportRangeQuery) =>
+      getJson<{ rows: DocTypeSummaryRow[] }>(
+        `/api/reports/summary${toQueryString(range)}`,
+      ),
+    sales: (range: ReportRangeQuery) =>
+      getJson<SalesBookDTO>(`/api/reports/sales${toQueryString(range)}`),
+    receipts: (range: ReportRangeQuery) =>
+      getJson<ReceiptsBookDTO>(`/api/reports/receipts${toQueryString(range)}`),
+    vat: (range: ReportRangeQuery) =>
+      getJson<VatSummaryDTO>(`/api/reports/vat${toQueryString(range)}`),
+    clientBalances: (range: ReportRangeQuery) =>
+      getJson<{ rows: ClientBalanceRow[] }>(
+        `/api/reports/client-balances${toQueryString(range)}`,
+      ),
+    csvUrl: (
+      report: "summary" | "sales" | "receipts" | "vat" | "client-balances",
+      range: ReportRangeQuery,
+    ) => `/api/reports/${report}${toQueryString({ ...range, format: "csv" })}`,
+    openFormatSummary: (range: ReportRangeQuery) =>
+      getJson<OpenFormatSummaryDTO>(
+        `/api/reports/export/openformat${toQueryString({ ...range, mode: "summary" })}`,
+      ),
+    openFormatDownloadUrl: (range: ReportRangeQuery) =>
+      `/api/reports/export/openformat${toQueryString({ ...range, mode: "download" })}`,
   },
   tasks: {
     list: (query?: Partial<ListTasksQuery>) => {

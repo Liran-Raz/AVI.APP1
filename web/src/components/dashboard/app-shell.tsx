@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import {
+  BarChart3,
   CalendarDays,
   LayoutDashboard,
   ListChecks,
@@ -69,6 +70,7 @@ export function AppShell({
   showRolesNav = false,
   showDashboardNav = false,
   showInvoicingNav = false,
+  showReportsNav = false,
   children,
 }: {
   profile: Profile;
@@ -88,6 +90,9 @@ export function AppShell({
   // Reveal the "הנהלת חשבונות" (invoicing, DEV-026) nav entry. Gated server-side
   // by the INVOICING_UI flag AND invoices.view. Default false => unchanged.
   showInvoicingNav?: boolean;
+  // Reveal the "דוחות" (reports, DEV-026 R4) nav entry. Gated server-side by
+  // the INVOICING_UI flag AND reports.view (owner/manager). Default false.
+  showReportsNav?: boolean;
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
@@ -150,6 +155,23 @@ export function AppShell({
     navItems = [
       ...navItems.slice(0, at),
       { href: "/invoicing", label: "הנהלת חשבונות", icon: Receipt },
+      ...navItems.slice(at),
+    ];
+  }
+  // Reports (DEV-026 R4): right after invoicing (or after clients if the
+  // viewer somehow has reports.view without invoices.view).
+  if (showReportsNav) {
+    const anchorIdx = navItems.findIndex((i) => i.href === "/invoicing");
+    const clientsIdx = navItems.findIndex((i) => i.href === "/clients");
+    const at =
+      anchorIdx >= 0
+        ? anchorIdx + 1
+        : clientsIdx >= 0
+          ? clientsIdx + 1
+          : navItems.length;
+    navItems = [
+      ...navItems.slice(0, at),
+      { href: "/reports", label: "דוחות", icon: BarChart3 },
       ...navItems.slice(at),
     ];
   }

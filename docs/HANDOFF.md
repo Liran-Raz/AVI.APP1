@@ -15,7 +15,7 @@ Full plan approved by Liran 2026-07-16, based on the two official PDFs
 (חוזר 24/2004 + מבנה-אחיד v1.31) + web verification. Multi-round R1→R7.
 Plan file: `C:\Users\User\.claude\plans\hashed-herding-honey.md` (DEV-026 section).
 
-**Shipped / in flight (2026-07-16):**
+**Shipped / in flight (2026-07-17):**
 - **R1 (ledgers foundation) — MERGED to main** (PR #79 → `f96fc86`). Ledger-first
   model (`ledgers` = בית-עסק; self-ledger per org). **Migration `0027` APPLIED +
   VERIFIED in Production** (operator Liran, postflight PASS 10/10). Documents/lines/
@@ -25,25 +25,37 @@ Plan file: `C:\Users\User\.claude\plans\hashed-herding-honey.md` (DEV-026 sectio
   (gap-free number, frozen snapshot, server totals) → cancel/credit. Full UI:
   list + wizard (305/320/400/330) + document view. `lib/money.ts` (agorot).
   **Liran's local QA PASSED** + 3 fixes (float-safe quantity, credit link, 330).
-- **R3 (Hebrew PDF) — in OPEN PR #82** (`feat/dev-026-r3-pdf`). @react-pdf/renderer
-  (spike passed, puppeteer rejected), Rubik OFL base64-embedded, מקור/העתק +
-  print, first-original marks delivered. **Liran confirmed local PDF download
-  works.** No migration. Merge when Vercel green.
+- **R3 (Hebrew PDF) — MERGED to main** (PR #82 → `00fa2f4`, deploy verified +
+  smoke green). @react-pdf/renderer, Rubik OFL base64-embedded, מקור/העתק +
+  print, first-original marks delivered. Storage deferred to R6.
+- **R4 (reports + מבנה-אחיד export) — in OPEN PR** (`feat/dev-026-r4-reports`).
+  OPEN FORMAT v1.31 engine (`server/openformat/` — pure TS, field tables
+  transcribed from the official spec read page-by-page; ISO-8859-8 logical via
+  iconv-lite, signed fixed-width amounts, INI 1013=0, no B100/B110/M100,
+  `OPENFRMT\<vat8>.<YY>\<MMDDhhmm>\` zip with inner BKMVDATA.zip per §2.2(ד);
+  17 byte-exact tests) + reports layer (validator/repo/service/routes: נספח-1
+  doc-type summary, sales book, receipts book, monthly VAT, client balances,
+  CSV with BOM; 15 service tests) + `/reports` page + "דוחות" nav (mockup
+  approved by Liran first). Permissions: reports.view/export = owner+manager;
+  **openformat export = invoices.export = OWNER ONLY**; employee sees nothing.
+  New deps: iconv-lite, jszip. Optional env: SOFTWARE_REG_NUMBER/NAME/VERSION/
+  PRODUCER_VATID/PRODUCER_NAME (1006 = 00000000 until R7 registration).
+  No migration. 511 tests, tsc/lint clean, probes green.
 - **Prod state: code live but INERT** — `INVOICING_UI` flag OFF in Vercel (zero
   UI for real users). Liran QAs locally (`web/.env.local` has `INVOICING_UI=1`).
   Enable in prod = Vercel env var + Redeploy, Liran's call.
 
-**NEXT = R4** (per the plan): מבנה-אחיד export engine ("ממשק פתוח"/OPEN FORMAT —
-`iconv-lite` ISO-8859-8-i + `jszip`, INI field 1013=0, omit B100/B110/M100,
-נספח-4 report, misim.gov.il simulator loop) + **Reports page** (ספר מכירות/תקבולים,
-VAT summary, **client balance/מאזן-לקוח** — Liran requested, legally OK as
-informational) + CSV. Then R5 חשבוניות-ישראל, R6 signing+Storage, R7 registration.
+**NEXT:** merge R4 when Vercel green + Liran approves → **simulator loop**
+(Liran uploads a real export at misim.gov.il's בדיקת קבצים במבנה אחיד; iterate
+to zero errors — owner gate for R4). Then R5 חשבוניות-ישראל (gov-gateway OAuth,
+₪10K threshold from 1.1.2026 → ₪5K from 1.6.2026), R6 signing+Storage,
+R7 registration package.
 
-**Housekeeping:** remind Liran to cancel the leftover QA demo documents (some
-issued-uncancelled in prod DB). Migration `0027` was taken by DEV-026 → mobile
-DEV-025 M2 push moves to next-free. Open PR **#78** (mobile docs) is from an
-earlier session — do NOT touch `docs/MOBILE_APP_TRACKING.md` on the DEV-026
-branches (conflict risk).
+**Housekeeping:** remind Liran to cancel/credit the leftover QA demo documents
+(delivered ones can only be credited, not cancelled). Migration `0027` was taken
+by DEV-026 → mobile DEV-025 M2 push moves to next-free. Open PR **#78** (mobile
+docs) is from an earlier session — do NOT touch `docs/MOBILE_APP_TRACKING.md`
+on the DEV-026 branches (conflict risk).
 
 **Working rules reminder:** single git-owner at a time (one session touches git);
 migrations are drafted by Claude as guarded packages, Liran runs them in the

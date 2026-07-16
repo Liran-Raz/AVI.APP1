@@ -338,3 +338,44 @@
     box-shadow: 0 8px 20px -8px rgba(2, 106, 255, 0.75), inset 0 1px 0 rgba(255, 255, 255, 0.28);
   }
 }
+
+/* ============================================================
+   Print (DEV-026 R4 — reports + נספח-4 production report).
+   The reports screen prints the OPEN report only; when the ממשק-פתוח
+   dialog is open, only its report body (.of-print-area) prints.
+   ============================================================ */
+.print-only {
+  display: none;
+}
+
+@media print {
+  .print-hide,
+  .glass-sidebar,
+  .glass-topbar,
+  .glass-mobilenav {
+    display: none !important;
+  }
+  .print-only {
+    display: block !important;
+  }
+  body {
+    background: #fff !important;
+  }
+  main {
+    padding: 0 !important;
+  }
+  /* ממשק-פתוח summary dialog open → print it alone (Chrome supports :has;
+     elsewhere the page prints normally — acceptable fallback). */
+  body:has(.of-print-area) * {
+    visibility: hidden;
+  }
+  body:has(.of-print-area) .of-print-area,
+  body:has(.of-print-area) .of-print-area * {
+    visibility: visible;
+  }
+  body:has(.of-print-area) .of-print-area {
+    position: fixed;
+    inset: 12px;
+    background: #fff;
+  }
+}
