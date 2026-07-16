@@ -464,6 +464,304 @@ export type Database = {
           },
         ]
       }
+      documents: {
+        Row: {
+          allocation_error: string | null
+          allocation_number: string | null
+          allocation_requested_at: string | null
+          allocation_status: Database["public"]["Enums"]["allocation_status"]
+          amount_before_discount: number
+          base_document_id: string | null
+          buyer_address: string | null
+          buyer_email: string | null
+          buyer_name: string | null
+          buyer_phone: string | null
+          buyer_tax_id: string | null
+          cancel_reason: string | null
+          cancelled_at: string | null
+          cancelled_by: string | null
+          client_id: string | null
+          created_at: string
+          created_by: string | null
+          currency: string
+          delivered_at: string | null
+          discount_amount: number
+          doc_date: string
+          doc_type: Database["public"]["Enums"]["invoice_doc_type"]
+          id: string
+          issued_at: string | null
+          issued_by: string | null
+          ledger_id: string
+          net_amount: number
+          notes: string | null
+          number: number | null
+          org_id: string
+          pdf_path: string | null
+          pdf_sha256: string | null
+          seller_address_city: string | null
+          seller_address_street: string | null
+          seller_address_zip: string | null
+          seller_business_id: string | null
+          seller_legal_name: string | null
+          signed_pdf_path: string | null
+          status: Database["public"]["Enums"]["invoice_doc_status"]
+          total_amount: number
+          updated_at: string
+          value_date: string | null
+          vat_amount: number
+          vat_rate_bp: number | null
+          withholding_amount: number
+        }
+        Insert: {
+          allocation_error?: string | null
+          allocation_number?: string | null
+          allocation_requested_at?: string | null
+          allocation_status?: Database["public"]["Enums"]["allocation_status"]
+          amount_before_discount?: number
+          base_document_id?: string | null
+          buyer_address?: string | null
+          buyer_email?: string | null
+          buyer_name?: string | null
+          buyer_phone?: string | null
+          buyer_tax_id?: string | null
+          cancel_reason?: string | null
+          cancelled_at?: string | null
+          cancelled_by?: string | null
+          client_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          currency?: string
+          delivered_at?: string | null
+          discount_amount?: number
+          doc_date?: string
+          doc_type: Database["public"]["Enums"]["invoice_doc_type"]
+          id?: string
+          issued_at?: string | null
+          issued_by?: string | null
+          ledger_id: string
+          net_amount?: number
+          notes?: string | null
+          number?: number | null
+          org_id: string
+          pdf_path?: string | null
+          pdf_sha256?: string | null
+          seller_address_city?: string | null
+          seller_address_street?: string | null
+          seller_address_zip?: string | null
+          seller_business_id?: string | null
+          seller_legal_name?: string | null
+          signed_pdf_path?: string | null
+          status?: Database["public"]["Enums"]["invoice_doc_status"]
+          total_amount?: number
+          updated_at?: string
+          value_date?: string | null
+          vat_amount?: number
+          vat_rate_bp?: number | null
+          withholding_amount?: number
+        }
+        Update: {
+          allocation_error?: string | null
+          allocation_number?: string | null
+          allocation_requested_at?: string | null
+          allocation_status?: Database["public"]["Enums"]["allocation_status"]
+          amount_before_discount?: number
+          base_document_id?: string | null
+          buyer_address?: string | null
+          buyer_email?: string | null
+          buyer_name?: string | null
+          buyer_phone?: string | null
+          buyer_tax_id?: string | null
+          cancel_reason?: string | null
+          cancelled_at?: string | null
+          cancelled_by?: string | null
+          client_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          currency?: string
+          delivered_at?: string | null
+          discount_amount?: number
+          doc_date?: string
+          doc_type?: Database["public"]["Enums"]["invoice_doc_type"]
+          id?: string
+          issued_at?: string | null
+          issued_by?: string | null
+          ledger_id?: string
+          net_amount?: number
+          notes?: string | null
+          number?: number | null
+          org_id?: string
+          pdf_path?: string | null
+          pdf_sha256?: string | null
+          seller_address_city?: string | null
+          seller_address_street?: string | null
+          seller_address_zip?: string | null
+          seller_business_id?: string | null
+          seller_legal_name?: string | null
+          signed_pdf_path?: string | null
+          status?: Database["public"]["Enums"]["invoice_doc_status"]
+          total_amount?: number
+          updated_at?: string
+          value_date?: string | null
+          vat_amount?: number
+          vat_rate_bp?: number | null
+          withholding_amount?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "documents_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "documents_ledger_org_fk"
+            columns: ["ledger_id", "org_id"]
+            isOneToOne: false
+            referencedRelation: "ledgers"
+            referencedColumns: ["id", "org_id"]
+          },
+        ]
+      }
+      document_lines: {
+        Row: {
+          catalog_id: string | null
+          created_at: string
+          description: string
+          document_id: string
+          id: string
+          line_discount: number
+          line_no: number
+          line_total: number
+          org_id: string
+          quantity: number
+          unit: string | null
+          unit_price: number
+          updated_at: string
+        }
+        Insert: {
+          catalog_id?: string | null
+          created_at?: string
+          description: string
+          document_id: string
+          id?: string
+          line_discount?: number
+          line_no: number
+          line_total?: number
+          org_id: string
+          quantity?: number
+          unit?: string | null
+          unit_price?: number
+          updated_at?: string
+        }
+        Update: {
+          catalog_id?: string | null
+          created_at?: string
+          description?: string
+          document_id?: string
+          id?: string
+          line_discount?: number
+          line_no?: number
+          line_total?: number
+          org_id?: string
+          quantity?: number
+          unit?: string | null
+          unit_price?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "document_lines_doc_org_fk"
+            columns: ["document_id", "org_id"]
+            isOneToOne: false
+            referencedRelation: "documents"
+            referencedColumns: ["id", "org_id"]
+          },
+        ]
+      }
+      document_payments: {
+        Row: {
+          account_no: string | null
+          amount: number
+          bank_no: string | null
+          branch_no: string | null
+          card_company: number | null
+          card_tx_type: number | null
+          cheque_no: string | null
+          created_at: string
+          document_id: string
+          due_date: string | null
+          id: string
+          line_no: number
+          method: number
+          org_id: string
+          reference: string | null
+          updated_at: string
+        }
+        Insert: {
+          account_no?: string | null
+          amount?: number
+          bank_no?: string | null
+          branch_no?: string | null
+          card_company?: number | null
+          card_tx_type?: number | null
+          cheque_no?: string | null
+          created_at?: string
+          document_id: string
+          due_date?: string | null
+          id?: string
+          line_no: number
+          method: number
+          org_id: string
+          reference?: string | null
+          updated_at?: string
+        }
+        Update: {
+          account_no?: string | null
+          amount?: number
+          bank_no?: string | null
+          branch_no?: string | null
+          card_company?: number | null
+          card_tx_type?: number | null
+          cheque_no?: string | null
+          created_at?: string
+          document_id?: string
+          due_date?: string | null
+          id?: string
+          line_no?: number
+          method?: number
+          org_id?: string
+          reference?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "document_payments_doc_org_fk"
+            columns: ["document_id", "org_id"]
+            isOneToOne: false
+            referencedRelation: "documents"
+            referencedColumns: ["id", "org_id"]
+          },
+        ]
+      }
+      vat_rates: {
+        Row: {
+          effective_from: string
+          effective_to: string | null
+          rate_bp: number
+        }
+        Insert: {
+          effective_from: string
+          effective_to?: string | null
+          rate_bp: number
+        }
+        Update: {
+          effective_from?: string
+          effective_to?: string | null
+          rate_bp?: number
+        }
+        Relationships: []
+      }
       messages: {
         Row: {
           body: string
@@ -911,6 +1209,30 @@ export type Database = {
       }
       mark_conversation_read: {
         Args: { p_conversation_id: string }
+        Returns: undefined
+      }
+      issue_document: {
+        Args: { p_document_id: string }
+        Returns: { number: number; issued_at: string }[]
+      }
+      cancel_document: {
+        Args: { p_document_id: string; p_reason: string }
+        Returns: undefined
+      }
+      create_credit_note: {
+        Args: { p_document_id: string }
+        Returns: string
+      }
+      mark_document_delivered: {
+        Args: { p_document_id: string }
+        Returns: undefined
+      }
+      set_document_counter_start: {
+        Args: {
+          p_ledger_id: string
+          p_doc_type: Database["public"]["Enums"]["invoice_doc_type"]
+          p_next_number: number
+        }
         Returns: undefined
       }
       get_unread_counts: {
