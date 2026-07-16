@@ -10,6 +10,7 @@ import {
   LogOut,
   Menu,
   MessageSquare,
+  Receipt,
   Settings,
   ShieldCheck,
   Users,
@@ -67,6 +68,7 @@ export function AppShell({
   activeOrgId,
   showRolesNav = false,
   showDashboardNav = false,
+  showInvoicingNav = false,
   children,
 }: {
   profile: Profile;
@@ -83,6 +85,9 @@ export function AppShell({
   // Reveal the "דשבורד" (owner analytics) nav entry — owner-only (Stage 13 R4).
   // Gated server-side by activeRole === "owner". Default false => unchanged.
   showDashboardNav?: boolean;
+  // Reveal the "הנהלת חשבונות" (invoicing, DEV-026) nav entry. Gated server-side
+  // by the INVOICING_UI flag AND invoices.view. Default false => unchanged.
+  showInvoicingNav?: boolean;
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
@@ -138,6 +143,16 @@ export function AppShell({
   // Compose the nav from the base items. Insertions are index-safe (found by
   // href) so they compose regardless of which flags are on.
   let navItems = [...NAV_ITEMS];
+  // Invoicing (DEV-026): right after "לקוחות" (clients) — billing follows clients.
+  if (showInvoicingNav) {
+    const clientsIdx = navItems.findIndex((i) => i.href === "/clients");
+    const at = clientsIdx >= 0 ? clientsIdx + 1 : navItems.length;
+    navItems = [
+      ...navItems.slice(0, at),
+      { href: "/invoicing", label: "הנהלת חשבונות", icon: Receipt },
+      ...navItems.slice(at),
+    ];
+  }
   // Roles: between "צוות" (team) and "הגדרות" (settings).
   if (showRolesNav) {
     const teamIdx = navItems.findIndex((i) => i.href === "/team");
