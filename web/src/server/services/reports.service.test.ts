@@ -333,6 +333,21 @@ describe("permission gates", () => {
   });
 });
 
+/** Today in Asia/Jerusalem, matching the service's production clock. */
+function ilToday(): string {
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat("en-GB", {
+      timeZone: "Asia/Jerusalem",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    })
+      .formatToParts(new Date())
+      .map((p) => [p.type, p.value]),
+  );
+  return `${parts.year}-${parts.month}-${parts.day}`;
+}
+
 describe("openformat export orchestration", () => {
   const RANGE = { from: "2026-01-01", to: "2026-12-31" };
 
@@ -390,7 +405,13 @@ describe("openformat export orchestration", () => {
     expect(summary.business.vatId).toBe("022334456");
     expect(summary.counts).toMatchObject({ C100: 1, D110: 1, D120: 0, total: 4 });
     expect(summary.savedPath).toMatch(/^\\OPENFRMT\\02233445\.\d{2}\\\d{8}$/);
-    expect(summary.fileName).toBe("openformat_022334456_2026-01-01_2026-12-31.zip");
+    // A future range end is clamped to the production day (spec: field 1025
+    // must not be in the future) and the file name follows the DECLARED range.
+    const clampedTo = RANGE.to > ilToday() ? ilToday() : RANGE.to;
+    expect(summary.range).toEqual({ from: RANGE.from, to: clampedTo });
+    expect(summary.fileName).toBe(
+      `openformat_022334456_2026-01-01_${clampedTo}.zip`,
+    );
 
     const { buffer, fileName } = await exportOpenFormatZip(session("owner"), RANGE);
     expect(fileName).toBe(summary.fileName);
@@ -398,6 +419,40 @@ describe("openformat export orchestration", () => {
     // ZIP magic bytes.
     expect(buffer[0]).toBe(0x50);
     expect(buffer[1]).toBe(0x4b);
+  });
+
+  it("clamps a future end date, warns, and queries the clamped range", async () => {
+    vi.mocked(ledgersRepo.findSelfByOrgId).mockResolvedValue(
+      selfLedger("022334456"),
+    );
+    vi.mocked(reportsRepo.findDocumentsWithChildrenInRange).mockResolvedValue({
+      rows: [],
+      truncated: false,
+    });
+    const today = ilToday();
+    const summary = await getOpenFormatSummary(session("owner"), {
+      from: "2026-01-01",
+      to: "2099-12-31",
+    });
+    expect(reportsRepo.findDocumentsWithChildrenInRange).toHaveBeenCalledWith(
+      ORG,
+      "2026-01-01",
+      today,
+    );
+    expect(summary.range.to).toBe(today);
+    expect(summary.warnings.some((w) => w.includes("קוצר"))).toBe(true);
+  });
+
+  it("rejects a range that starts in the future", async () => {
+    vi.mocked(ledgersRepo.findSelfByOrgId).mockResolvedValue(
+      selfLedger("022334456"),
+    );
+    await expect(
+      getOpenFormatSummary(session("owner"), {
+        from: "2099-01-01",
+        to: "2099-12-31",
+      }),
+    ).rejects.toThrow(ValidationError);
   });
 
   it("fails loudly when the range was truncated", async () => {

@@ -479,7 +479,7 @@ export function ReportsPage({
           </div>
         }
       >
-        <OpenFormatDialogBody summary={ofSummary} error={ofError} range={range} />
+        <OpenFormatDialogBody summary={ofSummary} error={ofError} />
       </ResponsiveModal>
     </div>
   );
@@ -1088,11 +1088,9 @@ function BalanceReport({
 function OpenFormatDialogBody({
   summary,
   error,
-  range,
 }: {
   summary: OpenFormatSummaryDTO | null;
   error: string | null;
-  range: ReportRangeQuery;
 }) {
   if (error) {
     return (
@@ -1123,9 +1121,11 @@ function OpenFormatDialogBody({
         <dd className="font-semibold">
           {summary.business.name} · עוסק {summary.business.vatId}
         </dd>
+        {/* the file's declared range (1024/1025) — the server clamps a future
+            end date to the production day, per the spec */}
         <dt className="text-muted-foreground">טווח נתונים</dt>
         <dd className="font-semibold">
-          {formatDateHe(range.from)} – {formatDateHe(range.to)}
+          {formatDateHe(summary.range.from)} – {formatDateHe(summary.range.to)}
         </dd>
         <dt className="text-muted-foreground">הופק בתאריך</dt>
         <dd className="font-semibold">

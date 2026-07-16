@@ -727,6 +727,7 @@ async function assembleOpenFormat(
   input: OpenFormatInput;
   documentCount: number;
   businessName: string;
+  serviceWarnings: string[];
 }> {
   const ledger = await ledgersRepo.findSelfByOrgId(session.organization.id);
   if (!ledger) {
@@ -740,10 +741,29 @@ async function assembleOpenFormat(
   }
   const vatId = normalizeVatId(ledger.business_id);
 
+  // The spec forbids a FUTURE end date in field 1025 (simulator: "התאריך לא
+  // יכול להיות עתידי") — clamp the export cut to the production date and keep
+  // the queried documents consistent with the declared range.
+  const generatedIso = new Date().toISOString();
+  const generated = ilDateTimeParts(generatedIso);
+  const serviceWarnings: string[] = [];
+  let effectiveTo = range.to;
+  if (effectiveTo > generated.date) {
+    effectiveTo = generated.date;
+    serviceWarnings.push(
+      "תאריך הסיום של הטווח קוצר ליום ההפקה — ההוראות אוסרות תאריך עתידי בקובץ.",
+    );
+  }
+  if (range.from > effectiveTo) {
+    throw new ValidationError("Export range starts in the future", {
+      reason: "range_in_future",
+    });
+  }
+
   const { rows, truncated } = await reportsRepo.findDocumentsWithChildrenInRange(
     session.organization.id,
     range.from,
-    range.to,
+    effectiveTo,
   );
   if (truncated) {
     throw new ValidationError("Export range holds too many documents", {
@@ -775,8 +795,6 @@ async function assembleOpenFormat(
     for (const b of bases) baseDocsById.set(b.id, { doc_type: b.doc_type, number: b.number });
   }
 
-  const generatedIso = new Date().toISOString();
-  const generated = ilDateTimeParts(generatedIso);
   const dirSegment =
     generated.date.slice(5, 7) + generated.date.slice(8, 10) + generated.time;
 
@@ -798,7 +816,7 @@ async function assembleOpenFormat(
       producerName: process.env.SOFTWARE_PRODUCER_NAME || null,
     },
     dateFrom: range.from,
-    dateTo: range.to,
+    dateTo: effectiveTo,
     generatedDate: generated.date,
     generatedTime: generated.time,
     generatedDirSegment: dirSegment,
@@ -806,7 +824,12 @@ async function assembleOpenFormat(
     documents: docs.map((d) => docToOpenFormat(d, baseDocsById)),
   };
 
-  return { input, documentCount: docs.length, businessName: ledger.legal_name };
+  return {
+    input,
+    documentCount: docs.length,
+    businessName: ledger.legal_name,
+    serviceWarnings,
+  };
 }
 
 export async function getOpenFormatSummary(
@@ -814,7 +837,8 @@ export async function getOpenFormatSummary(
   range: ReportRangeQuery,
 ): Promise<OpenFormatSummaryDTO> {
   requireCapability(session, PERMISSIONS.INVOICES_EXPORT);
-  const { input, documentCount, businessName } = await assembleOpenFormat(session, range);
+  const { input, documentCount, businessName, serviceWarnings } =
+    await assembleOpenFormat(session, range);
   const build = buildOpenFormat(input);
   return {
     business: { vatId: input.business.vatId, name: businessName },
@@ -823,14 +847,19 @@ export async function getOpenFormatSummary(
       version: input.software.version,
       registrationNumber: input.software.registrationNumber,
     },
-    range: { from: range.from, to: range.to },
+    // The DTO reflects what the FILE declares (1024/1025) — i.e. the clamped
+    // range, not the raw request.
+    range: { from: input.dateFrom, to: input.dateTo },
     generatedDate: input.generatedDate,
     generatedTime: input.generatedTime,
     savedPath: build.savedPath,
     counts: build.counts,
     documentCount,
-    warnings: build.warnings,
-    fileName: openFormatFileName(input.business.vatId, range),
+    warnings: [...serviceWarnings, ...build.warnings],
+    fileName: openFormatFileName(input.business.vatId, {
+      from: input.dateFrom,
+      to: input.dateTo,
+    }),
   };
 }
 
@@ -846,5 +875,11 @@ export async function exportOpenFormatZip(
   const { input } = await assembleOpenFormat(session, range);
   const build = buildOpenFormat(input);
   const buffer = await zipOpenFormat(build);
-  return { buffer, fileName: openFormatFileName(input.business.vatId, range) };
+  return {
+    buffer,
+    fileName: openFormatFileName(input.business.vatId, {
+      from: input.dateFrom,
+      to: input.dateTo,
+    }),
+  };
 }
