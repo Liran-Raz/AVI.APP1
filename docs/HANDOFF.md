@@ -28,28 +28,37 @@ Plan file: `C:\Users\User\.claude\plans\hashed-herding-honey.md` (DEV-026 sectio
 - **R3 (Hebrew PDF) — MERGED to main** (PR #82 → `00fa2f4`, deploy verified +
   smoke green). @react-pdf/renderer, Rubik OFL base64-embedded, מקור/העתק +
   print, first-original marks delivered. Storage deferred to R6.
-- **R4 (reports + מבנה-אחיד export) — in OPEN PR** (`feat/dev-026-r4-reports`).
+- **R4 (reports + מבנה-אחיד export) — MERGED to main** (PR #83 → `00b8e94`).
   OPEN FORMAT v1.31 engine (`server/openformat/` — pure TS, field tables
   transcribed from the official spec read page-by-page; ISO-8859-8 logical via
   iconv-lite, signed fixed-width amounts, INI 1013=0, no B100/B110/M100,
   `OPENFRMT\<vat8>.<YY>\<MMDDhhmm>\` zip with inner BKMVDATA.zip per §2.2(ד);
-  17 byte-exact tests) + reports layer (validator/repo/service/routes: נספח-1
-  doc-type summary, sales book, receipts book, monthly VAT, client balances,
-  CSV with BOM; 15 service tests) + `/reports` page + "דוחות" nav (mockup
-  approved by Liran first). Permissions: reports.view/export = owner+manager;
-  **openformat export = invoices.export = OWNER ONLY**; employee sees nothing.
-  New deps: iconv-lite, jszip. Optional env: SOFTWARE_REG_NUMBER/NAME/VERSION/
-  PRODUCER_VATID/PRODUCER_NAME (1006 = 00000000 until R7 registration).
-  No migration. 511 tests, tsc/lint clean, probes green.
+  17 byte-exact tests) + reports layer (נספח-1 doc-type summary, sales book,
+  receipts book, monthly VAT, client balances, CSV with BOM; 15 service tests)
+  + `/reports` page + "דוחות" nav (mockup approved by Liran first).
+  Permissions: reports.view/export = owner+manager; **openformat export =
+  invoices.export = OWNER ONLY**. New deps: iconv-lite, jszip. No migration.
+  513 tests. **SIMULATOR LOOP CLOSED (misim.gov.il, 2 rounds, 2026-07-17):**
+  BKMVDATA/integrity/totals all PASS; round-1 found a real bug (field 1025
+  must not be future → export now clamps the cut to the production day —
+  fixed in `3bacc04`); the ONLY remaining INI item is 1006=00000000 (the
+  registration number, closes at R7). The 2 general notes (min-2000-record
+  registration sample; B110 absent) are by-design/R7 items. **Discovery:
+  Liran is ALREADY a registered software house in מרשם התוכנות — "LIRAN AI
+  תוכנות חכמות לעסקים ויחידים", no. 314954835.** Local env has
+  SOFTWARE_PRODUCER_VATID/NAME; **add both to Vercel before enabling the
+  module in prod.** Simulator upload how-to: charset = Windows ANSI
+  ISO-8859-8-I; upload INI.TXT + BKMVDATA.TXT (extracted from the inner zip).
 - **Prod state: code live but INERT** — `INVOICING_UI` flag OFF in Vercel (zero
   UI for real users). Liran QAs locally (`web/.env.local` has `INVOICING_UI=1`).
-  Enable in prod = Vercel env var + Redeploy, Liran's call.
+  Enable in prod = Vercel env vars (incl. the two SOFTWARE_PRODUCER_* ones) +
+  Redeploy, Liran's call.
 
-**NEXT:** merge R4 when Vercel green + Liran approves → **simulator loop**
-(Liran uploads a real export at misim.gov.il's בדיקת קבצים במבנה אחיד; iterate
-to zero errors — owner gate for R4). Then R5 חשבוניות-ישראל (gov-gateway OAuth,
-₪10K threshold from 1.1.2026 → ₪5K from 1.6.2026), R6 signing+Storage,
-R7 registration package.
+**NEXT = R5 חשבוניות-ישראל** (allocation numbers via the gov gateway: OAuth,
+sandbox first; ₪10K threshold from 1.1.2026 → ₪5K from 1.6.2026). Owner
+lead-time action to start early: developer registration at the government
+gateway. Then R6 signing+Storage, R7 registration package (2000-record sample
++ real 1006 + submission).
 
 **Housekeeping:** remind Liran to cancel/credit the leftover QA demo documents
 (delivered ones can only be credited, not cancelled). Migration `0027` was taken
