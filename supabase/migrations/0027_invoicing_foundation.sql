@@ -543,8 +543,29 @@ create policy "members write payments of own drafts"
 -- ============================================================
 -- 12. RPCs — the ONLY legal-transition path. All SECURITY DEFINER owned by
 --     postgres, all validate active org membership via user_is_active_member_of
---     (0009) + role where relevant. search_path pinned.
+--     (0009) + an IN-DB ROLE BELT matching the TS grants (owner/admin only for
+--     legal transitions — an employee calling the RPC directly via PostgREST is
+--     rejected here, not just in the service layer). search_path pinned.
 -- ============================================================
+
+-- Internal role guard (not granted to any client role; called by the RPCs).
+create or replace function public._require_doc_operator_role(p_org_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if not exists (
+    select 1 from public.organization_memberships m
+    where m.user_id = auth.uid() and m.org_id = p_org_id
+      and m.is_active and m.role in ('owner', 'admin')
+  ) then
+    raise exception 'issuing/cancelling/crediting documents requires an owner or manager role';
+  end if;
+end $$;
+
+revoke all on function public._require_doc_operator_role(uuid) from public, anon, authenticated, service_role;
 
 -- 12a. issue_document — the heart: freeze + number + totals, atomically.
 create or replace function public.issue_document(p_document_id uuid)
@@ -575,6 +596,7 @@ begin
   if not public.user_is_active_member_of(v_doc.org_id) then
     raise exception 'not an active member of this organization';
   end if;
+  perform public._require_doc_operator_role(v_doc.org_id);
 
   -- Ledger must be issue-ready (legal identity present).
   select * into v_ledger from public.ledgers where id = v_doc.ledger_id;
@@ -720,6 +742,7 @@ begin
   if not public.user_is_active_member_of(v_doc.org_id) then
     raise exception 'not an active member of this organization';
   end if;
+  perform public._require_doc_operator_role(v_doc.org_id);
   if v_doc.status <> 'issued' then raise exception 'only issued documents can be cancelled'; end if;
   if v_doc.delivered_at is not null then
     raise exception 'document was already delivered — issue a credit note (330) instead';
@@ -751,6 +774,7 @@ begin
   if not public.user_is_active_member_of(v_base.org_id) then
     raise exception 'not an active member of this organization';
   end if;
+  perform public._require_doc_operator_role(v_base.org_id);
   if v_base.status <> 'issued' or v_base.doc_type not in ('305', '320') then
     raise exception 'credit notes are created from issued 305/320 documents';
   end if;
@@ -795,6 +819,7 @@ begin
   if not public.user_is_active_member_of(v_doc.org_id) then
     raise exception 'not an active member of this organization';
   end if;
+  perform public._require_doc_operator_role(v_doc.org_id);
   if v_doc.status <> 'issued' then raise exception 'only issued documents can be delivered'; end if;
 
   update public.documents
@@ -915,7 +940,7 @@ commit;
 --   (select count(*) from pg_proc p join pg_namespace n on n.oid=p.pronamespace
 --      where n.nspname='public' and p.proname in
 --        ('issue_document','cancel_document','create_credit_note','mark_document_delivered',
---         'set_document_counter_start') and p.prosecdef)                                             as secdef_rpcs,      -- 5
+--         'set_document_counter_start','_require_doc_operator_role') and p.prosecdef)                as secdef_rpcs,      -- 6
 --   (select count(*) from pg_constraint where conname in
 --      ('clients_id_org_uq','documents_ledger_org_fk','documents_client_org_fk',
 --       'document_lines_doc_org_fk','document_payments_doc_org_fk',
@@ -940,6 +965,7 @@ commit;
 --   drop function if exists public.create_credit_note(uuid);
 --   drop function if exists public.cancel_document(uuid, text);
 --   drop function if exists public.issue_document(uuid);
+--   drop function if exists public._require_doc_operator_role(uuid);
 --   drop trigger  if exists document_payments_enforce_immutability on public.document_payments;
 --   drop trigger  if exists document_lines_enforce_immutability on public.document_lines;
 --   drop trigger  if exists documents_enforce_immutability on public.documents;

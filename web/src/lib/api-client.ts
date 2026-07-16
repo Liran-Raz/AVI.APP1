@@ -82,11 +82,35 @@ import type {
 } from "@/server/validators/conversations.schema";
 import type { LedgerDTO } from "@/server/services/ledgers.service";
 import type { UpdateLedgerPayload } from "@/server/validators/ledgers.schema";
+import type {
+  DocumentDTO,
+  DocumentSummaryDTO,
+} from "@/server/services/documents.service";
+import type {
+  CancelDocumentPayload,
+  CreateDocumentPayload,
+  ListDocumentsQuery,
+  UpdateDocumentPayload,
+} from "@/server/validators/documents.schema";
 
 // Re-export DTOs so client components have one stable import path.
 export type { ClientDTO } from "@/server/services/clients.service";
 export type { LedgerDTO } from "@/server/services/ledgers.service";
 export type { UpdateLedgerPayload } from "@/server/validators/ledgers.schema";
+export type {
+  DocumentDTO,
+  DocumentSummaryDTO,
+  DocumentLineDTO,
+  DocumentPaymentDTO,
+  VatRateDTO,
+} from "@/server/services/documents.service";
+export type {
+  CreateDocumentPayload,
+  UpdateDocumentPayload,
+  ListDocumentsQuery,
+  DocumentLinePayload,
+  DocumentPaymentPayload,
+} from "@/server/validators/documents.schema";
 export type {
   CreateClientPayload,
   UpdateClientPayload,
@@ -412,6 +436,28 @@ export const apiClient = {
     list: () => getJson<{ items: LedgerDTO[] }>("/api/ledgers"),
     update: (id: string, patch: UpdateLedgerPayload) =>
       patchJson<LedgerDTO>(`/api/ledgers/${id}`, patch),
+  },
+  // DEV-026 — tax documents. Drafts are editable; issue/cancel/credit are the
+  // legal transitions (server + DB enforce role, state and numbering).
+  documents: {
+    list: (query?: Partial<ListDocumentsQuery>) =>
+      getJson<{ items: DocumentSummaryDTO[] }>(
+        `/api/documents${toQueryString(query ?? {})}`,
+      ),
+    get: (id: string) => getJson<DocumentDTO>(`/api/documents/${id}`),
+    create: (input: CreateDocumentPayload) =>
+      postJson<DocumentDTO>("/api/documents", input),
+    update: (id: string, patch: UpdateDocumentPayload) =>
+      patchJson<DocumentDTO>(`/api/documents/${id}`, patch),
+    remove: (id: string) => deleteJson<null>(`/api/documents/${id}`),
+    issue: (id: string) =>
+      postJson<{ number: number; issuedAt: string }>(
+        `/api/documents/${id}/issue`,
+      ),
+    cancel: (id: string, input: CancelDocumentPayload) =>
+      postJson<null>(`/api/documents/${id}/cancel`, input),
+    credit: (id: string) =>
+      postJson<{ id: string }>(`/api/documents/${id}/credit`),
   },
   tasks: {
     list: (query?: Partial<ListTasksQuery>) => {

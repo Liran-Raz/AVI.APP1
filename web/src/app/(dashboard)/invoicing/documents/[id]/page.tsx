@@ -1,32 +1,38 @@
 import { notFound } from "next/navigation";
 
-import { DocumentsPage } from "@/components/invoicing/documents-page";
+import { DocumentView } from "@/components/invoicing/document-view";
 import { isInvoicingUiEnabled } from "@/server/auth/invoicing.flags";
 import { can, resolveCapabilities } from "@/server/auth/authorization";
 import { PERMISSIONS } from "@/server/auth/permissions";
 import { requireSession } from "@/server/auth/session";
+import { NotFoundError } from "@/server/errors/app-error";
 import * as clientsService from "@/server/services/clients.service";
 import * as documentsService from "@/server/services/documents.service";
 import * as ledgersService from "@/server/services/ledgers.service";
 
-// הנהלת חשבונות (DEV-026 R2) — the documents screen: list + creation wizard.
-// Gate: INVOICING_UI flag (404 when off) + invoices.view. Services re-check
-// every permission; capabilities are passed down as display hints only.
-export default async function InvoicingPage() {
+// תצוגת מסמך (DEV-026 R2) — full document with the lifecycle actions.
+export default async function DocumentViewPage({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
   if (!isInvoicingUiEnabled()) notFound();
 
   const session = await requireSession();
   if (!can(session, PERMISSIONS.INVOICES_VIEW)) notFound();
 
-  const [ledger, documents, vatRates, clients] = await Promise.all([
+  const { id } = await params;
+
+  let doc;
+  try {
+    doc = await documentsService.getDocument(session, id);
+  } catch (err) {
+    if (err instanceof NotFoundError) notFound();
+    throw err;
+  }
+
+  const [ledger, vatRates, clients] = await Promise.all([
     ledgersService.getSelfLedger(session),
-    documentsService.listDocuments(session, {
-      status: "all",
-      limit: 50,
-      offset: 0,
-      docType: undefined,
-      search: undefined,
-    }),
     documentsService.listVatRates(session),
     clientsService.listClients(session, {
       status: "active",
@@ -36,9 +42,9 @@ export default async function InvoicingPage() {
   ]);
 
   return (
-    <DocumentsPage
+    <DocumentView
+      initialDoc={doc}
       ledger={ledger}
-      initialItems={documents.items}
       vatRates={vatRates}
       clients={clients.items.map((c) => ({ id: c.id, name: c.name }))}
       capabilities={resolveCapabilities(session)}

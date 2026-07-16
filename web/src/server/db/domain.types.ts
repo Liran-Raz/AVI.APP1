@@ -42,3 +42,7 @@ export type Notification = Tables<"notifications">;
 export type Invitation = Tables<"invitations">;
 export type OrganizationMembership = Tables<"organization_memberships">;
 export type Ledger = Tables<"ledgers">;
+export type InvoiceDocument = Tables<"documents">;
+export type DocumentLine = Tables<"document_lines">;
+export type DocumentPayment = Tables<"document_payments">;
+export type VatRate = Tables<"vat_rates">;

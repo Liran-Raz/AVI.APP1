@@ -1137,7 +1137,19 @@ R5 חשבוניות-ישראל (שער-ממשלתי OAuth; סף ₪10,000 מ-1.1
 ממוחשבים (חתימת-CA-ענן per-office — בלי משמורת-מפתחות; הסכמות; "מסמך ממוחשב") · R7 חבילת-רישום.
 אומדן ~42-65 ימי-פיתוח + ליד-טיימים (תעודה, שער-ממשלתי, בודק).
 
-**R1 (בבנייה, ענף `feat/dev-026-r1-ledgers`):**
+**R2 (בבנייה, ענף `feat/dev-026-r2-documents` מוערם על R1):** מחזור-חיים מלא של מסמכים —
+- **הקשחת 0027:** בלם-תפקידים בתוך ה-DB (`_require_doc_operator_role`) על issue/cancel/credit/
+  delivered — owner/admin בלבד גם ב-PostgREST ישיר (עובד = טיוטות בלבד; תואם למענקי-TS).
+- **קוד:** `lib/money.ts` (אגורות↔₪, פרסינג-מחרוזתי בלי float; +8 בדיקות) · פרוסת-documents
+  מלאה (validator עם replace-all לשורות/תקבולים והמחאה-מחייבת-בנק/סניף/חשבון/מספר · repo כולל
+  עטיפות-RPC · service עם שערי-capability וגילום-שגיאות-RPC ל-400 · 5 ראוטים · apiClient; +13
+  בדיקות-service). **UI:** `/invoicing` = רשימת-מסמכים (פילטרים, טבלה+כרטיסים) · אשף יצירה/עריכה
+  (305/320/400, שורות+תקבולים, תצוגת-סכומים חיה לפי מע"מ-בתוקף ועוסק-פטור, "שמירה והפקה") ·
+  `/invoicing/documents/[id]` תצוגה+פעולות (הפקה/עריכה/מחיקה לטיוטה; ביטול-עם-סיבה/יצירת-זיכוי
+  להופק) · פרופיל-העסק עבר ל-`/invoicing/settings`. שער-איכות: tsc 0 · lint 0 · **471 בדיקות** ·
+  probes 401/307 על כל הראוטים החדשים. QA של ליראן = מרוכז R1+R2 אחרי החלת 0027 (החלטתו).
+
+**R1 (ב-PR [#79](https://github.com/Liran-Raz/AVI.APP1/pull/79), ענף `feat/dev-026-r1-ledgers`):**
 - **מיגרציה `0027_invoicing_foundation.sql`** (טרם הוחלה): enums (`invoice_doc_type`
   '305'/'320'/'330'/'400', `invoice_doc_status`, `allocation_status`) · `ledgers` (זהות משפטית,
   self-ledger unique, backfill + insert-trigger לארגונים חדשים) · `documents` (snapshot מוכר+קונה,
