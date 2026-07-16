@@ -126,13 +126,18 @@ export function DocumentView({
           </div>
         )}
         {doc.baseDocumentId && (
-          <p className="mt-3 text-sm text-muted-foreground">
-            זיכוי עבור{" "}
+          <p className="mt-3 text-sm">
+            <span className="text-muted-foreground">זיכוי עבור </span>
             <Link
               href={`/invoicing/documents/${doc.baseDocumentId}`}
-              className="text-primary hover:underline"
+              className="text-primary hover:underline font-medium"
             >
-              המסמך המקורי
+              {doc.baseDocumentType
+                ? DOC_TYPE_LABELS[doc.baseDocumentType]
+                : "המסמך המקורי"}
+              {doc.baseDocumentNumber !== null && (
+                <span className="font-mono"> #{doc.baseDocumentNumber}</span>
+              )}
             </Link>
           </p>
         )}

@@ -32,7 +32,10 @@ export const documentLineSchema = z.object({
     .number()
     .positive("Quantity must be positive")
     .max(999_999_999)
-    .refine((q) => Number.isInteger(q * 10000), {
+    // Float-safe 4-decimal check: q*10000 may land at 24000.000000000004 for
+    // a perfectly valid 2.4, so compare against the rounded value with an
+    // epsilon instead of Number.isInteger (which rejected such inputs).
+    .refine((q) => Math.abs(q * 10000 - Math.round(q * 10000)) < 1e-6, {
       message: "Quantity supports up to 4 decimal places",
     }),
   unitPrice: agorotField, // agorot, ex-VAT

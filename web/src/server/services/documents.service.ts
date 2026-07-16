@@ -88,6 +88,9 @@ export type DocumentDTO = DocumentSummaryDTO & {
   withholdingAmount: number;
   allocationNumber: string | null;
   baseDocumentId: string | null;
+  /** When this is a credit note with a base: the credited document's number/type. */
+  baseDocumentNumber: number | null;
+  baseDocumentType: InvoiceDocument["doc_type"] | null;
   cancelledAt: string | null;
   cancelReason: string | null;
   deliveredAt: string | null;
@@ -146,6 +149,7 @@ function toFullDTO(
   row: InvoiceDocument,
   lines: DocumentLine[],
   payments: DocumentPayment[],
+  base?: InvoiceDocument | null,
 ): DocumentDTO {
   return {
     ...toSummaryDTO(row),
@@ -167,6 +171,8 @@ function toFullDTO(
     withholdingAmount: row.withholding_amount,
     allocationNumber: row.allocation_number,
     baseDocumentId: row.base_document_id,
+    baseDocumentNumber: base?.number ?? null,
+    baseDocumentType: base?.doc_type ?? null,
     cancelledAt: row.cancelled_at,
     cancelReason: row.cancel_reason,
     deliveredAt: row.delivered_at,
@@ -213,11 +219,14 @@ export async function getDocument(
   const orgId = session.organization.id;
   const row = await documentsRepo.findByIdAndOrgId(id, orgId);
   if (!row) throw new NotFoundError("Document not found");
-  const [lines, payments] = await Promise.all([
+  const [lines, payments, base] = await Promise.all([
     documentsRepo.findLines(id, orgId),
     documentsRepo.findPayments(id, orgId),
+    row.base_document_id
+      ? documentsRepo.findByIdAndOrgId(row.base_document_id, orgId)
+      : Promise.resolve(null),
   ]);
-  return toFullDTO(row, lines, payments);
+  return toFullDTO(row, lines, payments, base);
 }
 
 // ============================================================

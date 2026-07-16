@@ -74,7 +74,7 @@ const EMPTY_PAYMENT: PaymentRow = {
   chequeNo: "",
 };
 
-const CREATABLE_TYPES = ["305", "320", "400"] as const;
+const CREATABLE_TYPES = ["305", "320", "400", "330"] as const;
 type CreatableType = (typeof CREATABLE_TYPES)[number];
 
 function today(): string {
@@ -182,7 +182,8 @@ function WizardForm({
   );
   const [saving, setSaving] = useState(false);
 
-  const hasLines = docType === "305" || docType === "320";
+  const hasLines =
+    docType === "305" || docType === "320" || docType === "330";
   const hasPayments = docType === "320" || docType === "400";
 
   // ---- live totals preview (mirrors the DB math) ----
@@ -394,7 +395,7 @@ function WizardForm({
         {!isEdit ? (
           <div className="space-y-2">
             <Label>סוג מסמך</Label>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
               {CREATABLE_TYPES.map((t) => (
                 <button
                   key={t}
