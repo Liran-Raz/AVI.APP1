@@ -44,6 +44,12 @@ export default async function DashboardLayout({
     isInvoicingUiEnabled() &&
     can(session as FullSession, PERMISSIONS.INVOICES_VIEW);
 
+  // Reveal the reports nav (DEV-026 R4) — same flag, reports.view capability
+  // (owner/manager; employees have no reports grant). Display-only.
+  const showReportsNav =
+    isInvoicingUiEnabled() &&
+    can(session as FullSession, PERMISSIONS.REPORTS_VIEW);
+
   return (
     <AppShell
       profile={session.profile}
@@ -53,6 +59,7 @@ export default async function DashboardLayout({
       showRolesNav={showRolesNav}
       showDashboardNav={showDashboardNav}
       showInvoicingNav={showInvoicingNav}
+      showReportsNav={showReportsNav}
     >
       {children}
     </AppShell>
