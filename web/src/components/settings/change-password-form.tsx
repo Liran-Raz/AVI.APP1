@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ApiError, apiClient } from "@/lib/api-client";
+import { useT } from "@/i18n/locale-provider";
 
 // Stable server-tagged reasons (see auth.service.changePassword +
 // supabase-auth.adapter.updatePassword) → clear inline Hebrew messages
@@ -21,6 +22,7 @@ function errorReason(err: ApiError): string | null {
 }
 
 export function ChangePasswordForm() {
+  const t = useT();
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -44,11 +46,11 @@ export function ChangePasswordForm() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (mismatch) {
-      toast.error("הסיסמאות לא תואמות");
+      toast.error(t("settings.security.mismatch"));
       return;
     }
     if (sameAsCurrent) {
-      toast.error("הסיסמה החדשה חייבת להיות שונה מהסיסמה הנוכחית");
+      toast.error(t("settings.security.mustDiffer"));
       return;
     }
     setLoading(true);
@@ -59,21 +61,21 @@ export function ChangePasswordForm() {
         newPassword,
         confirmPassword,
       });
-      toast.success("הסיסמה עודכנה");
+      toast.success(t("settings.security.updated"));
       reset();
     } catch (err) {
       if (err instanceof ApiError) {
         const reason = errorReason(err);
         if (reason === "wrong_current_password") {
           setWrongCurrent(true);
-          toast.error("הסיסמה הנוכחית שגויה");
+          toast.error(t("settings.security.wrongCurrent"));
         } else if (reason === "same_password") {
-          toast.error("הסיסמה החדשה חייבת להיות שונה מהסיסמה הנוכחית");
+          toast.error(t("settings.security.mustDiffer"));
         } else {
           toast.error(err.message);
         }
       } else {
-        toast.error("שגיאה לא צפויה. נסה שוב.");
+        toast.error(t("common.unexpectedErrorRetry"));
         console.error(err);
       }
     } finally {
@@ -87,7 +89,7 @@ export function ChangePasswordForm() {
       className="border border-border rounded-lg glass-card shadow-card p-6 space-y-5"
     >
       <div className="space-y-2">
-        <Label htmlFor="currentPassword">סיסמה נוכחית</Label>
+        <Label htmlFor="currentPassword">{t("settings.security.currentPassword")}</Label>
         <Input
           id="currentPassword"
           type="password"
@@ -101,12 +103,12 @@ export function ChangePasswordForm() {
           aria-invalid={wrongCurrent || undefined}
         />
         {wrongCurrent && (
-          <p className="text-xs text-destructive">הסיסמה הנוכחית שגויה</p>
+          <p className="text-xs text-destructive">{t("settings.security.wrongCurrent")}</p>
         )}
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="newPassword">סיסמה חדשה</Label>
+        <Label htmlFor="newPassword">{t("settings.security.newPassword")}</Label>
         <Input
           id="newPassword"
           type="password"
@@ -119,15 +121,15 @@ export function ChangePasswordForm() {
         />
         {sameAsCurrent ? (
           <p className="text-xs text-destructive">
-            הסיסמה החדשה חייבת להיות שונה מהסיסמה הנוכחית
+            {t("settings.security.mustDiffer")}
           </p>
         ) : (
-          <p className="text-xs text-muted-foreground">לפחות 8 תווים</p>
+          <p className="text-xs text-muted-foreground">{t("settings.security.min8")}</p>
         )}
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="confirmNewPassword">אישור סיסמה חדשה</Label>
+        <Label htmlFor="confirmNewPassword">{t("settings.security.confirmPassword")}</Label>
         <Input
           id="confirmNewPassword"
           type="password"
@@ -139,14 +141,14 @@ export function ChangePasswordForm() {
           aria-invalid={mismatch || undefined}
         />
         {mismatch && (
-          <p className="text-xs text-destructive">הסיסמאות לא תואמות</p>
+          <p className="text-xs text-destructive">{t("settings.security.mismatch")}</p>
         )}
       </div>
 
       <div className="flex justify-start pt-1">
         <Button type="submit" disabled={loading || mismatch || sameAsCurrent}>
           {loading && <Loader2 className="size-4 animate-spin" />}
-          עדכון סיסמה
+          {t("settings.security.updateButton")}
         </Button>
       </div>
     </form>
