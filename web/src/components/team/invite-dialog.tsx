@@ -28,6 +28,7 @@ import {
   type AssignableRole,
   type InvitationDTO,
 } from "@/lib/api-client";
+import { useT } from "@/i18n/locale-provider";
 
 type Props = {
   open: boolean;
@@ -44,6 +45,7 @@ export function InviteDialog({
   onInvited,
   canInviteAsAdmin,
 }: Props) {
+  const t = useT();
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<AssignableRole>("employee");
   const [loading, setLoading] = useState(false);
@@ -64,17 +66,17 @@ export function InviteDialog({
       const result = await apiClient.team.invite({ email, role });
       setLastInvite(result);
       if (result.emailDelivered) {
-        toast.success("ההזמנה נוצרה ונשלחה");
+        toast.success(t("team.inviteDialog.createdSent"));
       } else {
         // Honest: the invitation was created but the email did NOT go out.
-        toast.warning("ההזמנה נוצרה אך המייל לא נשלח — העתק/י את הקישור ושלח/י ידנית");
+        toast.warning(t("team.inviteDialog.createdNotSent"));
       }
       onInvited?.(result);
     } catch (err) {
       if (err instanceof ApiError) {
         toast.error(err.message);
       } else {
-        toast.error("שגיאה לא צפויה");
+        toast.error(t("common.unexpectedError"));
         console.error(err);
       }
     } finally {
@@ -86,9 +88,9 @@ export function InviteDialog({
     if (!lastInvite?.inviteUrl) return;
     try {
       await navigator.clipboard.writeText(lastInvite.inviteUrl);
-      toast.success("הקישור הועתק");
+      toast.success(t("team.inviteDialog.linkCopied"));
     } catch {
-      toast.error("לא ניתן להעתיק אוטומטית — בחר את הקישור והעתק ידנית");
+      toast.error(t("team.inviteDialog.copyFailed"));
     }
   }
 
@@ -96,9 +98,9 @@ export function InviteDialog({
     <Dialog open={open} onOpenChange={(o) => (!o ? resetAndClose() : onOpenChange(o))}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>הזמנת חבר/ה לצוות</DialogTitle>
+          <DialogTitle>{t("team.inviteDialog.title")}</DialogTitle>
           <DialogDescription>
-            המוזמן/ת יקבלו מייל עם קישור לאישור. הקישור תקף ל-7 ימים.
+            {t("team.inviteDialog.desc")}
           </DialogDescription>
         </DialogHeader>
 
@@ -110,7 +112,7 @@ export function InviteDialog({
           <div className="space-y-4">
             {lastInvite.emailDelivered ? (
               <div className="rounded-md border border-primary/30 bg-primary/5 p-3 text-sm">
-                ✓ ההזמנה נוצרה ונשלחה ל-
+                {t("team.inviteDialog.sentBannerPrefix")}
                 <span dir="ltr" className="font-mono">
                   {lastInvite.email}
                 </span>
@@ -118,16 +120,17 @@ export function InviteDialog({
               </div>
             ) : (
               <div className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
-                ✓ ההזמנה נוצרה, אך שליחת המייל ל-
+                {t("team.inviteDialog.failBannerPrefix")}
                 <span dir="ltr" className="font-mono">
                   {lastInvite.email}
                 </span>{" "}
-                <strong>נכשלה</strong>. העתק/י את הקישור למטה ושלח/י אותו ידנית.
+                <strong>{t("team.inviteDialog.failBannerBold")}</strong>
+                {t("team.inviteDialog.failBannerSuffix")}
               </div>
             )}
 
             <div className="space-y-2">
-              <Label htmlFor="inviteUrl">קישור ההזמנה</Label>
+              <Label htmlFor="inviteUrl">{t("team.inviteDialog.linkLabel")}</Label>
               <div className="flex gap-2">
                 <Input
                   id="inviteUrl"
@@ -142,7 +145,7 @@ export function InviteDialog({
                   variant="outline"
                   size="icon"
                   onClick={handleCopyUrl}
-                  aria-label="העתק קישור"
+                  aria-label={t("team.inviteDialog.copyLinkAria")}
                 >
                   <Copy className="size-4" />
                 </Button>
@@ -151,7 +154,7 @@ export function InviteDialog({
                   variant="outline"
                   size="icon"
                   asChild
-                  aria-label="פתח קישור"
+                  aria-label={t("team.inviteDialog.openLinkAria")}
                 >
                   <a
                     href={lastInvite.inviteUrl ?? "#"}
@@ -163,8 +166,7 @@ export function InviteDialog({
                 </Button>
               </div>
               <p className="text-xs text-muted-foreground">
-                אם שליחת המייל לא הוגדרה (Resend), העתק את הקישור ושלח אותו ישירות.
-                מי שיקליק יוכל להירשם או להיכנס ולהצטרף למשרד.
+                {t("team.inviteDialog.linkHint")}
               </p>
             </div>
 
@@ -179,17 +181,17 @@ export function InviteDialog({
                   setLastInvite(null);
                 }}
               >
-                הזמן עוד אחד
+                {t("team.inviteDialog.inviteAnother")}
               </Button>
               <Button type="button" onClick={resetAndClose}>
-                סיום
+                {t("team.inviteDialog.done")}
               </Button>
             </DialogFooter>
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="invite-email">אימייל</Label>
+              <Label htmlFor="invite-email">{t("common.email")}</Label>
               <Input
                 id="invite-email"
                 type="email"
@@ -203,7 +205,7 @@ export function InviteDialog({
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="invite-role">תפקיד</Label>
+              <Label htmlFor="invite-role">{t("team.inviteDialog.roleLabel")}</Label>
               <Select
                 value={role}
                 onValueChange={(v) => setRole(v as AssignableRole)}
@@ -212,15 +214,15 @@ export function InviteDialog({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="employee">עובד</SelectItem>
+                  <SelectItem value="employee">{t("role.employee")}</SelectItem>
                   {canInviteAsAdmin && (
-                    <SelectItem value="admin">מנהל</SelectItem>
+                    <SelectItem value="admin">{t("role.admin")}</SelectItem>
                   )}
                 </SelectContent>
               </Select>
               {!canInviteAsAdmin && (
                 <p className="text-xs text-muted-foreground">
-                  רק בעלי המשרד יכולים להזמין מנהלים נוספים.
+                  {t("team.inviteDialog.ownerOnlyHint")}
                 </p>
               )}
             </div>
@@ -232,10 +234,10 @@ export function InviteDialog({
                 onClick={() => onOpenChange(false)}
                 disabled={loading}
               >
-                ביטול
+                {t("common.cancel")}
               </Button>
               <Button type="submit" disabled={loading}>
-                {loading ? "שולח..." : "שלח הזמנה"}
+                {loading ? t("team.inviteDialog.sending") : t("team.inviteDialog.submit")}
               </Button>
             </DialogFooter>
           </form>
