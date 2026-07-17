@@ -8,6 +8,7 @@ import type {
 import { sanitizeNextPath } from "@/server/auth/redirect";
 import {
   ConflictError,
+  NotFoundError,
   UnauthorizedError,
   ValidationError,
 } from "@/server/errors/app-error";
@@ -43,6 +44,10 @@ export type AuthOperationResult = {
   userId: string;
   email: string;
   needsEmailConfirmation: boolean;
+  // True when the password was correct but the user has 2FA enabled —
+  // the session is only aal1 and the client must complete the TOTP
+  // challenge (/mfa) before it gets any data access.
+  needsMfa: boolean;
 };
 
 export async function signIn(input: SignInInput): Promise<AuthOperationResult> {
@@ -51,6 +56,9 @@ export async function signIn(input: SignInInput): Promise<AuthOperationResult> {
     userId: user.id,
     email: user.email ?? input.email,
     needsEmailConfirmation: false,
+    // A password sign-in is always aal1; enrollment status decides
+    // whether a second step is required.
+    needsMfa: user.hasVerifiedTotp,
   };
 }
 
@@ -74,6 +82,7 @@ export async function signUp(input: SignUpInput): Promise<AuthOperationResult> {
       userId: result.user.id,
       email: result.user.email ?? input.email,
       needsEmailConfirmation: result.needsEmailConfirmation,
+      needsMfa: false,
     };
   } catch (err) {
     // Anti-enumeration (F3): an "already registered" email must NOT be
@@ -87,6 +96,7 @@ export async function signUp(input: SignUpInput): Promise<AuthOperationResult> {
         userId: "",
         email: input.email,
         needsEmailConfirmation: true,
+        needsMfa: false,
       };
     }
     throw err;
@@ -205,17 +215,18 @@ export type ChangePasswordInput = {
 };
 
 // Change the password of the currently-authenticated user from Settings.
-// Unlike the recovery-link reset, this VERIFIES the current password first by
-// re-authenticating (Supabase has no "verify password" primitive), so a
-// walk-up attacker at an unlocked screen can't silently change it. A wrong
-// current password surfaces a stable `{ reason: "wrong_current_password" }`
+// Unlike the recovery-link reset, this VERIFIES the current password first,
+// so a walk-up attacker at an unlocked screen can't silently change it. A
+// wrong current password surfaces a stable `{ reason: "wrong_current_password" }`
 // detail so the form can render a clear, field-specific message.
+//
+// The verification runs on a throwaway cookie-less client (DEV-013): a
+// signIn on the cookie client would REPLACE the caller's session with a
+// fresh aal1 one — and for 2FA-enrolled users the provider then refuses
+// the password update itself (aal2 required).
 export async function changePassword(input: ChangePasswordInput): Promise<void> {
   try {
-    // Re-auth with the same user. On success this refreshes the active
-    // session (same identity); on a wrong password the adapter throws
-    // UnauthorizedError and the session is left untouched.
-    await authAdapter.signIn({
+    await authAdapter.verifyPassword({
       email: input.email,
       password: input.currentPassword,
     });
@@ -228,8 +239,84 @@ export async function changePassword(input: ChangePasswordInput): Promise<void> 
     throw err;
   }
 
-  // Set the new password on the (same) active session. The adapter maps
+  // Set the new password on the untouched active session. The adapter maps
   // Supabase's `same_password` 422 to a { reason: "same_password" } detail —
   // though the validator already rejects new === current before we get here.
   await authAdapter.updatePassword({ password: input.newPassword });
+}
+
+// ============================================================
+// MFA (TOTP) — DEV-013
+// ============================================================
+
+export type MfaEnrollResult = {
+  factorId: string;
+  qrCode: string;
+  secret: string;
+};
+
+// Begin TOTP enrollment for the current user. Abandoned wizard runs leave
+// "unverified" factors behind — and the provider rejects a second factor
+// with the same friendly name — so stale unverified factors are removed
+// first (allowed at any AAL) and a fresh QR is generated every time.
+export async function startTotpEnrollment(): Promise<MfaEnrollResult> {
+  const factors = await authAdapter.listTotpFactors();
+  for (const factor of factors) {
+    if (factor.status === "unverified") {
+      await authAdapter.unenrollFactor(factor.id);
+    }
+  }
+  return authAdapter.enrollTotp({
+    issuer: "AVI.APP",
+    friendlyName: "AVI.APP",
+  });
+}
+
+export type ConfirmTotpEnrollmentInput = {
+  factorId: string;
+  code: string;
+};
+
+// Complete enrollment with the first authenticator code. On success the
+// provider marks the factor verified AND rotates this session to aal2, so
+// the user is not bounced to the challenge page right after enabling.
+export async function confirmTotpEnrollment(
+  input: ConfirmTotpEnrollmentInput,
+): Promise<void> {
+  await authAdapter.verifyTotp(input);
+}
+
+export type VerifyMfaChallengeInput = {
+  code: string;
+};
+
+// Login-time challenge: locate the user's verified TOTP factor and verify
+// the code against it. The client sends ONLY the code — it never chooses
+// the factor.
+export async function verifyMfaChallenge(
+  input: VerifyMfaChallengeInput,
+): Promise<void> {
+  const factors = await authAdapter.listTotpFactors();
+  const verified = factors.find((f) => f.status === "verified");
+  if (!verified) {
+    throw new ValidationError("Two-factor authentication is not set up", {
+      reason: "no_verified_factor",
+    });
+  }
+  await authAdapter.verifyTotp({ factorId: verified.id, code: input.code });
+}
+
+// Disable 2FA: remove every TOTP factor (verified removal is
+// provider-gated on an aal2 session — exactly what a signed-in, verified
+// MFA user has). Deliberately NO password re-auth here: a password
+// sign-in would replace this session with an aal1 one, and the provider
+// would then refuse the unenroll itself.
+export async function disableTotp(): Promise<void> {
+  const factors = await authAdapter.listTotpFactors();
+  if (!factors.some((f) => f.status === "verified")) {
+    throw new NotFoundError("Two-factor authentication is not enabled");
+  }
+  for (const factor of factors) {
+    await authAdapter.unenrollFactor(factor.id);
+  }
 }

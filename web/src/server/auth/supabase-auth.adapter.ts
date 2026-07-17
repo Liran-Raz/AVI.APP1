@@ -1,23 +1,36 @@
 import "server-only";
 
-import { createSupabaseServerClient } from "@/server/db/supabase";
+import {
+  createSupabaseServerClient,
+  createSupabaseStatelessAuthClient,
+} from "@/server/db/supabase";
 import {
   AppError,
   ConflictError,
+  MfaRequiredError,
+  NotFoundError,
+  RateLimitError,
   UnauthorizedError,
   ValidationError,
 } from "@/server/errors/app-error";
 import type {
+  AalLevel,
   AuthAdapter,
   AuthUser,
+  CurrentUserWithMfa,
+  EnrollTotpInput,
   SendPasswordResetInput,
   SignInInput,
   SignUpInput,
   SignUpResult,
   StartOAuthInput,
   StartOAuthResult,
+  TotpEnrollment,
+  TotpFactor,
   UpdatePasswordInput,
   VerifyEmailOtpInput,
+  VerifyPasswordInput,
+  VerifyTotpInput,
 } from "./auth.adapter";
 
 // Supabase implementation of AuthAdapter.
@@ -25,12 +38,27 @@ import type {
 // module to swap providers (e.g. Firebase Auth) without touching the
 // rest of the codebase.
 
+type SupabaseMfaFactor = {
+  id: string;
+  friendly_name?: string | null;
+  factor_type: string;
+  status: string;
+  created_at?: string | null;
+};
+
 type SupabaseAuthUser = {
   id: string;
   email?: string | null;
   email_confirmed_at?: string | null;
   user_metadata?: Record<string, unknown> | null;
+  factors?: SupabaseMfaFactor[] | null;
 };
+
+function hasVerifiedTotpFactor(u: SupabaseAuthUser): boolean {
+  return (u.factors ?? []).some(
+    (f) => f.factor_type === "totp" && f.status === "verified",
+  );
+}
 
 function toAuthUser(u: SupabaseAuthUser): AuthUser {
   return {
@@ -38,6 +66,7 @@ function toAuthUser(u: SupabaseAuthUser): AuthUser {
     email: u.email ?? null,
     emailConfirmedAt: u.email_confirmed_at ?? null,
     metadata: u.user_metadata ?? {},
+    hasVerifiedTotp: hasVerifiedTotpFactor(u),
   };
 }
 
@@ -216,7 +245,16 @@ class SupabaseAuthAdapter implements AuthAdapter {
         code,
         message: error.message,
       });
-      if (error.status === 401) {
+      if (error.status === 401 || error.status === 403) {
+        // GoTrue refuses password updates from an aal1 session once the
+        // user has a verified factor (DEV-013). Surface a stable
+        // MFA_REQUIRED so the client routes to the /mfa challenge instead
+        // of showing a misleading "session expired".
+        const insufficientAal =
+          code === "insufficient_aal" || /aal2/i.test(error.message ?? "");
+        if (insufficientAal) {
+          throw new MfaRequiredError();
+        }
         throw new UnauthorizedError("Session expired or invalid");
       }
       if (error.status === 422) {
@@ -237,6 +275,197 @@ class SupabaseAuthAdapter implements AuthAdapter {
         throw new ValidationError(error.message);
       }
       throw new AppError("INTERNAL_ERROR", "Could not update password");
+    }
+  }
+
+  // ============================================================
+  // MFA (TOTP) — DEV-013
+  // ============================================================
+
+  async getCurrentUserWithMfa(): Promise<CurrentUserWithMfa | null> {
+    const supabase = await createSupabaseServerClient();
+    // Order is load-bearing: getUser() performs the network verification
+    // AND marks this client instance's session as trusted, so the local
+    // getAuthenticatorAssuranceLevel() decode below is both safe and
+    // warning-free. Total provider roundtrips: one (same as getCurrentUser).
+    const { data, error } = await supabase.auth.getUser();
+    if (error || !data.user) return null;
+
+    const user = toAuthUser(data.user);
+
+    let currentLevel: AalLevel | null = null;
+    const { data: aal, error: aalError } =
+      await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+    if (aalError) {
+      // Fail CLOSED for enrolled users: an unknown level is treated as
+      // "not aal2" below, so the MFA gate holds.
+      console.error("[supabase-auth.getCurrentUserWithMfa] aal error", {
+        message: aalError.message,
+      });
+    } else {
+      const level = aal?.currentLevel;
+      currentLevel = level === "aal1" ? "aal1" : level === "aal2" ? "aal2" : null;
+    }
+
+    return {
+      user,
+      currentLevel,
+      // Derived from the FRESH getUser() factors (the session's cached
+      // user copy can be stale across devices until token refresh).
+      mfaPending: user.hasVerifiedTotp && currentLevel !== "aal2",
+    };
+  }
+
+  async verifyPassword(input: VerifyPasswordInput): Promise<void> {
+    // Throwaway cookie-less client: MUST NOT touch the request's session.
+    // A password sign-in is aal1 — running it on the cookie client would
+    // downgrade an MFA-verified (aal2) session, after which GoTrue
+    // refuses the password update itself.
+    const supabase = createSupabaseStatelessAuthClient();
+    const { error } = await supabase.auth.signInWithPassword({
+      email: input.email,
+      password: input.password,
+    });
+    if (error) {
+      if (error.status === 400) {
+        throw new UnauthorizedError("Invalid email or password");
+      }
+      console.error("[supabase-auth.verifyPassword] unexpected error", {
+        status: error.status,
+        message: error.message,
+      });
+      throw new AppError("INTERNAL_ERROR", "Password verification failed");
+    }
+    // Best-effort: revoke the throwaway session we just created. Scope
+    // MUST stay "local" — the default ("global") revokes EVERY session
+    // of this user, including the real one making this request.
+    try {
+      await supabase.auth.signOut({ scope: "local" });
+    } catch {
+      // Non-fatal — the throwaway session simply expires on its own.
+    }
+  }
+
+  async listTotpFactors(): Promise<TotpFactor[]> {
+    const supabase = await createSupabaseServerClient();
+    const { data, error } = await supabase.auth.mfa.listFactors();
+    if (error) {
+      console.error("[supabase-auth.listTotpFactors] error", {
+        status: error.status,
+        message: error.message,
+      });
+      throw new AppError("INTERNAL_ERROR", "Could not list MFA factors");
+    }
+    return (data?.all ?? [])
+      .filter((f) => f.factor_type === "totp")
+      .map(
+        (f): TotpFactor => ({
+          id: f.id,
+          friendlyName: f.friendly_name ?? null,
+          status: f.status === "verified" ? "verified" : "unverified",
+          createdAt: f.created_at ?? null,
+        }),
+      );
+  }
+
+  async enrollTotp(input: EnrollTotpInput): Promise<TotpEnrollment> {
+    const supabase = await createSupabaseServerClient();
+    const { data, error } = await supabase.auth.mfa.enroll({
+      factorType: "totp",
+      issuer: input.issuer,
+      friendlyName: input.friendlyName,
+    });
+    if (error) {
+      const code = (error as { code?: string }).code;
+      if (
+        code === "too_many_enrolled_mfa_factors" ||
+        code === "mfa_verified_factor_exists" ||
+        code === "mfa_factor_name_conflict"
+      ) {
+        throw new ValidationError(
+          "Two-factor authentication is already set up",
+          { reason: "already_enrolled" },
+        );
+      }
+      if (code === "insufficient_aal") {
+        throw new MfaRequiredError();
+      }
+      // Includes mfa_totp_enroll_not_enabled — a project-config problem,
+      // not a user problem: loud log, generic 500 out.
+      console.error("[supabase-auth.enrollTotp] error", {
+        status: error.status,
+        code,
+        message: error.message,
+      });
+      throw new AppError("INTERNAL_ERROR", "Could not start MFA enrollment");
+    }
+    if (!data || data.type !== "totp") {
+      throw new AppError("INTERNAL_ERROR", "Enrollment returned no TOTP data");
+    }
+    return {
+      factorId: data.id,
+      qrCode: data.totp.qr_code,
+      secret: data.totp.secret,
+    };
+  }
+
+  async verifyTotp(input: VerifyTotpInput): Promise<void> {
+    const supabase = await createSupabaseServerClient();
+    // challengeAndVerify = challenge + verify in one call. On success the
+    // provider rotates the session to aal2; our cookie wrapper persists
+    // the new session automatically (route-handler context).
+    const { error } = await supabase.auth.mfa.challengeAndVerify({
+      factorId: input.factorId,
+      code: input.code,
+    });
+    if (error) {
+      const code = (error as { code?: string }).code;
+      if (code === "mfa_factor_not_found" || error.status === 404) {
+        throw new NotFoundError("Factor not found");
+      }
+      if (error.status === 429) {
+        throw new RateLimitError();
+      }
+      if (
+        code === "mfa_verification_failed" ||
+        code === "mfa_verification_rejected" ||
+        code === "mfa_challenge_expired" ||
+        error.status === 400 ||
+        error.status === 422
+      ) {
+        // A wrong/expired code is a normal user mistake — stable machine
+        // reason for the UI, no error-level logging.
+        throw new ValidationError("Invalid or expired code", {
+          reason: "invalid_code",
+        });
+      }
+      console.error("[supabase-auth.verifyTotp] error", {
+        status: error.status,
+        code,
+        message: error.message,
+      });
+      throw new AppError("INTERNAL_ERROR", "Could not verify the code");
+    }
+  }
+
+  async unenrollFactor(factorId: string): Promise<void> {
+    const supabase = await createSupabaseServerClient();
+    const { error } = await supabase.auth.mfa.unenroll({ factorId });
+    if (error) {
+      const code = (error as { code?: string }).code;
+      if (code === "insufficient_aal") {
+        // Removing a VERIFIED factor needs an aal2 session (provider rule).
+        throw new MfaRequiredError();
+      }
+      if (code === "mfa_factor_not_found" || error.status === 404) {
+        throw new NotFoundError("Factor not found");
+      }
+      console.error("[supabase-auth.unenrollFactor] error", {
+        status: error.status,
+        code,
+        message: error.message,
+      });
+      throw new AppError("INTERNAL_ERROR", "Could not remove the factor");
     }
   }
 }

@@ -3,7 +3,10 @@ import "server-only";
 import { authAdapter } from "@/server/auth/supabase-auth.adapter";
 import type { AuthUser } from "@/server/auth/auth.adapter";
 import { readActiveOrgCookie } from "@/server/auth/active-org-cookie";
-import { UnauthorizedError } from "@/server/errors/app-error";
+import {
+  MfaRequiredError,
+  UnauthorizedError,
+} from "@/server/errors/app-error";
 import * as profileRepo from "@/server/repositories/profile.repository";
 import * as organizationRepo from "@/server/repositories/organization.repository";
 import * as membershipsRepo from "@/server/repositories/memberships.repository";
@@ -59,6 +62,10 @@ export type Session = {
   memberships: Membership[];
   activeOrg: Organization | null;
   activeRole: UserRole | null;
+  // DEV-013: true when the user has a verified TOTP factor but THIS
+  // session hasn't passed the challenge (aal1). requireSession() rejects
+  // such sessions with MFA_REQUIRED; page layouts redirect to /mfa.
+  mfaPending: boolean;
   // CUTOVER (Phase 8J): DB-resolved grant map. Present whenever the
   // DB_ROLE_AUTHORITATIVE flag is ON — set to the resolved grants on success, and
   // to {} (DENY-ALL) on ANY resolution failure (fail-closed; NEVER the legacy
@@ -84,8 +91,11 @@ export async function getCurrentUser(): Promise<AuthUser | null> {
 }
 
 export async function getCurrentSession(): Promise<Session | null> {
-  const user = await getCurrentUser();
-  if (!user) return null;
+  // One provider roundtrip — returns the verified user AND the session's
+  // MFA state (same cost as the old getCurrentUser call).
+  const withMfa = await authAdapter.getCurrentUserWithMfa();
+  if (!withMfa) return null;
+  const { user, mfaPending } = withMfa;
 
   const [profile, allMemberships] = await Promise.all([
     profileRepo.findByUserId(user.id),
@@ -126,6 +136,7 @@ export async function getCurrentSession(): Promise<Session | null> {
       memberships,
       activeOrg: null,
       activeRole: null,
+      mfaPending,
     };
   }
 
@@ -162,6 +173,7 @@ export async function getCurrentSession(): Promise<Session | null> {
     memberships,
     activeOrg,
     activeRole,
+    mfaPending,
   };
 
   // CUTOVER (Phase 8J; flag-gated, OFF by default) + SHADOW (Phase 8H).
@@ -194,15 +206,36 @@ export async function getCurrentSession(): Promise<Session | null> {
 // withErrorHandler will translate failures into 401/403 responses.
 // ============================================================
 
+// AAL-BLIND by design: the password-recovery and change-password routes
+// must stay reachable for an MFA-enrolled user mid-challenge (the provider
+// itself enforces aal2 where it matters). Anything org/data-facing uses
+// requireSession (MFA-gated) instead.
 export async function requireUser(): Promise<AuthUser> {
   const user = await getCurrentUser();
   if (!user) throw new UnauthorizedError();
   return user;
 }
 
+// Like requireUser, but ALSO refuses aal1-pending sessions of MFA-enrolled
+// users. For authenticated-but-pre-org mutations (invite accept, onboarding
+// bootstrap) that requireSession can't cover (no active org yet) but that
+// must not run while the second factor is outstanding.
+export async function requireUserMfaSettled(): Promise<AuthUser> {
+  const withMfa = await authAdapter.getCurrentUserWithMfa();
+  if (!withMfa) throw new UnauthorizedError();
+  if (withMfa.mfaPending) throw new MfaRequiredError();
+  return withMfa.user;
+}
+
 export async function requireSession(): Promise<FullSession> {
   const session = await getCurrentSession();
   if (!session) throw new UnauthorizedError();
+  if (session.mfaPending) {
+    // DEV-013: enrolled user, aal1 session — every data route is denied
+    // until /api/auth/mfa/verify elevates the session to aal2. Checked
+    // BEFORE onboarding so a pending user can't even probe that state.
+    throw new MfaRequiredError();
+  }
   if (!session.profile || !session.activeOrg || !session.activeRole) {
     // Authenticated but no active office (onboarding incomplete, or the
     // user has been deactivated from every office). API callers treat

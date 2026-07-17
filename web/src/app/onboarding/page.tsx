@@ -13,6 +13,8 @@ type SignupMetadata = {
 export default async function OnboardingPage() {
   const session = await getCurrentSession();
   if (!session) redirect("/login");
+  // DEV-013: the second factor comes before any org mutation.
+  if (session.mfaPending) redirect("/mfa?next=/onboarding");
   // Already has an active office? Skip onboarding. We key on activeOrg
   // (not profile) so that an office-less user — one who has a profile but
   // no active membership (e.g. deactivated everywhere) — can still create

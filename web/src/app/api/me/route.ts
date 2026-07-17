@@ -2,7 +2,10 @@ import "server-only";
 
 import { getCurrentSession, type FullSession } from "@/server/auth/session";
 import { resolveCapabilities } from "@/server/auth/authorization";
-import { UnauthorizedError } from "@/server/errors/app-error";
+import {
+  MfaRequiredError,
+  UnauthorizedError,
+} from "@/server/errors/app-error";
 import { ok, withErrorHandler } from "@/server/errors/api-handler";
 
 // GET /api/me
@@ -16,6 +19,9 @@ import { ok, withErrorHandler } from "@/server/errors/api-handler";
 export const GET = withErrorHandler(async () => {
   const session = await getCurrentSession();
   if (!session) throw new UnauthorizedError();
+  // DEV-013: no session metadata (offices, roles, capabilities) before the
+  // second factor is presented.
+  if (session.mfaPending) throw new MfaRequiredError();
 
   return ok({
     user: {

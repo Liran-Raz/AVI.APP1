@@ -5,7 +5,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 // the env flags and the supabase RPC — are controlled), so this is a true
 // integration test of the fail-closed authoritative path.
 vi.mock("@/server/auth/supabase-auth.adapter", () => ({
-  authAdapter: { getCurrentUser: vi.fn() },
+  authAdapter: { getCurrentUser: vi.fn(), getCurrentUserWithMfa: vi.fn() },
 }));
 vi.mock("@/server/auth/active-org-cookie", () => ({
   readActiveOrgCookie: vi.fn(),
@@ -23,7 +23,11 @@ vi.mock("@/server/db/supabase", () => ({
   createSupabaseServerClient: vi.fn(),
 }));
 
-import { getCurrentSession } from "./session";
+import {
+  getCurrentSession,
+  requireSession,
+  requireUserMfaSettled,
+} from "./session";
 import { authAdapter } from "@/server/auth/supabase-auth.adapter";
 import { readActiveOrgCookie } from "@/server/auth/active-org-cookie";
 import * as profileRepo from "@/server/repositories/profile.repository";
@@ -36,6 +40,7 @@ import {
 } from "./db-role-resolver";
 
 const getCurrentUserMock = vi.mocked(authAdapter.getCurrentUser);
+const getCurrentUserWithMfaMock = vi.mocked(authAdapter.getCurrentUserWithMfa);
 const readCookieMock = vi.mocked(readActiveOrgCookie);
 const findProfileMock = vi.mocked(profileRepo.findByUserId);
 const findOrgsMock = vi.mocked(organizationRepo.findByIds);
@@ -66,8 +71,26 @@ function setRpc(result: {
   } as never);
 }
 
+// DEV-013: getCurrentSession reads the user + MFA state through ONE
+// combined adapter call. `pending` drives both the derived user flag and
+// the session's mfaPending.
+function setMfaState({ pending }: { pending: boolean }) {
+  getCurrentUserWithMfaMock.mockResolvedValue({
+    user: {
+      id: "user-1",
+      email: "u@e.t",
+      emailConfirmedAt: null,
+      metadata: {},
+      hasVerifiedTotp: pending,
+    },
+    currentLevel: "aal1",
+    mfaPending: pending,
+  } as never);
+}
+
 function setupValidOwnerSession() {
   getCurrentUserMock.mockResolvedValue({ id: "user-1", email: "u@e.t" } as never);
+  setMfaState({ pending: false });
   findProfileMock.mockResolvedValue({
     id: "user-1",
     full_name: "U",
@@ -194,5 +217,60 @@ describe("getCurrentSession — DB-authoritative cutover wiring (fail-closed)", 
     setRpc({ data: [grantRow("roles.manage", null)] });
     const s = await getCurrentSession();
     expect(s?.grantMap).toBeUndefined();
+  });
+});
+
+describe("MFA gating (DEV-013)", () => {
+  it("mfaPending=false propagates onto the full session", async () => {
+    const s = await getCurrentSession();
+    expect(s?.mfaPending).toBe(false);
+    expect(s?.activeOrg).not.toBeNull();
+  });
+
+  it("mfaPending=true propagates on the FULL-session branch", async () => {
+    setMfaState({ pending: true });
+    const s = await getCurrentSession();
+    expect(s?.mfaPending).toBe(true);
+    expect(s?.activeOrg).not.toBeNull();
+  });
+
+  it("mfaPending=true propagates on the office-less branch too", async () => {
+    setMfaState({ pending: true });
+    findProfileMock.mockResolvedValue(null as never);
+    findMembershipsMock.mockResolvedValue([] as never);
+    const s = await getCurrentSession();
+    expect(s?.mfaPending).toBe(true);
+    expect(s?.activeOrg).toBeNull();
+  });
+
+  it("requireSession THROWS MFA_REQUIRED (401) while pending", async () => {
+    setMfaState({ pending: true });
+    await expect(requireSession()).rejects.toMatchObject({
+      code: "MFA_REQUIRED",
+      status: 401,
+    });
+  });
+
+  it("requireSession passes a settled (non-pending) session", async () => {
+    const s = await requireSession();
+    expect(s.activeRole).toBe("owner");
+    expect(s.mfaPending).toBe(false);
+  });
+
+  it("requireUserMfaSettled: MFA_REQUIRED while pending, user when settled", async () => {
+    setMfaState({ pending: true });
+    await expect(requireUserMfaSettled()).rejects.toMatchObject({
+      code: "MFA_REQUIRED",
+    });
+    setMfaState({ pending: false });
+    const u = await requireUserMfaSettled();
+    expect(u.id).toBe("user-1");
+  });
+
+  it("requireUserMfaSettled: plain UNAUTHORIZED when no user at all", async () => {
+    getCurrentUserWithMfaMock.mockResolvedValue(null);
+    await expect(requireUserMfaSettled()).rejects.toMatchObject({
+      code: "UNAUTHORIZED",
+    });
   });
 });

@@ -12,6 +12,10 @@ export interface AuthUser {
   // Provider-specific metadata kept opaque on purpose: the app should not
   // depend on its shape. Use it only where you also own the writes.
   metadata: Record<string, unknown>;
+  // True when the user has a VERIFIED TOTP factor (2FA is set up).
+  // Derived from the provider's fresh user object — not from the cached
+  // session copy — so cross-device enrollment shows up next request.
+  hasVerifiedTotp: boolean;
 }
 
 export type SignInInput = {
@@ -80,6 +84,57 @@ export type UpdatePasswordInput = {
   password: string;
 };
 
+// ============================================================
+// MFA (TOTP) — DEV-013
+// ============================================================
+
+// Authenticator Assurance Level of a session. aal1 = first factor only
+// (password / OAuth); aal2 = a verified second factor was presented in
+// THIS session.
+export type AalLevel = "aal1" | "aal2";
+
+export type CurrentUserWithMfa = {
+  user: AuthUser;
+  // AAL of the current session, or null when it could not be determined.
+  currentLevel: AalLevel | null;
+  // True when the user is enrolled (verified TOTP factor exists) but this
+  // session has NOT passed the challenge — callers must gate access until
+  // verifyTotp elevates the session. Fails CLOSED: an unknown level for
+  // an enrolled user counts as pending.
+  mfaPending: boolean;
+};
+
+export type TotpEnrollment = {
+  factorId: string;
+  // Ready-to-render QR image (a data: URI produced by the provider).
+  qrCode: string;
+  // Manual-entry secret, shown once alongside the QR.
+  secret: string;
+};
+
+export type TotpFactor = {
+  id: string;
+  friendlyName: string | null;
+  status: "verified" | "unverified";
+  createdAt: string | null;
+};
+
+export type EnrollTotpInput = {
+  // Label the authenticator app shows: `issuer (account email)`.
+  issuer: string;
+  friendlyName: string;
+};
+
+export type VerifyTotpInput = {
+  factorId: string;
+  code: string;
+};
+
+export type VerifyPasswordInput = {
+  email: string;
+  password: string;
+};
+
 export interface AuthAdapter {
   /**
    * Returns the authenticated user for the current request, or null if
@@ -142,7 +197,52 @@ export interface AuthAdapter {
    * Update the password of the currently authenticated user. Relies on
    * the active session set by `verifyEmailOtp({ type: "recovery" })`.
    * Throws `UnauthorizedError` when no session exists, `ValidationError`
-   * when the provider rejects the password.
+   * when the provider rejects the password, `MfaRequiredError` when the
+   * user is MFA-enrolled but the session is only aal1 (provider-enforced).
    */
   updatePassword(input: UpdatePasswordInput): Promise<void>;
+
+  // ============================================================
+  // MFA (TOTP) — DEV-013
+  // ============================================================
+
+  /**
+   * Returns the current user together with the session's MFA state in a
+   * single provider roundtrip (same cost as getCurrentUser). Implementations
+   * MUST derive `mfaPending` from the freshly-verified user object, not a
+   * cached session copy.
+   */
+  getCurrentUserWithMfa(): Promise<CurrentUserWithMfa | null>;
+
+  /**
+   * Verify an email+password pair WITHOUT touching the current request's
+   * session (throwaway, cookie-less client). Throws `UnauthorizedError`
+   * on a wrong password. Used for re-auth checks (change password) where
+   * replacing the session would downgrade aal2 → aal1.
+   */
+  verifyPassword(input: VerifyPasswordInput): Promise<void>;
+
+  /** Lists the current user's TOTP factors — verified AND unverified. */
+  listTotpFactors(): Promise<TotpFactor[]>;
+
+  /**
+   * Starts TOTP enrollment; the factor stays "unverified" until
+   * verifyTotp succeeds with a code from the authenticator app.
+   */
+  enrollTotp(input: EnrollTotpInput): Promise<TotpEnrollment>;
+
+  /**
+   * Challenge-and-verify a TOTP factor with a 6-digit code. On success
+   * the provider rotates the session to aal2 (cookies update when called
+   * from a route handler). Throws `ValidationError` with
+   * `{ reason: "invalid_code" }` on a wrong/expired code.
+   */
+  verifyTotp(input: VerifyTotpInput): Promise<void>;
+
+  /**
+   * Removes a factor. Removing a VERIFIED factor requires an aal2
+   * session (provider-enforced → `MfaRequiredError`); unverified factors
+   * can be removed at aal1 (abandoned-enrollment cleanup).
+   */
+  unenrollFactor(factorId: string): Promise<void>;
 }

@@ -86,6 +86,7 @@ export function OfficeForm({
         email: updated.email,
         phone: updated.phone,
         address: updated.address,
+        requireMfa: updated.requireMfa,
       };
       setSaved(next);
       setName(next.name);

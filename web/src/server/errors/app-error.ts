@@ -11,6 +11,7 @@ export type AppErrorCode =
   | "VALIDATION_ERROR"
   | "CONFLICT"
   | "RATE_LIMITED"
+  | "MFA_REQUIRED"
   | "INTERNAL_ERROR";
 
 export class AppError extends Error {
@@ -59,6 +60,17 @@ export class ValidationError extends AppError {
 export class ConflictError extends AppError {
   constructor(message: string) {
     super("CONFLICT", message, 409);
+  }
+}
+
+// 401 with a distinguishable code: the session is authenticated (aal1) but
+// the user has a verified second factor, so access is denied until the TOTP
+// challenge is passed (POST /api/auth/mfa/verify). Clients route to /mfa on
+// this code instead of treating it like a plain "not signed in".
+export class MfaRequiredError extends AppError {
+  constructor(message = "Multi-factor authentication required") {
+    super("MFA_REQUIRED", message, 401);
+    this.name = "MfaRequiredError";
   }
 }
 

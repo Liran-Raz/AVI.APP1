@@ -1,7 +1,7 @@
 import "server-only";
 import type { NextRequest } from "next/server";
 
-import { requireUser } from "@/server/auth/session";
+import { requireUserMfaSettled } from "@/server/auth/session";
 import { ok, withErrorHandler } from "@/server/errors/api-handler";
 import * as onboardingService from "@/server/services/onboarding.service";
 import { bootstrapOrgSchema } from "@/server/validators/onboarding.schema";
@@ -18,8 +18,9 @@ import { bootstrapOrgSchema } from "@/server/validators/onboarding.schema";
 // Idempotent: if the caller already has a profile, returns the
 // existing org_id with `created: false`.
 export const POST = withErrorHandler(async (request: NextRequest) => {
-  // 401 if no session
-  await requireUser();
+  // 401 if no session; MFA_REQUIRED for an enrolled user mid-challenge
+  // (org creation is a mutation — DEV-013).
+  await requireUserMfaSettled();
 
   const body = await request.json().catch(() => ({}));
   const input = bootstrapOrgSchema.parse(body);

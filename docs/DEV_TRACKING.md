@@ -40,7 +40,7 @@
 | DEV-010 | תרגום שדות טפסים ל-EN (login/signup/onboarding) | UX/i18n | P3 | ממתין | 2026-07-11 | כרגע רק מסגרת השיווק דו-לשונית; תוויות שדות הטפסים העובדים נשארות עברית גם ב-EN. **ללא מיגרציה** — עבודת i18n זהירה על טפסים חיים (לא לשבור פונקציונליות). |
 | DEV-011 | בלוק ציטוט לקוח אמיתי בנחיתה | שיווק/תוכן | P3 | ממתין | 2026-07-11 | תלוי-תוכן: דורש ציטוט אמיתי ממשרד השותף של Liran. מיקום מוכן בעיצוב הנחיתה. ללא מיגרציה. |
 | DEV-012 | לוגו + ח.פ./מספר עוסק למשרד (בהגדרות) | פיתוח | P3 | ממתין | 2026-07-11 | הרחבת טאב "משרד" ב-`/settings`. **דורש מיגרציה** (עמודות חדשות ב-`organizations`: `logo_url`, `business_number`) + העלאת קובץ ללוגו (Supabase Storage — משטח חדש). |
-| DEV-013 | אימות דו-שלבי (2FA) | אבטחה | P3 | ממתין | 2026-07-11 | רלוונטי-אבטחה (נתונים פיננסיים — יכול לעלות ל-P2). דרך Supabase Auth MFA (TOTP) + UI הרשמה/אימות בטאב "אבטחה". קונפיג Supabase + קוד. |
+| DEV-013 | אימות דו-שלבי (2FA) | אבטחה | P2 | **בסקירה (PR #84)** | 2026-07-17 | **קוד הושלם — [PR #84](https://github.com/Liran-Raz/AVI.APP1/pull/84) פתוח.** TOTP (אפליקציית-אימות) דרך Supabase MFA; אופציונלי לכל משתמש + **חובה משרדית** (בעלים מחייב, פופ-אפ למי שלא הגדיר). מיגרציה `0028` (require_mfa, אדיטיבית, טרם הוחלה). אכיפה: `requireSession`→`MFA_REQUIRED`, עמוד `/mfa`. תיקן באג-רדום: `<Toaster/>` לא היה מעוגן (כל `toast()` שקט). 556 בדיקות. ראה פירוט. שערי-בעלים: הפעלת TOTP ב-Supabase + הרצת 0028 + QA עם אפליקציה אמיתית. |
 | DEV-014 | השתקת התראות בפעמון (in-app) לפי העדפה | פיתוח | P3 | **הושלם** | 2026-07-11 | **מוזג לייצור** ([PR #68](https://github.com/Liran-Raz/AVI.APP1/pull/68)). טוגל "פעמון בשיוך משימה" ליד טוגל-המייל; **השתקה רכה** (badge-only) — ההתראה עדיין ברשימת-הפעמון, רק לא נספרת בעיגול-האדום. **ללא מיגרציה** — מפתח `bellOnTaskAssignment` בעמודת `notification_prefs` הקיימת; סינון בשכבת-הקריאה על ה-COUNT בלבד (הטריגרים לא נגעו, לא-הרסני). התראות השלמה/החזרה תמיד מבדגות. |
 | DEV-015 | סביבת staging (Vercel Preview עם env משלה) | תשתית/DevX | P3 | ממתין | 2026-07-11 | לבדוק מיילים/Auth/מיגרציות בלי לגעת ב-Production. ערכה התחדד ב-DEV-009 (QA של חלק 2 דרש להחיל מיגרציה על prod-DB לפני בדיקה) + כשל build ה-Vercel. קונפיג Vercel/Supabase, בלי קוד מהותי. |
 | DEV-016 | `<noscript>` fallback לנחיתה | תשתית/נגישות | P3 | ממתין | 2026-07-11 | ה-`.reveal`/hero מתחילים מוסתרים ונחשפים ב-JS → בלי JS הדף כמעט ריק. Google מריץ JS (SEO תקין), אבל fallback חסין יותר. ללא מיגרציה. |
@@ -445,9 +445,48 @@ DEV-009).
 
 ### DEV-013 — אימות דו-שלבי (2FA)
 
-דרך Supabase Auth MFA (TOTP/authenticator). UI בטאב "אבטחה": הרשמה (QR + אימות), ניהול
-factors, אתגר בכניסה. קונפיג Supabase (Enable MFA) + קוד לא-טריוויאלי. **רלוונטי-אבטחה
-לנתונים פיננסיים — שקול להעלות ל-P2.**
+**קוד הושלם 2026-07-17 — [PR #84](https://github.com/Liran-Raz/AVI.APP1/pull/84) פתוח (לא מוזג).**
+TOTP (אפליקציית-אימות: Google/Microsoft Authenticator). מדיניות שהוכרעה עם ליראן: **אופציונלי
+לכל משתמש** (הגדרות→אבטחה) **+ חובה משרדית קשיחה** — בעל המשרד מחייב 2FA לכל הצוות, ומשתמש שלא
+הגדיר יכול להגיע **רק למסך ההגדרות** (כל שאר העמודים = מסך-חסימה עם כפתור להגדרה; שער-לקוח
+`MfaEnforcementGate` שעוטף את ילדי-ה-layout לפי `usePathname`, בלי לגעת ב-middleware; נפתח מעצמו
+כשמסיימים הרשמה — ה-owner יכול גם לכבות את המדיניות מטאב "משרד" הנגיש, בלי נעילה-עצמית).
+**דיאלוג ההשבתה נסגר-אוטומטית אחרי 15 שניות** של חוסר-פעולה (ברירת-מחדל בטוחה = לא לבטל; `open`
+נגזר מספירה-לאחור, בלי setState סינכרוני ב-effect). SMS נדחה (ספק בתשלום).
+
+**ארכיטקטורה (השרשרת נשמרה):** `UI → apiClient.auth.mfa.* → /api/auth/mfa/{enroll,confirm,verify,
+disable} → auth.service → AuthAdapter → supabase.auth.mfa.*`. **אכיפת-אמת:** `requireSession()`
+זורק `MFA_REQUIRED` (401) כשהסשן aal1 והמשתמש רשום ל-MFA (לפני בדיקת-onboarding) → מכסה את כל
+ראוטי-הדאטה; `requireUserMfaSettled` ל-invite/bootstrap; `requireUser` נשאר עיוור-AAL (reset/
+change-password). עמוד `/mfa` (מעטפת-glass כמו login) = מסלול-ההעלאה — login דוחף אליו על
+`needsMfa`, ו-layout/onboarding/reset-password מפנים סשן-pending אליו (מכסה Google OAuth +
+שחזור-סיסמה **בלי לגעת ב-middleware**). אין תלויות חדשות (Supabase מחזיר QR כ-SVG data-URI); אין
+service-role key.
+
+**שלוש נקודות מהחקירה:** (1) **F1** — GoTrue חוסם עדכון-סיסמה מסשן aal1 למשתמש-MFA → `changePassword`
+מאמת סיסמה על client צדדי חסר-cookies (במקום re-auth שמחליף+מוריד את הסשן), ושחזור-סיסמה עובר דרך
+`/mfa` קודם. (2) **F2** — `getAuthenticatorAssuranceLevel()` אמין רק אחרי `getUser()` על אותו
+instance → מתודה משולבת `getCurrentUserWithMfa` (אותה עלות-רשת, מצב-factors טרי, fail-closed). (3)
+**באג רדום שתוקן** — `<Toaster/>` מעולם לא עוגן ב-root layout → כל `toast()` באפליקציה (31 קבצים)
+היה no-op שקט (קומיט נפרד).
+
+**מיגרציה `0028_org_mfa_policy.sql`** (אדיטיבית, **אופרטור מריץ**, טרם הוחלה): `organizations.
+require_mfa boolean NOT NULL DEFAULT false`; חבילה שמורה (postgres, single-apply, notify pgrst) +
+postflight; RLS ללא שינוי (מדיניות "owner can update own org" מכסה). `database.types.ts` עודכן ידנית.
+
+**שער-איכות:** tsc 0 · lint 0 · **556 בדיקות** (+43: אדפטר MFA, service, session-gate, schema) ·
+פרובים: 4 ראוטי-mfa → 401, `/mfa` ללא-סשן → 307 ל-login; דף-כניסה נטען ללא שגיאות/hydration, Toaster
+מעוגן. build מקומי מדולג (סביבתי) — Vercel CI הוא השער.
+
+**שערי-בעלים (ליראן):** (1) Supabase Dashboard → Authentication → MFA → **הפעל TOTP**; (2) הרץ
+מיגרציה 0028 ב-SQL Editor; (3) QA עם אפליקציית-אימות אמיתית (Claude לא יכול להתחבר). **מיזוג =
+באישורו בלבד.**
+
+**נוהל שחזור גישה:** ראה [`docs/2FA_RECOVERY.md`](2FA_RECOVERY.md) — מה עושים כשמשתמש נעול (נייד
+אבד/אין קודים). בקצרה: מניעה = אפליקציית-אימות עם גיבוי-ענן (הקודים חוזרים לבד בהחלפת נייד);
+שחזור-חירום = ליראן מוחק את ה-TOTP factor ב-Supabase Dashboard (Authentication→Users) אחרי
+אימות-זהות, והמשתמש נכנס עם סיסמה ומגדיר מחדש. אין שליחת-קוד-במייל (מחליש אבטחה) ואין שחזור-עצמי
+(אין service key במכוון). עתידי: כפתור "איפוס 2FA לחבר-צוות" לבעל-משרד כשגדלים.
 
 ### DEV-014 — השתקת התראות בפעמון (in-app)
 

@@ -29,7 +29,13 @@ export function LoginForm() {
     e.preventDefault();
     setLoading(true);
     try {
-      await apiClient.auth.signIn({ email, password });
+      const result = await apiClient.auth.signIn({ email, password });
+      if (result.needsMfa) {
+        // Password OK but the account has 2FA — the session is aal1 and
+        // every data route rejects it until the TOTP challenge passes.
+        router.push(`/mfa?next=${encodeURIComponent(redirect)}`);
+        return;
+      }
       router.push(redirect);
       router.refresh();
     } catch (err) {

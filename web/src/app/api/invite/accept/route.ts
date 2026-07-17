@@ -1,7 +1,7 @@
 import "server-only";
 import type { NextRequest } from "next/server";
 
-import { requireUser } from "@/server/auth/session";
+import { requireUserMfaSettled } from "@/server/auth/session";
 import { writeActiveOrgCookie } from "@/server/auth/active-org-cookie";
 import { clearPendingInviteCookie } from "@/server/auth/pending-invite-cookie";
 import { ok, withErrorHandler } from "@/server/errors/api-handler";
@@ -17,10 +17,12 @@ import { enforceRateLimit } from "@/server/security/rate-limit";
 // enforce that here too (requireUser) before even hashing the token,
 // so unauthenticated requests get a clean 401 instead of going deeper.
 //
-// `requireUser` (not `requireSession`) — invitee doesn't have a
-// profile yet, so requireSession would 401 with "Onboarding required".
+// `requireUserMfaSettled` (not `requireSession`) — the invitee doesn't
+// have a profile yet, so requireSession would 401 with "Onboarding
+// required"; but a 2FA-enrolled user mid-challenge (aal1) must not be
+// able to mutate memberships either (DEV-013).
 export const POST = withErrorHandler(async (request: NextRequest) => {
-  const user = await requireUser();
+  const user = await requireUserMfaSettled();
   // Throttle accept attempts per authenticated user (replay/abuse).
   await enforceRateLimit("invite-accept:user", user.id, 10, "10 m");
   const body = await request.json().catch(() => ({}));

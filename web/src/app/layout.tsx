@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Heebo } from "next/font/google";
 import "./globals.css";
 import { NativeBridge } from "@/components/native/native-bridge";
+import { Toaster } from "@/components/ui/sonner";
 
 const heebo = Heebo({
   variable: "--font-heebo",
@@ -56,6 +57,9 @@ export default function RootLayout({
       <body className="min-h-full flex flex-col font-sans bg-background text-foreground">
         <NativeBridge />
         {children}
+        {/* Global toast host. Every toast() call in the app renders here —
+            without a mounted Toaster, sonner toasts are silent no-ops. */}
+        <Toaster position="top-center" dir="rtl" />
       </body>
     </html>
   );
