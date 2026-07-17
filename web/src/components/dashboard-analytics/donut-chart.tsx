@@ -1,11 +1,15 @@
+"use client";
+
 import type { CountSlice } from "@/lib/api-client";
+import { intlLocale } from "@/i18n/config";
+import { useLocale, useT } from "@/i18n/locale-provider";
 
 // Hand-rolled SVG donut (Stage 13 R4) — no chart library. Each slice is one
 // <circle> sharing the same radius, sized via stroke-dasharray and positioned
 // via a cumulative stroke-dashoffset (the classic single-ring donut technique).
 // Direction-agnostic, so it needs no RTL handling; the legend beside it is
-// HTML and inherits the page's RTL. Native <title> tooltips, zero JS →
-// server-renderable.
+// HTML and inherits the page's RTL. Native <title> tooltips. Slice labels arrive
+// already localized (DEV-010); this component localizes only its own aria-label.
 
 const SIZE = 180;
 const STROKE = 30;
@@ -20,6 +24,8 @@ export function DonutChart({
   slices: CountSlice[];
   centerLabel?: string;
 }) {
+  const t = useT();
+  const localeTag = intlLocale(useLocale());
   const total = slices.reduce((sum, s) => sum + s.count, 0);
 
   let acc = 0;
@@ -56,7 +62,7 @@ export function DonutChart({
         height={SIZE}
         viewBox={`0 0 ${SIZE} ${SIZE}`}
         role="img"
-        aria-label={`פילוח לפי סטטוס, סה"כ ${total}`}
+        aria-label={t("dashboard.donut.aria", { total })}
       >
         {/* Track */}
         <circle
@@ -76,7 +82,7 @@ export function DonutChart({
           className="fill-foreground"
           style={{ fontSize: 30, fontWeight: 700 }}
         >
-          {total.toLocaleString("he-IL")}
+          {total.toLocaleString(localeTag)}
         </text>
         {centerLabel ? (
           <text
@@ -104,7 +110,7 @@ export function DonutChart({
               />
               <span className="text-foreground">{s.label}</span>
               <span className="text-muted-foreground tabular-nums">
-                {s.count.toLocaleString("he-IL")} · {pct}%
+                {s.count.toLocaleString(localeTag)} · {pct}%
               </span>
             </li>
           );

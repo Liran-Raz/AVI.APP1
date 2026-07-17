@@ -404,5 +404,39 @@
   "roles.form.duplicatedToast": "Role duplicated",
   "roles.form.submitCreate": "Create role",
   "roles.form.submitDuplicate": "Duplicate",
-  "roles.form.submitSave": "Save changes"
+  "roles.form.submitSave": "Save changes",
+
+  "dashboard.title": "Management dashboard",
+  "dashboard.updatedAt": "Updated {date}",
+  "dashboard.truncatedNote": "Showing a partial sample of tasks (high volume) — the numbers may be lower than the actual total.",
+
+  "dashboard.kpi.active": "Total active",
+  "dashboard.kpi.open": "Open",
+  "dashboard.kpi.done": "Completed",
+  "dashboard.kpi.overdue": "Overdue",
+  "dashboard.kpi.overdueHint": "Past due date, not yet completed",
+
+  "dashboard.chart.byStatus.title": "Breakdown by status",
+  "dashboard.chart.byStatus.subtitle": "All active tasks",
+  "dashboard.chart.byStatus.center": "Tasks",
+  "dashboard.donut.aria": "Breakdown by status, total {total}",
+  "dashboard.chart.byPriority.title": "By priority",
+  "dashboard.chart.byMember.title": "Load by team member",
+  "dashboard.chart.byMember.subtitle": "Open tasks (new + in progress)",
+  "dashboard.chart.byMember.empty": "No open tasks",
+  "dashboard.chart.trend.title": "Pace — created vs completed",
+  "dashboard.chart.trend.subtitle": "Last 8 weeks",
+  "dashboard.chart.topClients.title": "Top clients",
+  "dashboard.chart.topClients.subtitle": "By number of active tasks",
+  "dashboard.chart.noData": "No data",
+
+  "dashboard.trend.created": "Created",
+  "dashboard.trend.completed": "Completed",
+  "dashboard.trend.aria": "Created vs completed over the last 8 weeks",
+  "dashboard.trend.tooltipCompleted": "Week {week} — completed: {count}",
+  "dashboard.trend.tooltipCreated": "Week {week} — created: {count}",
+
+  "dashboard.noAccess.title": "You don't have permission to view the dashboard",
+  "dashboard.noAccess.body": "The management dashboard is open to the office owner and to team members the owner has granted access. If you think you should have access, contact the office owner.",
+  "dashboard.noAccess.back": "Back to the task queue"
 }

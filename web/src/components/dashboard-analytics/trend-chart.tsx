@@ -1,10 +1,14 @@
+"use client";
+
 import type { WeekPoint } from "@/lib/api-client";
+import { intlLocale } from "@/i18n/config";
+import { useLocale, useT } from "@/i18n/locale-provider";
 
 // Hand-rolled SVG line chart (Stage 13 R4) — created vs completed tasks over the
 // last 8 weeks. No chart library. Two polylines + dots over a shared scale, a
 // few faint gridlines, week labels on the x-axis. Time runs oldest→newest,
 // left→right (the standard time-series convention, even in an RTL UI). Native
-// <title> tooltips, zero JS → server-renderable.
+// <title> tooltips.
 
 const W = 640;
 const H = 240;
@@ -15,10 +19,12 @@ const PLOT_W = W - PAD_X * 2;
 const PLOT_H = H - PAD_TOP - PAD_BOTTOM;
 const BASE_Y = PAD_TOP + PLOT_H;
 
-function formatWeek(iso: string): string {
+// `localeTag` is a BCP-47 tag from intlLocale(useLocale()) — keeps the week
+// label in the active UI language instead of a hardcoded "he-IL".
+function formatWeek(iso: string, localeTag: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "";
-  return d.toLocaleDateString("he-IL", { day: "2-digit", month: "2-digit" });
+  return d.toLocaleDateString(localeTag, { day: "2-digit", month: "2-digit" });
 }
 
 function buildPath(values: number[], xs: number[], yFor: (v: number) => number) {
@@ -26,6 +32,8 @@ function buildPath(values: number[], xs: number[], yFor: (v: number) => number) 
 }
 
 export function TrendChart({ points }: { points: WeekPoint[] }) {
+  const t = useT();
+  const localeTag = intlLocale(useLocale());
   const n = points.length;
   const yMax = Math.max(
     1,
@@ -51,7 +59,7 @@ export function TrendChart({ points }: { points: WeekPoint[] }) {
             style={{ backgroundColor: "var(--primary)" }}
             aria-hidden
           />
-          נוצרו
+          {t("dashboard.trend.created")}
         </span>
         <span className="flex items-center gap-1.5">
           <span
@@ -59,7 +67,7 @@ export function TrendChart({ points }: { points: WeekPoint[] }) {
             style={{ backgroundColor: "var(--status-done)" }}
             aria-hidden
           />
-          הושלמו
+          {t("dashboard.trend.completed")}
         </span>
       </div>
 
@@ -68,7 +76,7 @@ export function TrendChart({ points }: { points: WeekPoint[] }) {
         viewBox={`0 0 ${W} ${H}`}
         preserveAspectRatio="xMidYMid meet"
         role="img"
-        aria-label="נוצרו מול הושלמו ב-8 השבועות האחרונים"
+        aria-label={t("dashboard.trend.aria")}
       >
         {/* Gridlines + y labels */}
         {gridValues.map((v) => {
@@ -127,12 +135,18 @@ export function TrendChart({ points }: { points: WeekPoint[] }) {
           <g key={p.weekStart}>
             <circle cx={xs[i]} cy={yFor(p.completed)} r={3} fill="var(--status-done)">
               <title>
-                שבוע {formatWeek(p.weekStart)} — הושלמו: {p.completed}
+                {t("dashboard.trend.tooltipCompleted", {
+                  week: formatWeek(p.weekStart, localeTag),
+                  count: p.completed,
+                })}
               </title>
             </circle>
             <circle cx={xs[i]} cy={yFor(p.created)} r={3} fill="var(--primary)">
               <title>
-                שבוע {formatWeek(p.weekStart)} — נוצרו: {p.created}
+                {t("dashboard.trend.tooltipCreated", {
+                  week: formatWeek(p.weekStart, localeTag),
+                  count: p.created,
+                })}
               </title>
             </circle>
             <text
@@ -142,7 +156,7 @@ export function TrendChart({ points }: { points: WeekPoint[] }) {
               className="fill-muted-foreground"
               style={{ fontSize: 10 }}
             >
-              {formatWeek(p.weekStart)}
+              {formatWeek(p.weekStart, localeTag)}
             </text>
           </g>
         ))}

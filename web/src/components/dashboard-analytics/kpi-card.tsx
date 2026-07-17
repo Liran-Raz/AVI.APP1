@@ -1,7 +1,12 @@
+"use client";
+
+import { intlLocale } from "@/i18n/config";
+import { useLocale } from "@/i18n/locale-provider";
+
 // A single KPI stat tile for the owner dashboard (Stage 13 R4). Presentational
-// only — glass-card chrome, a big number, a Hebrew label, and a thin colored
-// accent bar. `tone="alert"` tints the number (used for "באיחור"). Server-
-// renderable (no hooks / no "use client").
+// only — glass-card chrome, a big number, a localized label (passed in), and a
+// thin colored accent bar. `tone="alert"` tints the number (used for the
+// overdue KPI). The value is formatted in the active UI locale (DEV-010).
 
 export function KpiCard({
   label,
@@ -17,10 +22,11 @@ export function KpiCard({
   tone?: "normal" | "alert";
   hint?: string;
 }) {
+  const localeTag = intlLocale(useLocale());
   return (
     <div className="relative overflow-hidden rounded-lg border border-border glass-card shadow-card p-4">
       <div
-        className="absolute inset-y-0 right-0 w-1"
+        className="absolute inset-y-0 start-0 w-1"
         style={{ backgroundColor: `var(${colorVar})` }}
         aria-hidden
       />
@@ -29,7 +35,7 @@ export function KpiCard({
         className="mt-1 text-3xl font-bold tabular-nums"
         style={tone === "alert" ? { color: `var(${colorVar})` } : undefined}
       >
-        {value.toLocaleString("he-IL")}
+        {value.toLocaleString(localeTag)}
       </div>
       {hint ? (
         <div className="mt-1 text-xs text-muted-foreground">{hint}</div>
