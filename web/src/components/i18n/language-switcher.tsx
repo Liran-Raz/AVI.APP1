@@ -69,8 +69,9 @@ export function LanguageSelect({ className }: { className?: string }) {
       disabled={saving}
     >
       <SelectTrigger className={className} aria-label={t("language.label")}>
-        {/* Current-language flag, always shown, next to the name. */}
-        <Flag locale={locale} />
+        {/* SelectValue renders the SELECTED item's content — i.e. its flag +
+            name — so the trigger already shows the current flag. Do NOT add a
+            second <Flag> here or it doubles up. */}
         <SelectValue />
       </SelectTrigger>
       <SelectContent>
