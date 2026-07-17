@@ -3,6 +3,10 @@ import { Heebo } from "next/font/google";
 import "./globals.css";
 import { NativeBridge } from "@/components/native/native-bridge";
 import { Toaster } from "@/components/ui/sonner";
+import { LocaleProvider } from "@/i18n/locale-provider";
+import { dirFor } from "@/i18n/config";
+import { loadMessages, getServerT } from "@/i18n/server";
+import { readLocale } from "@/server/i18n/locale-cookie";
 
 const heebo = Heebo({
   variable: "--font-heebo",
@@ -10,22 +14,24 @@ const heebo = Heebo({
   display: "swap",
 });
 
-export const metadata: Metadata = {
-  title: "AVI.APP — ניהול משימות למשרדי רואי חשבון",
-  description:
-    "מערכת ניהול משימות פנים-ארגונית למשרדי רואי חשבון: תור משימות יומי, לוח שבועי, ניהול לקוחות.",
-  icons: {
-    icon: [{ url: "/icon.svg", type: "image/svg+xml" }],
-    apple: [{ url: "/icon.svg", type: "image/svg+xml" }],
-  },
-  // appleWebApp settings make iOS treat the installed PWA like a
-  // first-class app (no Safari chrome) and use the title we pick.
-  appleWebApp: {
-    title: "AVI.APP",
-    statusBarStyle: "black-translucent",
-    capable: true,
-  },
-};
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await getServerT(await readLocale());
+  return {
+    title: t("meta.title"),
+    description: t("meta.description"),
+    icons: {
+      icon: [{ url: "/icon.svg", type: "image/svg+xml" }],
+      apple: [{ url: "/icon.svg", type: "image/svg+xml" }],
+    },
+    // appleWebApp settings make iOS treat the installed PWA like a
+    // first-class app (no Safari chrome) and use the title we pick.
+    appleWebApp: {
+      title: "AVI.APP",
+      statusBarStyle: "black-translucent",
+      capable: true,
+    },
+  };
+}
 
 export const viewport: Viewport = {
   // Status bar / address bar color on mobile. Navy matches the
@@ -42,24 +48,33 @@ export const viewport: Viewport = {
   viewportFit: "cover",
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  // Locale drives <html lang/dir>, the message catalog, and the Toaster
+  // direction. Read once on the server and injected into the client provider
+  // as props → server and client agree on first paint (no hydration flash).
+  const locale = await readLocale();
+  const dir = dirFor(locale);
+  const messages = await loadMessages(locale);
+
   return (
     <html
-      lang="he"
-      dir="rtl"
+      lang={locale}
+      dir={dir}
       className={`${heebo.variable} h-full antialiased`}
       suppressHydrationWarning
     >
       <body className="min-h-full flex flex-col font-sans bg-background text-foreground">
-        <NativeBridge />
-        {children}
-        {/* Global toast host. Every toast() call in the app renders here —
-            without a mounted Toaster, sonner toasts are silent no-ops. */}
-        <Toaster position="top-center" dir="rtl" />
+        <LocaleProvider locale={locale} messages={messages}>
+          <NativeBridge />
+          {children}
+          {/* Global toast host. Every toast() call in the app renders here —
+              without a mounted Toaster, sonner toasts are silent no-ops. */}
+          <Toaster position="top-center" dir={dir} />
+        </LocaleProvider>
       </body>
     </html>
   );

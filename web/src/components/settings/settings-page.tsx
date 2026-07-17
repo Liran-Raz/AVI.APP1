@@ -4,6 +4,8 @@ import { useState } from "react";
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { MeRole, NotificationPrefs } from "@/lib/api-client";
+import { useT } from "@/i18n/locale-provider";
+import { LanguageSelect } from "@/components/i18n/language-switcher";
 
 import { ProfileForm } from "./profile-form";
 import { ChangePasswordForm } from "./change-password-form";
@@ -44,6 +46,7 @@ export function SettingsPage({
   mfaEnabled: boolean;
   initialTab?: "profile" | "security" | "office" | "notifications";
 }) {
+  const t = useT();
   // Source of truth for the notifications toggle lives HERE (SettingsPage stays
   // mounted across tab switches), so the choice persists visually when the user
   // leaves and returns to the tab — Radix unmounts inactive TabsContent.
@@ -54,19 +57,30 @@ export function SettingsPage({
 
   return (
     <div className="container mx-auto px-4 md:px-6 py-6 md:py-8 max-w-3xl">
-      <div className="mb-6">
-        <h1 className="text-2xl md:text-3xl font-bold tracking-tight">הגדרות</h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          ניהול הפרופיל, האבטחה ופרטי המשרד שלך
-        </p>
+      <div className="mb-6 flex items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl md:text-3xl font-bold tracking-tight">
+            {t("settings.title")}
+          </h1>
+          <p className="text-sm text-muted-foreground mt-1">
+            {t("settings.subtitle")}
+          </p>
+        </div>
+        {/* Language: a compact control OUTSIDE the tabs so it never changes a
+            tab's height — the Settings screen stays a stable size. */}
+        <div className="shrink-0 pt-1">
+          <LanguageSelect />
+        </div>
       </div>
 
       <Tabs defaultValue={initialTab} className="w-full">
         <TabsList className="w-full sm:w-auto">
-          <TabsTrigger value="profile">פרופיל</TabsTrigger>
-          <TabsTrigger value="security">אבטחה</TabsTrigger>
-          <TabsTrigger value="office">משרד</TabsTrigger>
-          <TabsTrigger value="notifications">התראות</TabsTrigger>
+          <TabsTrigger value="profile">{t("settings.tab.profile")}</TabsTrigger>
+          <TabsTrigger value="security">{t("settings.tab.security")}</TabsTrigger>
+          <TabsTrigger value="office">{t("settings.tab.office")}</TabsTrigger>
+          <TabsTrigger value="notifications">
+            {t("settings.tab.notifications")}
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="profile" className="mt-4">
