@@ -38,14 +38,18 @@ function useSetLocale() {
     setSaving(true);
     try {
       await apiClient.locale.set({ locale });
+      // Re-runs the server layout → new <html dir/lang> + catalog flows into
+      // the provider, and useLocale() updates this control to the new value.
       router.refresh();
     } catch (err) {
-      setSaving(false);
       if (err instanceof ApiError) toast.error(err.message);
       else toast.error("Something went wrong");
+    } finally {
+      // MUST reset here: router.refresh() re-renders SERVER components but
+      // this CLIENT control keeps its state (it does not remount), so leaving
+      // saving=true would freeze the switcher until a hard reload.
+      setSaving(false);
     }
-    // On success we keep saving=true through the refresh — the tree
-    // re-renders and this component remounts with the new locale.
   }
 
   return { saving, setLocale };
