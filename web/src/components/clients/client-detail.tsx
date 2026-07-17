@@ -32,10 +32,11 @@ import {
 } from "@/lib/api-client";
 import { hasCapability, PERMISSIONS, type Capability } from "@/lib/capabilities";
 import { cn } from "@/lib/utils";
+import { useT } from "@/i18n/locale-provider";
+import type { MessageKey } from "@/i18n/messages-types";
 
 import { ClientFormDialog } from "./client-form-dialog";
 import { ContactFormDialog } from "./contact-form-dialog";
-import { formatBusinessType } from "./business-types";
 
 type Props = {
   client: ClientDTO;
@@ -52,6 +53,7 @@ export function ClientDetail({
   members,
   capabilities,
 }: Props) {
+  const t = useT();
   // Display-only hint: contacts.delete is Owner/Manager-only. The server
   // re-enforces this on every delete call regardless of what the UI shows.
   const canDeleteContact = hasCapability(
@@ -85,9 +87,10 @@ export function ClientDetail({
       const result = await apiClient.clientContacts.list(client.id);
       setContacts(result.items);
     } catch (err) {
-      if (err instanceof ApiError) toast.error(`שגיאה: ${err.message}`);
+      if (err instanceof ApiError)
+        toast.error(t("clients.errorWithMessage", { message: err.message }));
       else {
-        toast.error("שגיאה לא צפויה");
+        toast.error(t("common.unexpectedError"));
         console.error(err);
       }
     }
@@ -98,15 +101,17 @@ export function ClientDetail({
   }
 
   async function handleDelete(contact: ContactDTO) {
-    if (!window.confirm(`למחוק את "${contact.name}"?`)) return;
+    if (!window.confirm(t("clients.contact.confirmDelete", { name: contact.name })))
+      return;
     try {
       await apiClient.clientContacts.delete(client.id, contact.id);
-      toast.success("איש קשר נמחק");
+      toast.success(t("clients.contact.deletedToast"));
       await refetch();
     } catch (err) {
-      if (err instanceof ApiError) toast.error(`שגיאה: ${err.message}`);
+      if (err instanceof ApiError)
+        toast.error(t("clients.errorWithMessage", { message: err.message }));
       else {
-        toast.error("שגיאה לא צפויה");
+        toast.error(t("common.unexpectedError"));
         console.error(err);
       }
     }
@@ -121,7 +126,7 @@ export function ClientDetail({
           onClick={() => router.push("/clients")}
         >
           <ArrowRight className="size-4" />
-          חזרה ללקוחות
+          {t("clients.detail.back")}
         </Button>
       </div>
 
@@ -137,7 +142,9 @@ export function ClientDetail({
                 {client.name}
               </h1>
               <p className="text-sm text-muted-foreground mt-1">
-                {formatBusinessType(client.businessType)}
+                {client.businessType
+                  ? t(`businessType.${client.businessType}` as MessageKey)
+                  : "—"}
                 {client.taxId && (
                   <>
                     {" · "}
@@ -149,9 +156,9 @@ export function ClientDetail({
           </div>
           <div className="flex items-center gap-2">
             {client.isActive ? (
-              <Badge variant="secondary">פעיל</Badge>
+              <Badge variant="secondary">{t("clients.badge.active")}</Badge>
             ) : (
-              <Badge variant="outline">בארכיון</Badge>
+              <Badge variant="outline">{t("clients.badge.archived")}</Badge>
             )}
             <Button
               variant="outline"
@@ -159,31 +166,37 @@ export function ClientDetail({
               onClick={() => setClientEditOpen(true)}
             >
               <Pencil className="size-4" />
-              ערוך
+              {t("clients.actions.edit")}
             </Button>
           </div>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-6">
           <div className="space-y-1">
-            <p className="text-xs text-muted-foreground">אימייל</p>
+            <p className="text-xs text-muted-foreground">{t("common.email")}</p>
             <p className="text-sm" dir="ltr">{client.email ?? "—"}</p>
           </div>
           <div className="space-y-1">
-            <p className="text-xs text-muted-foreground">טלפון</p>
+            <p className="text-xs text-muted-foreground">{t("common.phone")}</p>
             <p className="text-sm" dir="ltr">{client.phone ?? "—"}</p>
           </div>
           <div className="space-y-1">
-            <p className="text-xs text-muted-foreground">גורם מטפל</p>
+            <p className="text-xs text-muted-foreground">
+              {t("clients.detail.handler")}
+            </p>
             <p className="text-sm">{handlerName ?? "—"}</p>
           </div>
           <div className="space-y-1 sm:col-span-2">
-            <p className="text-xs text-muted-foreground">כתובת</p>
+            <p className="text-xs text-muted-foreground">
+              {t("clients.detail.address")}
+            </p>
             <p className="text-sm">{client.address ?? "—"}</p>
           </div>
           {client.notes && (
             <div className="space-y-1 sm:col-span-2">
-              <p className="text-xs text-muted-foreground">הערות</p>
+              <p className="text-xs text-muted-foreground">
+                {t("clients.detail.notes")}
+              </p>
               <p className="text-sm whitespace-pre-wrap">{client.notes}</p>
             </div>
           )}
@@ -193,10 +206,12 @@ export function ClientDetail({
       {/* Contacts */}
       <div>
         <div className="flex items-center justify-between mb-3">
-          <h2 className="text-lg font-semibold">אנשי קשר</h2>
+          <h2 className="text-lg font-semibold">
+            {t("clients.detail.contactsTitle")}
+          </h2>
           <Button onClick={handleAddClick} size="sm">
             <Plus className="size-4" />
-            איש קשר
+            {t("clients.detail.addContact")}
           </Button>
         </div>
 
@@ -206,11 +221,11 @@ export function ClientDetail({
               <UserSquare2 className="size-5" />
             </div>
             <p className="text-sm text-muted-foreground mb-3">
-              עוד אין אנשי קשר. הוסף את הראשון.
+              {t("clients.detail.emptyContacts")}
             </p>
             <Button onClick={handleAddClick} size="sm">
               <Plus className="size-4" />
-              הוסף איש קשר
+              {t("clients.detail.addFirstContact")}
             </Button>
           </div>
         ) : (
@@ -260,6 +275,7 @@ function ContactCard({
   onEdit: () => void;
   onDelete: () => void;
 }) {
+  const t = useT();
   return (
     <div
       className={cn(
@@ -276,7 +292,7 @@ function ContactCard({
               className="bg-primary/10 text-primary border-primary/20"
             >
               <Star className="size-3" />
-              ראשי
+              {t("clients.contact.primaryBadge")}
             </Badge>
           )}
         </div>
@@ -286,7 +302,7 @@ function ContactCard({
               variant="ghost"
               size="icon"
               className="size-7 opacity-60 group-hover:opacity-100"
-              aria-label={`פעולות עבור ${contact.name}`}
+              aria-label={t("clients.actionsFor", { name: contact.name })}
             >
               <MoreHorizontal className="size-4" />
             </Button>
@@ -294,7 +310,7 @@ function ContactCard({
           <DropdownMenuContent align="end">
             <DropdownMenuItem onClick={onEdit}>
               <Pencil className="size-4" />
-              ערוך
+              {t("clients.actions.edit")}
             </DropdownMenuItem>
             {canDelete && (
               <DropdownMenuItem
@@ -302,7 +318,7 @@ function ContactCard({
                 className="text-destructive focus:text-destructive"
               >
                 <Trash2 className="size-4" />
-                מחק
+                {t("clients.contact.delete")}
               </DropdownMenuItem>
             )}
           </DropdownMenuContent>

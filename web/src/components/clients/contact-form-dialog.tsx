@@ -23,6 +23,7 @@ import {
   type CreateContactPayload,
   type UpdateContactPayload,
 } from "@/lib/api-client";
+import { useT } from "@/i18n/locale-provider";
 
 type Mode = "create" | "edit";
 
@@ -65,6 +66,7 @@ export function ContactFormDialog({
   initial,
   onSaved,
 }: Props) {
+  const t = useT();
   const formKey = mode === "edit" ? (initial?.id ?? "edit") : "create";
 
   return (
@@ -72,12 +74,14 @@ export function ContactFormDialog({
       <DialogContent>
         <DialogHeader>
           <DialogTitle>
-            {mode === "create" ? "איש קשר חדש" : "עריכת איש קשר"}
+            {mode === "create"
+              ? t("clients.contact.createTitle")
+              : t("clients.contact.editTitle")}
           </DialogTitle>
           <DialogDescription>
             {mode === "create"
-              ? "הוספת איש קשר ללקוח."
-              : "עדכון פרטי איש הקשר."}
+              ? t("clients.contact.createDesc")
+              : t("clients.contact.editDesc")}
           </DialogDescription>
         </DialogHeader>
 
@@ -110,6 +114,7 @@ function ContactFormBody({
   onCancel: () => void;
   onSaved: (saved: ContactDTO) => void;
 }) {
+  const t = useT();
   const [form, setForm] = useState<FormState>(() =>
     mode === "edit" && initial ? stateFromContact(initial) : emptyState(),
   );
@@ -123,7 +128,7 @@ function ContactFormBody({
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!form.name.trim()) {
-      setError("שם איש הקשר הוא שדה חובה");
+      setError(t("clients.contact.nameRequired"));
       return;
     }
     setSubmitting(true);
@@ -151,15 +156,19 @@ function ContactFormBody({
               initial!.id,
               updatePayload,
             );
-      toast.success(mode === "create" ? "איש קשר נוצר" : "איש קשר עודכן");
+      toast.success(
+        mode === "create"
+          ? t("clients.contact.createdToast")
+          : t("clients.contact.updatedToast"),
+      );
       onSaved(saved);
     } catch (err) {
       if (err instanceof ApiError) {
         setError(err.message);
-        toast.error(`שגיאה: ${err.message}`);
+        toast.error(t("clients.errorWithMessage", { message: err.message }));
       } else {
-        setError("שגיאה לא צפויה");
-        toast.error("שגיאה לא צפויה");
+        setError(t("common.unexpectedError"));
+        toast.error(t("common.unexpectedError"));
         console.error(err);
       }
     } finally {
@@ -174,7 +183,7 @@ function ContactFormBody({
     >
       <div className="space-y-2 sm:col-span-2">
         <Label htmlFor="contact-name">
-          שם <span className="text-destructive">*</span>
+          {t("clients.contact.name")} <span className="text-destructive">*</span>
         </Label>
         <Input
           id="contact-name"
@@ -187,18 +196,18 @@ function ContactFormBody({
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="contact-role">תפקיד</Label>
+        <Label htmlFor="contact-role">{t("clients.contact.role")}</Label>
         <Input
           id="contact-role"
           value={form.role}
           onChange={(e) => set("role", e.target.value)}
           maxLength={100}
-          placeholder="מנהלת כספים"
+          placeholder={t("clients.contact.rolePlaceholder")}
         />
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="contact-phone">טלפון</Label>
+        <Label htmlFor="contact-phone">{t("common.phone")}</Label>
         <Input
           id="contact-phone"
           type="tel"
@@ -210,7 +219,7 @@ function ContactFormBody({
       </div>
 
       <div className="space-y-2 sm:col-span-2">
-        <Label htmlFor="contact-email">אימייל</Label>
+        <Label htmlFor="contact-email">{t("common.email")}</Label>
         <Input
           id="contact-email"
           type="email"
@@ -231,7 +240,7 @@ function ContactFormBody({
           htmlFor="contact-primary"
           className="text-sm font-normal cursor-pointer"
         >
-          איש קשר ראשי (יחיד לכל לקוח — סימון יחליף את הקודם)
+          {t("clients.contact.isPrimaryLabel")}
         </Label>
       </div>
 
@@ -246,11 +255,13 @@ function ContactFormBody({
           onClick={onCancel}
           disabled={submitting}
         >
-          ביטול
+          {t("common.cancel")}
         </Button>
         <Button type="submit" disabled={submitting}>
           {submitting && <Loader2 className="size-4 animate-spin" />}
-          {mode === "create" ? "צור איש קשר" : "שמור שינויים"}
+          {mode === "create"
+            ? t("clients.contact.submitCreate")
+            : t("clients.contact.submitSave")}
         </Button>
       </DialogFooter>
     </form>

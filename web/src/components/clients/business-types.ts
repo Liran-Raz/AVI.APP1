@@ -1,5 +1,7 @@
-// Hebrew labels for the DB enum `business_type`. Kept in one place so the
-// dropdown filter, the form field, and the table cell render the same text.
+// Hebrew labels for the DB enum `business_type`. The clients screen now renders
+// these through the i18n catalog (`businessType.*` keys); this map is retained
+// because the invoicing business-profile (ledger-settings) still consumes it
+// directly to label the selected business type.
 
 import type { ClientDTO } from "@/lib/api-client";
 
@@ -13,10 +15,3 @@ export const BUSINESS_TYPE_LABELS: Record<
   amuta: "עמותה",
   agudat_shitufit: "אגודה שיתופית",
 };
-
-export function formatBusinessType(
-  value: ClientDTO["businessType"],
-): string {
-  if (!value) return "—";
-  return BUSINESS_TYPE_LABELS[value];
-}
