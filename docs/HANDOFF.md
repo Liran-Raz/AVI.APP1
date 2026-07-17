@@ -62,10 +62,23 @@ Plan file: `C:\Users\User\.claude\plans\hashed-herding-honey.md` (DEV-026 sectio
   Redeploy, Liran's call.
 
 **NEXT = R5 חשבוניות-ישראל** (allocation numbers via the gov gateway: OAuth,
-sandbox first; ₪10K threshold from 1.1.2026 → ₪5K from 1.6.2026). Owner
-lead-time action to start early: developer registration at the government
-gateway. Then R6 signing+Storage, R7 registration package (2000-record sample
-+ real 1006 + submission).
+sandbox first; ₪10K threshold from 1.1.2026 → ₪5K from 1.6.2026). **R5 kickoff
+2026-07-17:** full owner registration instructions delivered (the official
+שע"ם OpenApiUserGuide read end-to-end + work-process deck + API-desc v2.0;
+flow: personal ITA digital user → sandbox portal FIRST (mandatory precondition)
+→ production-portal ORGANIZATION + signed docs from
+gov.il/he/service/connect-to-shaam → approval email → Create App (CLIENT
+ID+SECRET, secret shown ONCE) → Subscribe to the Invoices product).
+**Liran registered on the sandbox portal (Fri 2026-07-17); account = "pending
+approval"** — the "Multiple sign-ups using the same email" error on re-login is
+the DOCUMENTED pending-state behavior (guide p.5). **Approval email expected
+Sun–Mon 19–20.7** (1–2 business days over the IL weekend; check spam — portal
+is IBM API Connect; escalate to ITAOpenApiSupport@taxes.gov.il if late).
+Parallel owner action NOT blocked on that: prepare + submit the signed
+production-org registration docs (the long-lead approval). Dev side: most of
+R5 (state machine, thresholds, OAuth client, UI) can be built against mocks
+before credentials — Liran's call. Then R6 signing+Storage, R7 registration
+package (2000-record sample + real 1006 + submission).
 
 **Housekeeping:** remind Liran to cancel/credit the leftover QA demo documents
 (delivered ones can only be credited, not cancelled). Migration `0027` was taken
