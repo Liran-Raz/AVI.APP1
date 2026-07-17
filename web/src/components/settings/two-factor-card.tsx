@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Loader2, ShieldCheck, ShieldOff } from "lucide-react";
@@ -42,7 +42,22 @@ export function TwoFactorCard({
   const [code, setCode] = useState("");
   const [invalid, setInvalid] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [confirmDisableOpen, setConfirmDisableOpen] = useState(false);
+  // Disable-confirmation dialog auto-cancels after 15s of inaction so the
+  // SAFE default (keep 2FA on) wins if the user walks away. `open` is
+  // DERIVED from the countdown: when it reaches 0 the dialog closes with no
+  // change. Deriving open (rather than a separate close effect) keeps the
+  // ticking free of any synchronous setState-in-effect.
+  const DISABLE_TIMEOUT = 15;
+  const [disableTimer, setDisableTimer] = useState(0);
+  const confirmDisableOpen = disableTimer > 0;
+
+  useEffect(() => {
+    // Tick once per second while the dialog is open; pause during the
+    // in-flight disable request so a slow network can't auto-close it.
+    if (disableTimer <= 0 || loading) return;
+    const id = setTimeout(() => setDisableTimer((t) => t - 1), 1000);
+    return () => clearTimeout(id);
+  }, [disableTimer, loading]);
 
   async function startEnrollment() {
     setLoading(true);
@@ -106,7 +121,7 @@ export function TwoFactorCard({
     try {
       await apiClient.auth.mfa.disable();
       toast.success("אימות דו-שלבי הושבת");
-      setConfirmDisableOpen(false);
+      setDisableTimer(0);
       onChange(false);
       router.refresh();
     } catch (err) {
@@ -233,7 +248,7 @@ export function TwoFactorCard({
             type="button"
             variant="outline"
             className="text-destructive hover:text-destructive"
-            onClick={() => setConfirmDisableOpen(true)}
+            onClick={() => setDisableTimer(DISABLE_TIMEOUT)}
             disabled={loading}
           >
             השבתת אימות דו-שלבי
@@ -245,23 +260,29 @@ export function TwoFactorCard({
         איבדת גישה לאפליקציית האימות? פנה לתמיכת המערכת לשחזור הגישה לחשבון.
       </p>
 
-      <Dialog open={confirmDisableOpen} onOpenChange={setConfirmDisableOpen}>
+      <Dialog
+        open={confirmDisableOpen}
+        onOpenChange={(v) => {
+          // Any close (Escape / outside-click / the X) = cancel = safe default.
+          if (!v) setDisableTimer(0);
+        }}
+      >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>להשבית את האימות הדו-שלבי?</DialogTitle>
             <DialogDescription>
               החשבון יהיה מוגן בסיסמה בלבד. אם המשרד שלך מחייב אימות דו-שלבי,
-              תתבקש להפעיל אותו מחדש.
+              תתבקש להפעיל אותו מחדש. אם לא תבחר, החלון ייסגר אוטומטית ללא שינוי.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button
               type="button"
               variant="outline"
-              onClick={() => setConfirmDisableOpen(false)}
+              onClick={() => setDisableTimer(0)}
               disabled={loading}
             >
-              ביטול
+              ביטול{!loading && ` (${disableTimer})`}
             </Button>
             <Button
               type="button"

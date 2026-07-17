@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 
 import { AppShell } from "@/components/dashboard/app-shell";
-import { MfaEnforcementPrompt } from "@/components/mfa/mfa-enforcement-prompt";
+import { MfaEnforcementGate } from "@/components/mfa/mfa-enforcement-gate";
 import { getCurrentSession, type FullSession } from "@/server/auth/session";
 import { can } from "@/server/auth/authorization";
 import { PERMISSIONS } from "@/server/auth/permissions";
@@ -57,10 +57,10 @@ export default async function DashboardLayout({
     isInvoicingUiEnabled() &&
     can(session as FullSession, PERMISSIONS.REPORTS_VIEW);
 
-  // DEV-013: the office requires 2FA but this member hasn't set it up —
-  // show the (dismissible-per-session) setup prompt. Defensive read: the
-  // require_mfa column lands with migration 0028.
-  const showMfaSetupPrompt =
+  // DEV-013: the office requires 2FA but this member hasn't set it up →
+  // HARD gate (Settings is the only reachable page until they enroll).
+  // Defensive read: the require_mfa column lands with migration 0028.
+  const mfaSetupRequired =
     session.activeOrg.require_mfa === true && !session.user.hasVerifiedTotp;
 
   return (
@@ -74,8 +74,9 @@ export default async function DashboardLayout({
       showInvoicingNav={showInvoicingNav}
       showReportsNav={showReportsNav}
     >
-      {showMfaSetupPrompt && <MfaEnforcementPrompt />}
-      {children}
+      <MfaEnforcementGate required={mfaSetupRequired}>
+        {children}
+      </MfaEnforcementGate>
     </AppShell>
   );
 }
