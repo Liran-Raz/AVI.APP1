@@ -4,6 +4,7 @@ import { Check } from "lucide-react";
 
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils";
+import { useT } from "@/i18n/locale-provider";
 import type { MemberDTO } from "@/lib/api-client";
 
 function initials(name: string): string {
@@ -30,17 +31,18 @@ export function MemberMultiSelect({
   members,
   selected,
   onToggle,
-  emptyLabel = "אין חברי צוות זמינים.",
+  emptyLabel,
 }: {
   members: MemberDTO[];
   selected: Set<string>;
   onToggle: (id: string) => void;
   emptyLabel?: string;
 }) {
+  const t = useT();
   if (members.length === 0) {
     return (
       <p className="px-1 py-6 text-center text-sm text-muted-foreground">
-        {emptyLabel}
+        {emptyLabel ?? t("messages.memberPicker.empty")}
       </p>
     );
   }
@@ -56,7 +58,7 @@ export function MemberMultiSelect({
             aria-checked={isSel}
             onClick={() => onToggle(m.id)}
             className={cn(
-              "flex w-full items-center gap-3 border-b border-border px-3 py-3 text-right transition-colors last:border-b-0",
+              "flex w-full items-center gap-3 border-b border-border px-3 py-3 text-start transition-colors last:border-b-0",
               isSel ? "bg-primary/5" : "hover:bg-muted/50",
             )}
           >

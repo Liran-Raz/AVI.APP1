@@ -5,6 +5,7 @@ import { XIcon } from "lucide-react";
 import { Dialog as DialogPrimitive } from "radix-ui";
 
 import { cn } from "@/lib/utils";
+import { useT } from "@/i18n/locale-provider";
 
 // A responsive modal: a bottom-sheet on mobile (slides up, rounded top, full-width),
 // a centered card on sm+. Built on Radix Dialog primitives directly so its positioning
@@ -28,6 +29,7 @@ export function ResponsiveModal({
   children: React.ReactNode;
   dismissible?: boolean;
 }) {
+  const t = useT();
   return (
     <DialogPrimitive.Root open={open} onOpenChange={onOpenChange}>
       <DialogPrimitive.Portal>
@@ -64,7 +66,7 @@ export function ResponsiveModal({
             </DialogPrimitive.Title>
             <DialogPrimitive.Close
               className="ms-auto rounded-md p-1 text-muted-foreground opacity-80 transition-opacity hover:opacity-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              aria-label="סגירה"
+              aria-label={t("common.close")}
             >
               <XIcon className="size-5" />
             </DialogPrimitive.Close>

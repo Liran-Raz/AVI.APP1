@@ -9,6 +9,8 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
+import { useT, useLocale } from "@/i18n/locale-provider";
+import { dirFor } from "@/i18n/config";
 import type { MessageDTO, ReadRecipientDTO } from "@/lib/api-client";
 
 const EDIT_WINDOW_MS = 10 * 60 * 1000; // 10 minutes (matches the DB policy)
@@ -45,6 +47,8 @@ export function MessageItem({
   onEdit: (id: string, body: string) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
 }) {
+  const t = useT();
+  const dir = dirFor(useLocale());
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(message.body);
@@ -58,8 +62,8 @@ export function MessageItem({
   const bubbleClass = cn(
     "max-w-[78%] rounded-2xl px-3 py-2 text-sm shadow-card",
     mine
-      ? "rounded-bl-sm bg-primary text-primary-foreground"
-      : "glass-card rounded-br-sm border border-border",
+      ? "rounded-ee-sm bg-primary text-primary-foreground"
+      : "glass-card rounded-es-sm border border-border",
   );
 
   // ----- deleted tombstone -----
@@ -69,11 +73,11 @@ export function MessageItem({
         <div
           className={cn(
             "flex max-w-[78%] items-center gap-1.5 rounded-2xl border border-dashed border-border bg-muted/30 px-3 py-2 text-sm italic text-muted-foreground",
-            mine ? "rounded-bl-sm" : "rounded-br-sm",
+            mine ? "rounded-ee-sm" : "rounded-es-sm",
           )}
         >
           <Trash2 className="size-3.5 opacity-70" />
-          הודעה נמחקה
+          {t("messages.item.deleted")}
         </div>
       </div>
     );
@@ -101,7 +105,7 @@ export function MessageItem({
               disabled={busy}
               className="rounded-md px-2 py-1 text-xs font-medium text-white/85 hover:bg-white/15"
             >
-              ביטול
+              {t("common.cancel")}
             </button>
             <button
               type="button"
@@ -125,7 +129,7 @@ export function MessageItem({
               className="inline-flex items-center gap-1 rounded-md bg-white/20 px-2.5 py-1 text-xs font-semibold text-white hover:bg-white/30 disabled:opacity-50"
             >
               {busy ? <Loader2 className="size-3 animate-spin" /> : null}
-              שמור
+              {t("messages.item.save")}
             </button>
           </div>
         </div>
@@ -148,7 +152,9 @@ export function MessageItem({
         )}
         dir="ltr"
       >
-        {message.editedAt ? <span className="italic">נערך</span> : null}
+        {message.editedAt ? (
+          <span className="italic">{t("messages.item.edited")}</span>
+        ) : null}
         {message.editedAt ? <span>·</span> : null}
         <span>{fmtTime(message.createdAt)}</span>
         {mine ? (
@@ -182,17 +188,17 @@ export function MessageItem({
         }}
       >
         <PopoverTrigger asChild>
-          <button type="button" className="max-w-full text-right">
+          <button type="button" className="max-w-full text-start">
             {bubbleInner}
           </button>
         </PopoverTrigger>
         <PopoverContent
           align="start"
           className="w-72 overflow-hidden p-0"
-          dir="rtl"
+          dir={dir}
         >
           <div className="border-b border-border px-3 py-2 text-xs font-bold text-muted-foreground">
-            נקרא ע״י{" "}
+            {t("messages.item.readBy")}{" "}
             {recipients.length > 0
               ? `(${recipients.filter((r) => isRead(r, message.createdAt)).length}/${recipients.length})`
               : ""}
@@ -200,7 +206,7 @@ export function MessageItem({
           <div className="max-h-56 overflow-y-auto">
             {recipients.length === 0 ? (
               <p className="px-3 py-3 text-xs text-muted-foreground">
-                אין נמענים.
+                {t("messages.item.noRecipients")}
               </p>
             ) : (
               recipients.map((r) => {
@@ -222,7 +228,9 @@ export function MessageItem({
                         read ? "text-[#2563eb]" : "text-muted-foreground",
                       )}
                     >
-                      {read && r.lastReadAt ? `✓ ${fmtTime(r.lastReadAt)}` : "טרם"}
+                      {read && r.lastReadAt
+                        ? `✓ ${fmtTime(r.lastReadAt)}`
+                        : t("messages.item.notYet")}
                     </span>
                   </div>
                 );
@@ -241,13 +249,13 @@ export function MessageItem({
                 className="flex flex-1 items-center justify-center gap-1.5 py-2.5 text-[13px] font-semibold text-primary hover:bg-primary/5"
               >
                 <Pencil className="size-4" />
-                ערוך
+                {t("messages.item.edit")}
               </button>
               <button
                 type="button"
                 disabled={busy}
                 onClick={async () => {
-                  if (!window.confirm("למחוק את ההודעה?")) return;
+                  if (!window.confirm(t("messages.item.confirmDelete"))) return;
                   setBusy(true);
                   try {
                     await onDelete(message.id);
@@ -256,10 +264,10 @@ export function MessageItem({
                     setBusy(false);
                   }
                 }}
-                className="flex flex-1 items-center justify-center gap-1.5 border-r border-border py-2.5 text-[13px] font-semibold text-destructive hover:bg-destructive/5"
+                className="flex flex-1 items-center justify-center gap-1.5 border-s border-border py-2.5 text-[13px] font-semibold text-destructive hover:bg-destructive/5"
               >
                 <Trash2 className="size-4" />
-                מחק
+                {t("messages.item.delete")}
               </button>
             </div>
           ) : null}
