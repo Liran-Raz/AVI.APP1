@@ -24,10 +24,11 @@ import {
 } from "@/components/ui/dropdown-menu";
 import type { ClientDTO, TaskDTO } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
+import { intlLocale } from "@/i18n/config";
+import { useLocale, useT } from "@/i18n/locale-provider";
+import type { MessageKey } from "@/i18n/messages-types";
 
 import {
-  PRIORITY_LABELS,
-  STATUS_LABELS,
   dueState,
   formatCreatedAt,
   formatDueAt,
@@ -74,6 +75,8 @@ export function TaskCard({
   onRestore,
   onReturnToWork,
 }: Props) {
+  const t = useT();
+  const localeTag = intlLocale(useLocale());
   const next = nextStatus(task.status);
   const isArchived = task.archivedAt !== null;
   const isDeleted = task.deletedAt !== null;
@@ -87,7 +90,7 @@ export function TaskCard({
             variant="outline"
             className={cn("text-xs font-medium px-2 py-0.5", PRIORITY_CLASS[task.priority])}
           >
-            {PRIORITY_LABELS[task.priority]}
+            {t(`taskPriority.${task.priority}` as MessageKey)}
           </Badge>
           <span className="inline-flex items-center rounded-md border border-border/70 bg-muted/40 px-2 py-0.5 font-mono text-xs font-semibold text-foreground/80 tabular-nums tracking-widest">
             {formatTaskNumber(task.taskNumber)}
@@ -100,7 +103,7 @@ export function TaskCard({
               variant="ghost"
               size="icon"
               className="size-7 opacity-60 group-hover:opacity-100"
-              aria-label={`פעולות עבור ${task.title}`}
+              aria-label={t("tasks.card.actionsFor", { title: task.title })}
             >
               <MoreHorizontal className="size-4" />
             </Button>
@@ -108,37 +111,39 @@ export function TaskCard({
           <DropdownMenuContent align="end" className="w-44">
             <DropdownMenuItem onClick={() => onEdit(task)}>
               <Pencil className="size-4" />
-              ערוך
+              {t("tasks.card.editAction")}
             </DropdownMenuItem>
             {next && !isDeleted && !isArchived && (
               <DropdownMenuItem onClick={() => onAdvance(task)}>
                 <ArrowLeft className="size-4" />
-                העבר ל-{STATUS_LABELS[next]}
+                {t("tasks.card.advanceTo", {
+                  status: t(`taskStatus.${next}` as MessageKey),
+                })}
               </DropdownMenuItem>
             )}
             {task.status === "in_progress" && !isDeleted && !isArchived && (
               <DropdownMenuItem onClick={() => onReturnToWork(task)}>
                 <RotateCcw className="size-4" />
-                החזר לחדשות
+                {t("tasks.card.returnToNew")}
               </DropdownMenuItem>
             )}
             {task.status === "done" && !isDeleted && !isArchived && (
               <DropdownMenuItem onClick={() => onReturnToWork(task)}>
                 <RotateCcw className="size-4" />
-                החזר לביצוע
+                {t("tasks.card.returnToWork")}
               </DropdownMenuItem>
             )}
             <DropdownMenuSeparator />
             {!isDeleted && !isArchived && (
               <DropdownMenuItem onClick={() => onArchive(task)}>
                 <Archive className="size-4" />
-                העבר לארכיון
+                {t("tasks.card.archive")}
               </DropdownMenuItem>
             )}
             {isArchived && !isDeleted && (
               <DropdownMenuItem onClick={() => onUnarchive(task)}>
                 <ArchiveRestore className="size-4" />
-                החזר מארכיון
+                {t("tasks.card.unarchive")}
               </DropdownMenuItem>
             )}
             {!isDeleted && (
@@ -147,13 +152,13 @@ export function TaskCard({
                 className="text-destructive focus:text-destructive"
               >
                 <Trash2 className="size-4" />
-                מחק (לפח)
+                {t("tasks.card.delete")}
               </DropdownMenuItem>
             )}
             {isDeleted && (
               <DropdownMenuItem onClick={() => onRestore(task)}>
                 <Undo2 className="size-4" />
-                שחזר מהפח
+                {t("tasks.card.restore")}
               </DropdownMenuItem>
             )}
           </DropdownMenuContent>
@@ -171,7 +176,8 @@ export function TaskCard({
 
       {clientName && (
         <p className="text-xs text-muted-foreground truncate">
-          לקוח: <span className="text-foreground">{clientName}</span>
+          {t("tasks.card.client")}{" "}
+          <span className="text-foreground">{clientName}</span>
         </p>
       )}
 
@@ -184,26 +190,30 @@ export function TaskCard({
             )}
           >
             <CalendarClock className="size-3" />
-            {formatDueAt(task.dueAt)}
+            {formatDueAt(task.dueAt, localeTag)}
           </div>
         ) : (
-          <span className="text-xs text-muted-foreground/70">ללא תאריך יעד</span>
+          <span className="text-xs text-muted-foreground/70">
+            {t("tasks.card.noDueDate")}
+          </span>
         )}
         {isArchived && (
           <Badge variant="outline" className="text-[10px] uppercase">
-            ארכיון
+            {t("tasks.card.archivedBadge")}
           </Badge>
         )}
         {isDeleted && (
           <Badge variant="outline" className="text-[10px] uppercase text-destructive">
-            בפח
+            {t("tasks.card.trashedBadge")}
           </Badge>
         )}
       </div>
 
       <p className="flex items-center gap-1 text-xs text-muted-foreground">
         <Clock className="size-3 shrink-0" aria-hidden />
-        נוצרה ב־{formatCreatedAt(task.createdAt)}
+        {t("tasks.card.createdAt", {
+          date: formatCreatedAt(task.createdAt, localeTag),
+        })}
       </p>
     </div>
   );

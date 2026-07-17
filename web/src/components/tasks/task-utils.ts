@@ -1,32 +1,10 @@
-// Hebrew labels and helper mappings for tasks UI. Kept in one place so
-// the Kanban columns, the card chips, the form selects, and the filter
-// menus render the same text and respect the same status grouping.
+// Helper mappings for the tasks UI. The user-facing labels (statuses,
+// priorities, lifecycle filters, Kanban column headers) live in the i18n
+// catalogs (taskStatus.* / taskPriority.* / lifecycle.* / kanban.*) and are
+// rendered via t() in the consumer components. This module keeps the status
+// grouping plus the date/number helpers the columns and cards share.
 
-import type {
-  LifecycleFilter,
-  TaskPriorityValue,
-  TaskStatusValue,
-} from "@/lib/api-client";
-
-export const STATUS_LABELS: Record<TaskStatusValue, string> = {
-  new: "חדשה",
-  received: "התקבל", // legacy: retired from the flow, kept for defensive rendering
-  in_progress: "במעקב",
-  done: "הושלמה",
-};
-
-export const PRIORITY_LABELS: Record<TaskPriorityValue, string> = {
-  urgent: "דחוף",
-  normal: "רגיל",
-  optional: "עתידי",
-};
-
-export const LIFECYCLE_LABELS: Record<LifecycleFilter, string> = {
-  active: "פעילות",
-  archived: "בארכיון",
-  deleted: "מחוקות",
-  all: "הכל",
-};
+import type { TaskStatusValue } from "@/lib/api-client";
 
 // Personal-board columns (Stage 12 Round C). The list query (boardFor) already
 // returns exactly the viewer's assignee-side new/in_progress tasks plus their
@@ -37,14 +15,15 @@ export const LIFECYCLE_LABELS: Record<LifecycleFilter, string> = {
 // 'received' is legacy and buckets with "חדשות" defensively (none are produced).
 export type KanbanColumnKey = "todo" | "in_progress" | "done";
 
+// The column header text is rendered via t(`kanban.${key}`) in the consumer;
+// only the structural key + status grouping live here.
 export const KANBAN_COLUMNS: ReadonlyArray<{
   key: KanbanColumnKey;
-  label: string;
   statuses: ReadonlyArray<TaskStatusValue>;
 }> = [
-  { key: "todo", label: "חדשות", statuses: ["new", "received"] },
-  { key: "in_progress", label: "במעקב", statuses: ["in_progress"] },
-  { key: "done", label: "הושלמו", statuses: ["done"] },
+  { key: "todo", statuses: ["new", "received"] },
+  { key: "in_progress", statuses: ["in_progress"] },
+  { key: "done", statuses: ["done"] },
 ];
 
 export function kanbanColumnForStatus(
@@ -74,13 +53,14 @@ export function nextStatus(status: TaskStatusValue): TaskStatusValue | null {
   }
 }
 
-// Format a due_at ISO timestamp as a short Hebrew date+time string.
-// "יום שני, 26 במאי 18:00".
-export function formatDueAt(iso: string | null): string {
+// Format a due_at ISO timestamp as a short date+time string in the active UI
+// locale. "יום שני, 26 במאי 18:00". `localeTag` is a BCP-47 tag from
+// intlLocale(useLocale()).
+export function formatDueAt(iso: string | null, localeTag: string): string {
   if (!iso) return "";
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleString("he-IL", {
+  return d.toLocaleString(localeTag, {
     weekday: "short",
     day: "numeric",
     month: "long",
@@ -95,11 +75,12 @@ export function formatTaskNumber(n: number): string {
   return `#${String(n).padStart(4, "0")}`;
 }
 
-// Creation timestamp for the card ("נוצרה ב…"). Short he-IL date + time.
-export function formatCreatedAt(iso: string): string {
+// Creation timestamp for the card ("נוצרה ב…"). Short date + time in the
+// active UI locale. `localeTag` is a BCP-47 tag from intlLocale(useLocale()).
+export function formatCreatedAt(iso: string, localeTag: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "";
-  return d.toLocaleString("he-IL", {
+  return d.toLocaleString(localeTag, {
     day: "numeric",
     month: "short",
     year: "numeric",

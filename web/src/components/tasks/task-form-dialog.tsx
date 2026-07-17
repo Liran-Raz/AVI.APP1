@@ -34,9 +34,10 @@ import {
   type TaskDTO,
   type UpdateTaskPayload,
 } from "@/lib/api-client";
+import { useT } from "@/i18n/locale-provider";
+import type { MessageKey } from "@/i18n/messages-types";
 
 import {
-  PRIORITY_LABELS,
   defaultDueAtLocal,
   isoToLocalDatetime,
   localDatetimeToISO,
@@ -108,6 +109,7 @@ export function TaskFormDialog({
   defaultWithDueDate = false,
   onSaved,
 }: Props) {
+  const t = useT();
   const formKey = mode === "edit" ? (initial?.id ?? "edit") : "create";
 
   return (
@@ -115,12 +117,12 @@ export function TaskFormDialog({
       <DialogContent className="sm:max-w-xl">
         <DialogHeader>
           <DialogTitle>
-            {mode === "create" ? "משימה חדשה" : "עריכת משימה"}
+            {mode === "create" ? t("tasks.newTask") : t("tasks.form.editTitle")}
           </DialogTitle>
           <DialogDescription>
             {mode === "create"
-              ? "הוספת משימה חדשה לתור."
-              : "עדכון פרטי המשימה."}
+              ? t("tasks.form.createDesc")
+              : t("tasks.form.editDesc")}
           </DialogDescription>
         </DialogHeader>
 
@@ -162,6 +164,7 @@ function TaskFormBody({
   onCancel: () => void;
   onSaved: (saved: TaskDTO) => void;
 }) {
+  const t = useT();
   const [form, setForm] = useState<FormState>(() =>
     mode === "edit" && initial
       ? stateFromTask(initial, currentUserId)
@@ -205,15 +208,15 @@ function TaskFormBody({
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!form.title.trim()) {
-      setError("כותרת המשימה היא שדה חובה");
+      setError(t("tasks.form.titleRequired"));
       return;
     }
     if (!form.assignedTo) {
-      setError("יש לבחור איש צוות לביצוע");
+      setError(t("tasks.form.assigneeRequired"));
       return;
     }
     if (form.hasDueDate && !form.dueAtLocal) {
-      setError("יש לבחור תאריך יעד או לבטל את הסימון");
+      setError(t("tasks.form.dueDateRequired"));
       return;
     }
     setSubmitting(true);
@@ -223,15 +226,19 @@ function TaskFormBody({
         mode === "create"
           ? await apiClient.tasks.create(buildCreatePayload())
           : await apiClient.tasks.update(initial!.id, buildUpdatePayload());
-      toast.success(mode === "create" ? "משימה נוצרה" : "משימה עודכנה");
+      toast.success(
+        mode === "create"
+          ? t("tasks.form.createdToast")
+          : t("tasks.form.updatedToast"),
+      );
       onSaved(saved);
     } catch (err) {
       if (err instanceof ApiError) {
         setError(err.message);
-        toast.error(`שגיאה: ${err.message}`);
+        toast.error(t("tasks.errorWithMessage", { message: err.message }));
       } else {
-        setError("שגיאה לא צפויה");
-        toast.error("שגיאה לא צפויה");
+        setError(t("common.unexpectedError"));
+        toast.error(t("common.unexpectedError"));
         console.error(err);
       }
     } finally {
@@ -246,7 +253,8 @@ function TaskFormBody({
     >
       <div className="space-y-2 sm:col-span-2">
         <Label htmlFor="task-title">
-          כותרת <span className="text-destructive">*</span>
+          {t("tasks.form.titleLabel")}{" "}
+          <span className="text-destructive">*</span>
         </Label>
         <Input
           id="task-title"
@@ -259,7 +267,9 @@ function TaskFormBody({
       </div>
 
       <div className="space-y-2 sm:col-span-2">
-        <Label htmlFor="task-description">תיאור</Label>
+        <Label htmlFor="task-description">
+          {t("tasks.form.descriptionLabel")}
+        </Label>
         <Textarea
           id="task-description"
           value={form.description}
@@ -270,7 +280,7 @@ function TaskFormBody({
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="task-priority">עדיפות</Label>
+        <Label htmlFor="task-priority">{t("tasks.form.priorityLabel")}</Label>
         <Select
           value={form.priority}
           onValueChange={(v) => set("priority", v as TaskDTO["priority"])}
@@ -281,7 +291,7 @@ function TaskFormBody({
           <SelectContent>
             {TASK_PRIORITIES.map((p) => (
               <SelectItem key={p} value={p}>
-                {PRIORITY_LABELS[p]}
+                {t(`taskPriority.${p}` as MessageKey)}
               </SelectItem>
             ))}
           </SelectContent>
@@ -290,21 +300,22 @@ function TaskFormBody({
 
       <div className="space-y-2">
         <Label htmlFor="task-assignee">
-          איש צוות לביצוע <span className="text-destructive">*</span>
+          {t("tasks.form.assigneeLabel")}{" "}
+          <span className="text-destructive">*</span>
         </Label>
         <Select
           value={form.assignedTo}
           onValueChange={(v) => set("assignedTo", v)}
         >
           <SelectTrigger id="task-assignee" className="w-full">
-            <SelectValue placeholder="בחר איש צוות" />
+            <SelectValue placeholder={t("tasks.form.assigneePlaceholder")} />
           </SelectTrigger>
           <SelectContent>
             {assigneeOptions.map((m) => (
               <SelectItem key={m.id} value={m.id}>
                 {m.fullName}
-                {m.id === currentUserId ? " (אני)" : ""}
-                {!m.isActive ? " (לא פעיל)" : ""}
+                {m.id === currentUserId ? t("tasks.form.assigneeMe") : ""}
+                {!m.isActive ? t("tasks.form.assigneeInactive") : ""}
               </SelectItem>
             ))}
           </SelectContent>
@@ -312,16 +323,16 @@ function TaskFormBody({
       </div>
 
       <div className="space-y-2 sm:col-span-2">
-        <Label htmlFor="task-client">לקוח (אופציונלי)</Label>
+        <Label htmlFor="task-client">{t("tasks.form.clientLabel")}</Label>
         <Select
           value={form.clientId}
           onValueChange={(v) => set("clientId", v)}
         >
           <SelectTrigger id="task-client" className="w-full">
-            <SelectValue placeholder="בחר לקוח" />
+            <SelectValue placeholder={t("tasks.form.clientPlaceholder")} />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value={NONE}>ללא לקוח</SelectItem>
+            <SelectItem value={NONE}>{t("tasks.form.noClient")}</SelectItem>
             {clients.map((c) => (
               <SelectItem key={c.id} value={c.id}>
                 {c.name}
@@ -339,7 +350,7 @@ function TaskFormBody({
             onCheckedChange={(c) => set("hasDueDate", c === true)}
           />
           <Label htmlFor="task-has-due" className="cursor-pointer">
-            האם להוסיף תאריך יעד?
+            {t("tasks.form.addDueDate")}
           </Label>
         </div>
         {form.hasDueDate && (
@@ -348,7 +359,7 @@ function TaskFormBody({
             type="datetime-local"
             value={form.dueAtLocal}
             onChange={(e) => set("dueAtLocal", e.target.value)}
-            aria-label="תאריך יעד"
+            aria-label={t("tasks.form.dueDateAria")}
           />
         )}
       </div>
@@ -364,11 +375,11 @@ function TaskFormBody({
           onClick={onCancel}
           disabled={submitting}
         >
-          ביטול
+          {t("common.cancel")}
         </Button>
         <Button type="submit" disabled={submitting}>
           {submitting && <Loader2 className="size-4 animate-spin" />}
-          {mode === "create" ? "צור משימה" : "שמור שינויים"}
+          {mode === "create" ? t("tasks.form.submitCreate") : t("tasks.form.submitSave")}
         </Button>
       </DialogFooter>
     </form>
