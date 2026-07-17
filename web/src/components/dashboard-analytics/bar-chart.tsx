@@ -1,9 +1,14 @@
+"use client";
+
+import { intlLocale } from "@/i18n/config";
+import { useLocale, useT } from "@/i18n/locale-provider";
+
 // Horizontal bar chart for the owner dashboard (Stage 13 R4). Hand-rolled, no
 // chart library. Rendered with HTML/CSS rather than SVG <rect>s on purpose:
 // the category labels are Hebrew and the app is RTL, and CSS blocks give
 // bulletproof right-to-left layout + crisp text where SVG text bidi is fiddly.
 // Each fill grows from the inline-start (the right edge in RTL) — the natural
-// direction. Bars are scaled to the largest value in the set. Server-renderable.
+// direction. Bars are scaled to the largest value in the set.
 
 export type BarItem = {
   key: string;
@@ -14,15 +19,18 @@ export type BarItem = {
 
 export function BarChart({
   items,
-  emptyLabel = "אין נתונים",
+  emptyLabel,
 }: {
   items: BarItem[];
   emptyLabel?: string;
 }) {
+  const t = useT();
+  const localeTag = intlLocale(useLocale());
+
   if (items.length === 0) {
     return (
       <div className="text-sm text-muted-foreground py-8 text-center">
-        {emptyLabel}
+        {emptyLabel ?? t("dashboard.chart.noData")}
       </div>
     );
   }
@@ -36,7 +44,7 @@ export function BarChart({
         return (
           <li key={item.key} className="flex items-center gap-3">
             <span
-              className="w-28 shrink-0 truncate text-sm text-foreground text-right"
+              className="w-28 shrink-0 truncate text-sm text-foreground text-start"
               title={item.label}
             >
               {item.label}
@@ -54,8 +62,8 @@ export function BarChart({
                 }}
               />
             </div>
-            <span className="w-8 shrink-0 text-sm tabular-nums text-muted-foreground text-left">
-              {item.count.toLocaleString("he-IL")}
+            <span className="w-8 shrink-0 text-sm tabular-nums text-muted-foreground text-end">
+              {item.count.toLocaleString(localeTag)}
             </span>
           </li>
         );

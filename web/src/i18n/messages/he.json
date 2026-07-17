@@ -404,5 +404,39 @@
   "roles.form.duplicatedToast": "התפקיד שוכפל",
   "roles.form.submitCreate": "צור תפקיד",
   "roles.form.submitDuplicate": "שכפל",
-  "roles.form.submitSave": "שמור שינויים"
+  "roles.form.submitSave": "שמור שינויים",
+
+  "dashboard.title": "דשבורד ניהולי",
+  "dashboard.updatedAt": "עודכן {date}",
+  "dashboard.truncatedNote": "מוצג מדגם חלקי של המשימות (נפח גדול) — המספרים עשויים להיות נמוכים מהערך המלא.",
+
+  "dashboard.kpi.active": "סה\"כ פעילות",
+  "dashboard.kpi.open": "פתוחות",
+  "dashboard.kpi.done": "הושלמו",
+  "dashboard.kpi.overdue": "באיחור",
+  "dashboard.kpi.overdueHint": "תאריך יעד עבר, טרם הושלמו",
+
+  "dashboard.chart.byStatus.title": "פילוח לפי סטטוס",
+  "dashboard.chart.byStatus.subtitle": "כל המשימות הפעילות",
+  "dashboard.chart.byStatus.center": "משימות",
+  "dashboard.donut.aria": "פילוח לפי סטטוס, סה\"כ {total}",
+  "dashboard.chart.byPriority.title": "לפי עדיפות",
+  "dashboard.chart.byMember.title": "עומס לפי איש צוות",
+  "dashboard.chart.byMember.subtitle": "משימות פתוחות (חדשות + במעקב)",
+  "dashboard.chart.byMember.empty": "אין משימות פתוחות",
+  "dashboard.chart.trend.title": "קצב — נוצרו מול הושלמו",
+  "dashboard.chart.trend.subtitle": "8 השבועות האחרונים",
+  "dashboard.chart.topClients.title": "לקוחות מובילים",
+  "dashboard.chart.topClients.subtitle": "לפי מספר משימות פעילות",
+  "dashboard.chart.noData": "אין נתונים",
+
+  "dashboard.trend.created": "נוצרו",
+  "dashboard.trend.completed": "הושלמו",
+  "dashboard.trend.aria": "נוצרו מול הושלמו ב-8 השבועות האחרונים",
+  "dashboard.trend.tooltipCompleted": "שבוע {week} — הושלמו: {count}",
+  "dashboard.trend.tooltipCreated": "שבוע {week} — נוצרו: {count}",
+
+  "dashboard.noAccess.title": "אין לך הרשאה לצפות בדשבורד",
+  "dashboard.noAccess.body": "הדשבורד הניהולי פתוח לבעל המשרד ולחברי צוות שהבעלים העניק להם גישה. אם לדעתך צריכה להיות לך גישה — פנה/י לבעל המשרד.",
+  "dashboard.noAccess.back": "חזרה לתור המשימות"
 }
