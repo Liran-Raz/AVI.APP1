@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
 import { formatDistanceToNow } from "date-fns";
-import { he } from "date-fns/locale";
+import { he, enGB } from "date-fns/locale";
 import { Bell, Check, CheckCheck, Loader2 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
@@ -22,10 +22,12 @@ import {
   type NotificationDTO,
 } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
+import { useT, useLocale } from "@/i18n/locale-provider";
 
 const POLL_INTERVAL_MS = 3_000; // 3s — lightweight unread-count probe (paused when the tab is hidden)
 
 export function NotificationBell() {
+  const t = useT();
   const [unreadCount, setUnreadCount] = useState(0);
   const [items, setItems] = useState<NotificationDTO[] | null>(null);
   const [loading, setLoading] = useState(false);
@@ -77,9 +79,12 @@ export function NotificationBell() {
           setUnreadCount(result.unreadCount);
         }
       } catch (err) {
-        if (err instanceof ApiError) toast.error(`שגיאה: ${err.message}`);
+        if (err instanceof ApiError)
+          toast.error(
+            t("notifications.bell.errorWithMessage", { message: err.message }),
+          );
         else {
-          toast.error("שגיאה לא צפויה");
+          toast.error(t("common.unexpectedError"));
           console.error(err);
         }
       } finally {
@@ -89,7 +94,7 @@ export function NotificationBell() {
     return () => {
       cancelled = true;
     };
-  }, [popoverOpen]);
+  }, [popoverOpen, t]);
 
   async function handleMarkRead(n: NotificationDTO) {
     if (n.readAt) return;
@@ -105,7 +110,10 @@ export function NotificationBell() {
     try {
       await apiClient.notifications.markRead(n.id);
     } catch (err) {
-      if (err instanceof ApiError) toast.error(`שגיאה: ${err.message}`);
+      if (err instanceof ApiError)
+        toast.error(
+          t("notifications.bell.errorWithMessage", { message: err.message }),
+        );
       // Revert on failure
       void refreshCount();
     }
@@ -123,9 +131,12 @@ export function NotificationBell() {
     setUnreadCount(0);
     try {
       await apiClient.notifications.markAllRead();
-      toast.success(`סומנו ${before} התראות כנקראו`);
+      toast.success(t("notifications.bell.markedAllRead", { count: before }));
     } catch (err) {
-      if (err instanceof ApiError) toast.error(`שגיאה: ${err.message}`);
+      if (err instanceof ApiError)
+        toast.error(
+          t("notifications.bell.errorWithMessage", { message: err.message }),
+        );
       void refreshCount();
     }
   }
@@ -138,14 +149,19 @@ export function NotificationBell() {
         <Button
           variant="ghost"
           size="icon"
-          aria-label={`התראות${hasUnread ? ` (${unreadCount} חדשות)` : ""}`}
+          aria-label={
+            t("notifications.bell.title") +
+            (hasUnread
+              ? t("notifications.bell.unreadSuffix", { count: unreadCount })
+              : "")
+          }
           className="relative"
         >
           <Bell className="size-5" />
           {hasUnread && (
             <Badge
               variant="outline"
-              className="absolute -top-1 -left-1 size-4 min-w-4 px-1 py-0 text-[10px] font-bold bg-destructive text-destructive-foreground border-destructive justify-center"
+              className="absolute -top-1 -end-1 size-4 min-w-4 px-1 py-0 text-[10px] font-bold bg-destructive text-destructive-foreground border-destructive justify-center"
             >
               {unreadCount > 9 ? "9+" : unreadCount}
             </Badge>
@@ -154,7 +170,7 @@ export function NotificationBell() {
       </PopoverTrigger>
       <PopoverContent align="end" className="w-80 p-0">
         <div className="flex items-center justify-between p-3">
-          <h3 className="font-semibold text-sm">התראות</h3>
+          <h3 className="font-semibold text-sm">{t("notifications.bell.title")}</h3>
           {hasUnread && (
             <Button
               variant="ghost"
@@ -163,7 +179,7 @@ export function NotificationBell() {
               onClick={handleMarkAllRead}
             >
               <CheckCheck className="size-3" />
-              סמן הכל כנקרא
+              {t("notifications.bell.markAllRead")}
             </Button>
           )}
         </div>
@@ -186,7 +202,7 @@ export function NotificationBell() {
             </div>
           ) : (
             <div className="p-6 text-center text-sm text-muted-foreground">
-              אין התראות.
+              {t("notifications.bell.empty")}
             </div>
           )}
         </ScrollArea>
@@ -204,9 +220,11 @@ function NotificationItem({
   onMarkRead: () => void;
   onClick: () => void;
 }) {
+  const t = useT();
+  const locale = useLocale();
   const unread = notification.readAt === null;
   const when = formatDistanceToNow(new Date(notification.createdAt), {
-    locale: he,
+    locale: locale === "he" ? he : enGB,
     addSuffix: true,
   });
   // Link the notification to the task it references when possible.
@@ -247,7 +265,7 @@ function NotificationItem({
             e.stopPropagation();
             onMarkRead();
           }}
-          aria-label="סמן כנקרא"
+          aria-label={t("notifications.bell.markRead")}
         >
           <Check className="size-3" />
         </Button>

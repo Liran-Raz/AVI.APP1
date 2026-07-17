@@ -22,6 +22,7 @@ import {
   type GroupDetailDTO,
   type MemberDTO,
 } from "@/lib/api-client";
+import { useT } from "@/i18n/locale-provider";
 import { ResponsiveModal } from "./responsive-modal";
 import { MemberMultiSelect, toggleInSet } from "./member-multi-select";
 
@@ -50,6 +51,7 @@ export function GroupManageDialog({
   onChanged: (detail: GroupDetailDTO) => void; // title/members changed
   onLeftOrDeleted: () => void; // I left, or the group was deleted
 }) {
+  const t = useT();
   const [detail, setDetail] = useState<GroupDetailDTO | null>(null);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -73,7 +75,9 @@ export function GroupManageDialog({
       } catch (err) {
         if (cancelled) return;
         toast.error(
-          err instanceof ApiError ? err.message : "טעינת הקבוצה נכשלה",
+          err instanceof ApiError
+            ? err.message
+            : t("messages.manageGroup.loadFailed"),
         );
         onOpenChange(false);
       } finally {
@@ -108,9 +112,13 @@ export function GroupManageDialog({
       const d = await apiClient.conversations.rename(detail.id, { title: name });
       applyDetail(d);
       setEditingName(false);
-      toast.success("שם הקבוצה עודכן");
+      toast.success(t("messages.manageGroup.renamedToast"));
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "עדכון השם נכשל");
+      toast.error(
+        err instanceof ApiError
+          ? err.message
+          : t("messages.manageGroup.renameFailed"),
+      );
     } finally {
       setBusy(false);
     }
@@ -122,9 +130,13 @@ export function GroupManageDialog({
     try {
       const d = await apiClient.conversations.removeMember(detail.id, userId);
       applyDetail(d);
-      toast.success("החבר הוסר מהקבוצה");
+      toast.success(t("messages.manageGroup.memberRemovedToast"));
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "הסרת החבר נכשלה");
+      toast.error(
+        err instanceof ApiError
+          ? err.message
+          : t("messages.manageGroup.removeMemberFailed"),
+      );
     } finally {
       setBusy(false);
     }
@@ -146,9 +158,13 @@ export function GroupManageDialog({
       }
       setAddSelected(new Set());
       setMode("view");
-      toast.success("החברים נוספו");
+      toast.success(t("messages.manageGroup.membersAddedToast"));
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "הוספת החברים נכשלה");
+      toast.error(
+        err instanceof ApiError
+          ? err.message
+          : t("messages.manageGroup.addMembersFailed"),
+      );
     } finally {
       if (added > 0) applyDetail(latest); // reflect the members that actually joined
       setBusy(false);
@@ -157,15 +173,24 @@ export function GroupManageDialog({
 
   async function leave() {
     if (!detail || busy) return;
-    if (!window.confirm(`לעזוב את הקבוצה "${detail.title}"?`)) return;
+    if (
+      !window.confirm(
+        t("messages.manageGroup.confirmLeave", { title: detail.title }),
+      )
+    )
+      return;
     setBusy(true);
     try {
       await apiClient.conversations.leave(detail.id);
-      toast.success("עזבת את הקבוצה");
+      toast.success(t("messages.manageGroup.leftToast"));
       onOpenChange(false);
       onLeftOrDeleted();
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "עזיבת הקבוצה נכשלה");
+      toast.error(
+        err instanceof ApiError
+          ? err.message
+          : t("messages.manageGroup.leaveFailed"),
+      );
     } finally {
       setBusy(false);
     }
@@ -175,18 +200,22 @@ export function GroupManageDialog({
     if (!detail || busy) return;
     if (
       !window.confirm(
-        `למחוק את הקבוצה "${detail.title}" לכל החברים? פעולה זו אינה הפיכה.`,
+        t("messages.manageGroup.confirmDelete", { title: detail.title }),
       )
     )
       return;
     setBusy(true);
     try {
       await apiClient.conversations.remove(detail.id);
-      toast.success("הקבוצה נמחקה");
+      toast.success(t("messages.manageGroup.deletedToast"));
       onOpenChange(false);
       onLeftOrDeleted();
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "מחיקת הקבוצה נכשלה");
+      toast.error(
+        err instanceof ApiError
+          ? err.message
+          : t("messages.manageGroup.deleteFailed"),
+      );
     } finally {
       setBusy(false);
     }
@@ -196,7 +225,10 @@ export function GroupManageDialog({
     (m) => m.isActive && !detail?.members.some((x) => x.id === m.id),
   );
 
-  const title = mode === "add" ? "הוספת חברים" : "פרטי הקבוצה";
+  const title =
+    mode === "add"
+      ? t("messages.manageGroup.addMembersTitle")
+      : t("messages.manageGroup.detailTitle");
 
   const footer =
     loading || !detail ? null : mode === "add" ? (
@@ -207,7 +239,8 @@ export function GroupManageDialog({
           className="gap-2"
         >
           {busy ? <Loader2 className="size-4 animate-spin" /> : null}
-          הוסף {addSelected.size > 0 ? `(${addSelected.size})` : ""}
+          {t("messages.manageGroup.addButton")}{" "}
+          {addSelected.size > 0 ? `(${addSelected.size})` : ""}
         </Button>
         <Button
           variant="outline"
@@ -217,7 +250,7 @@ export function GroupManageDialog({
           }}
           disabled={busy}
         >
-          חזרה
+          {t("messages.manageGroup.back")}
         </Button>
       </div>
     ) : (
@@ -229,7 +262,7 @@ export function GroupManageDialog({
           className="gap-2"
         >
           <LogOut className="size-4" />
-          עזוב קבוצה
+          {t("messages.manageGroup.leave")}
         </Button>
         {isAdmin ? (
           <Button
@@ -239,7 +272,7 @@ export function GroupManageDialog({
             className="gap-2 text-destructive hover:text-destructive"
           >
             <Trash2 className="size-4" />
-            מחק
+            {t("messages.manageGroup.delete")}
           </Button>
         ) : null}
       </div>
@@ -266,16 +299,18 @@ export function GroupManageDialog({
             members={candidates}
             selected={addSelected}
             onToggle={(id) => toggleInSet(setAddSelected, id)}
-            emptyLabel="כל חברי הצוות כבר בקבוצה."
+            emptyLabel={t("messages.manageGroup.allInGroup")}
           />
           <p className="mt-2 text-xs text-muted-foreground">
-            {addSelected.size} נבחרו
+            {t("messages.manageGroup.selectedCount", {
+              count: addSelected.size,
+            })}
           </p>
         </>
       ) : (
         <>
           <div className="mb-1.5 text-xs font-semibold text-muted-foreground">
-            שם הקבוצה
+            {t("messages.group.nameLabel")}
           </div>
           {editingName ? (
             <div className="flex items-center gap-2">
@@ -295,7 +330,7 @@ export function GroupManageDialog({
                 size="icon"
                 onClick={() => void saveRename()}
                 disabled={busy}
-                aria-label="שמור שם"
+                aria-label={t("messages.manageGroup.saveNameAria")}
               >
                 <Check className="size-4" />
               </Button>
@@ -304,7 +339,7 @@ export function GroupManageDialog({
                 variant="ghost"
                 onClick={() => setEditingName(false)}
                 disabled={busy}
-                aria-label="ביטול"
+                aria-label={t("common.cancel")}
               >
                 <X className="size-4" />
               </Button>
@@ -321,7 +356,7 @@ export function GroupManageDialog({
                     setNameDraft(detail.title);
                     setEditingName(true);
                   }}
-                  aria-label="שנה שם"
+                  aria-label={t("messages.manageGroup.renameAria")}
                 >
                   <Pencil className="size-4" />
                 </Button>
@@ -332,7 +367,9 @@ export function GroupManageDialog({
           <div className="my-4 border-t border-border" />
 
           <div className="mb-2 text-xs font-semibold text-muted-foreground">
-            חברים ({detail.members.length})
+            {t("messages.manageGroup.membersCount", {
+              count: detail.members.length,
+            })}
           </div>
           <div className="space-y-0.5">
             {detail.members.map((m) => (
@@ -345,12 +382,14 @@ export function GroupManageDialog({
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-sm font-medium">
                     {m.name}
-                    {m.id === currentUserId ? " (אתה)" : ""}
+                    {m.id === currentUserId
+                      ? t("messages.manageGroup.youSuffix")
+                      : ""}
                   </span>
                 </span>
                 {m.isAdmin ? (
                   <span className="rounded-full border border-primary/20 bg-primary/10 px-2 py-0.5 text-[11px] font-semibold text-primary">
-                    מנהל
+                    {t("messages.manageGroup.adminBadge")}
                   </span>
                 ) : null}
                 {isAdmin && m.id !== currentUserId ? (
@@ -360,7 +399,9 @@ export function GroupManageDialog({
                     className="size-8 text-destructive hover:text-destructive"
                     onClick={() => void removeOne(m.id)}
                     disabled={busy}
-                    aria-label={`הסר את ${m.name}`}
+                    aria-label={t("messages.manageGroup.removeMemberAria", {
+                      name: m.name,
+                    })}
                   >
                     <X className="size-4" />
                   </Button>
@@ -377,12 +418,11 @@ export function GroupManageDialog({
               disabled={busy}
             >
               <Plus className="size-4" />
-              הוסף חברים
+              {t("messages.group.addMembers")}
             </Button>
           ) : (
             <p className="mt-3 rounded-lg border border-primary/15 bg-primary/5 p-3 text-xs leading-relaxed text-muted-foreground">
-              ניהול החברים והשם שמורים למנהל הקבוצה. אתה יכול לעזוב את הקבוצה בכל
-              עת.
+              {t("messages.manageGroup.nonAdminHint")}
             </p>
           )}
         </>

@@ -12,6 +12,7 @@ import {
   type GroupSummaryDTO,
   type MemberDTO,
 } from "@/lib/api-client";
+import { useT } from "@/i18n/locale-provider";
 import { ResponsiveModal } from "./responsive-modal";
 import { MemberMultiSelect, toggleInSet } from "./member-multi-select";
 
@@ -28,6 +29,7 @@ export function NewGroupDialog({
   candidates: MemberDTO[]; // active members other than me
   onCreated: (group: GroupSummaryDTO) => void;
 }) {
+  const t = useT();
   const [title, setTitle] = useState("");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [submitting, setSubmitting] = useState(false);
@@ -52,13 +54,15 @@ export function NewGroupDialog({
         title: name,
         memberIds: [...selected],
       });
-      toast.success("הקבוצה נוצרה");
+      toast.success(t("messages.newGroup.createdToast"));
       reset();
       onOpenChange(false);
       onCreated(group);
     } catch (err) {
       toast.error(
-        err instanceof ApiError ? err.message : "יצירת הקבוצה נכשלה",
+        err instanceof ApiError
+          ? err.message
+          : t("messages.newGroup.createFailed"),
       );
     } finally {
       setSubmitting(false);
@@ -69,7 +73,7 @@ export function NewGroupDialog({
     <ResponsiveModal
       open={open}
       onOpenChange={handleOpenChange}
-      title="קבוצה חדשה"
+      title={t("messages.newGroup.title")}
       icon={<UsersRound className="size-5 text-primary" />}
       dismissible={!submitting}
       footer={
@@ -80,14 +84,14 @@ export function NewGroupDialog({
             className="gap-2"
           >
             {submitting ? <Loader2 className="size-4 animate-spin" /> : null}
-            צור קבוצה
+            {t("messages.newGroup.submit")}
           </Button>
           <Button
             variant="outline"
             onClick={() => handleOpenChange(false)}
             disabled={submitting}
           >
-            ביטול
+            {t("common.cancel")}
           </Button>
         </div>
       }
@@ -96,28 +100,28 @@ export function NewGroupDialog({
         htmlFor="new-group-name"
         className="mb-1.5 block text-xs font-semibold text-muted-foreground"
       >
-        שם הקבוצה
+        {t("messages.group.nameLabel")}
       </label>
       <Input
         id="new-group-name"
         value={title}
         onChange={(e) => setTitle(e.target.value)}
         maxLength={80}
-        placeholder="למשל: צוות מיסים"
+        placeholder={t("messages.newGroup.namePlaceholder")}
         autoFocus
       />
 
       <div className="mt-4 mb-1.5 text-xs font-semibold text-muted-foreground">
-        הוסף חברים
+        {t("messages.group.addMembers")}
       </div>
       <MemberMultiSelect
         members={candidates}
         selected={selected}
         onToggle={(id) => toggleInSet(setSelected, id)}
-        emptyLabel="אין עדיין חברי צוות נוספים."
+        emptyLabel={t("messages.newGroup.noCandidates")}
       />
       <p className="mt-2 mb-1 text-xs text-muted-foreground">
-        {selected.size} נבחרו · אתה תתווסף כמנהל הקבוצה
+        {t("messages.newGroup.selectedAdminHint", { count: selected.size })}
       </p>
     </ResponsiveModal>
   );

@@ -26,6 +26,7 @@ import {
   type UnreadCountsDTO,
 } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
+import { useT } from "@/i18n/locale-provider";
 import { mergeNew, newestMs, reconcile } from "./message-merge";
 import { MessageItem } from "./message-item";
 import { NewGroupDialog } from "./new-group-dialog";
@@ -71,6 +72,7 @@ export function MessagesPage({
   currentUserId: string;
   members: MemberDTO[];
 }) {
+  const t = useT();
   // DM targets = active members other than me. The office group is always first.
   const dmMembers = members.filter((m) => m.isActive && m.id !== currentUserId);
 
@@ -99,12 +101,13 @@ export function MessagesPage({
   const showSenderNames = isOffice || activeGroupId !== null;
 
   const activeLabel = isOffice
-    ? "כל המשרד"
+    ? t("messages.office")
     : activeGroup
       ? activeGroup.title
       : activeGroupId
-        ? "קבוצה"
-        : (dmMembers.find((m) => m.id === activeKey)?.fullName ?? "שיחה");
+        ? t("messages.groupFallback")
+        : (dmMembers.find((m) => m.id === activeKey)?.fullName ??
+          t("messages.dmFallback"));
 
   // The timestamp through which EVERY recipient has read (min of their last_read_at,
   // or null if any recipient has never read). A message of mine is ✓✓ (read-by-all)
@@ -260,7 +263,7 @@ export function MessagesPage({
       setBody("");
     } catch (err) {
       if (err instanceof ApiError) toast.error(err.message);
-      else toast.error("שליחת ההודעה נכשלה");
+      else toast.error(t("messages.sendFailed"));
     } finally {
       setSending(false);
     }
@@ -273,7 +276,9 @@ export function MessagesPage({
       const updated = await apiClient.messages.edit(id, { body: newBody });
       setMessages((prev) => prev.map((m) => (m.id === id ? updated : m)));
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "עריכת ההודעה נכשלה");
+      toast.error(
+        err instanceof ApiError ? err.message : t("messages.editFailed"),
+      );
       throw err; // keep the editor open + preserve the typed draft on failure
     }
   }
@@ -283,7 +288,9 @@ export function MessagesPage({
       const updated = await apiClient.messages.remove(id);
       setMessages((prev) => prev.map((m) => (m.id === id ? updated : m)));
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "מחיקת ההודעה נכשלה");
+      toast.error(
+        err instanceof ApiError ? err.message : t("messages.deleteFailed"),
+      );
     }
   }
 
@@ -325,20 +332,20 @@ export function MessagesPage({
       {/* Conversation list (right side in RTL). On mobile: full-width, toggled. */}
       <aside
         className={cn(
-          "w-full flex-col overflow-y-auto border-l border-border md:w-72",
+          "w-full flex-col overflow-y-auto border-e border-border md:w-72",
           showListMobile ? "flex" : "hidden",
           "md:flex",
         )}
       >
         <div className="flex items-center gap-2 border-b border-border px-4 py-3">
-          <h1 className="text-lg font-bold">הודעות</h1>
+          <h1 className="text-lg font-bold">{t("messages.title")}</h1>
           <button
             type="button"
             onClick={() => setNewGroupOpen(true)}
             className="ms-auto inline-flex items-center gap-1.5 rounded-full border border-primary/20 bg-primary/10 px-3 py-1.5 text-xs font-semibold text-primary transition-colors hover:bg-primary/15"
           >
             <Plus className="size-3.5" />
-            קבוצה חדשה
+            {t("messages.newGroup.title")}
           </button>
         </div>
         <nav className="space-y-1 p-2">
@@ -346,14 +353,14 @@ export function MessagesPage({
             active={isOffice}
             onClick={() => openConversation(OFFICE)}
             icon={<Users className="size-4" />}
-            title="כל המשרד"
-            subtitle="הודעה לכל חברי הצוות"
+            title={t("messages.office")}
+            subtitle={t("messages.officeSubtitle")}
             unreadCount={unread?.office ?? 0}
           />
 
           {groups.length > 0 ? (
             <p className="px-3 pt-3 pb-1 text-[11px] font-bold text-muted-foreground">
-              קבוצות
+              {t("messages.groupsSection")}
             </p>
           ) : null}
           {groups.map((g) => (
@@ -363,13 +370,13 @@ export function MessagesPage({
               onClick={() => openConversation(groupKey(g.id))}
               icon={<UsersRound className="size-4" />}
               title={g.title}
-              subtitle={`${g.memberCount} חברים`}
+              subtitle={t("messages.memberCount", { count: g.memberCount })}
               unreadCount={unread?.groups[g.id] ?? 0}
             />
           ))}
 
           <p className="px-3 pt-3 pb-1 text-[11px] font-bold text-muted-foreground">
-            הודעות פרטיות
+            {t("messages.dmsSection")}
           </p>
           {dmMembers.map((m) => (
             <ConversationRow
@@ -378,13 +385,13 @@ export function MessagesPage({
               onClick={() => openConversation(m.id)}
               icon={<span className="text-xs font-medium">{initials(m.fullName)}</span>}
               title={m.fullName}
-              subtitle="הודעה פרטית"
+              subtitle={t("messages.dmSubtitle")}
               unreadCount={unread?.dms[m.id] ?? 0}
             />
           ))}
           {dmMembers.length === 0 ? (
             <p className="px-3 py-6 text-center text-xs text-muted-foreground">
-              אין עדיין חברי צוות נוספים לשיחה פרטית.
+              {t("messages.noDmTargets")}
             </p>
           ) : null}
         </nav>
@@ -404,7 +411,7 @@ export function MessagesPage({
             variant="ghost"
             size="icon"
             className="md:hidden"
-            aria-label="חזרה לרשימת השיחות"
+            aria-label={t("messages.backToList")}
             onClick={() => setShowListMobile(true)}
           >
             <ChevronRight className="size-5" />
@@ -415,7 +422,7 @@ export function MessagesPage({
             disabled={!activeGroupId}
             onClick={() => setManageOpen(true)}
             className={cn(
-              "flex min-w-0 flex-1 items-center gap-2 rounded-lg py-1 text-right",
+              "flex min-w-0 flex-1 items-center gap-2 rounded-lg py-1 text-start",
               activeGroupId ? "cursor-pointer hover:bg-muted/50" : "cursor-default",
             )}
           >
@@ -436,7 +443,9 @@ export function MessagesPage({
               </span>
               {activeGroup ? (
                 <span className="block truncate text-xs text-muted-foreground">
-                  {activeGroup.memberCount} חברים · הקש/י לפרטים
+                  {t("messages.memberCountDetails", {
+                    count: activeGroup.memberCount,
+                  })}
                 </span>
               ) : null}
             </span>
@@ -455,7 +464,7 @@ export function MessagesPage({
           ) : messages.length === 0 ? (
             <div className="flex h-full flex-col items-center justify-center gap-2 text-center text-muted-foreground">
               <MessageSquare className="size-8 opacity-50" />
-              <p className="text-sm">אין עדיין הודעות. כתוב/י את הראשונה.</p>
+              <p className="text-sm">{t("messages.emptyThread")}</p>
             </div>
           ) : (
             messages.map((m) => {
@@ -491,14 +500,14 @@ export function MessagesPage({
               }
             }}
             rows={1}
-            placeholder="כתוב/י הודעה…"
+            placeholder={t("messages.composerPlaceholder")}
             className="max-h-32 flex-1 resize-none rounded-xl border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/40"
           />
           <Button
             size="icon"
             onClick={() => void handleSend()}
             disabled={sending || body.trim().length === 0}
-            aria-label="שליחה"
+            aria-label={t("messages.send")}
           >
             {sending ? (
               <Loader2 className="size-4 animate-spin" />
@@ -552,7 +561,7 @@ function ConversationRow({
       type="button"
       onClick={onClick}
       className={cn(
-        "flex w-full items-center gap-3 rounded-lg px-3 py-2 text-right transition-colors",
+        "flex w-full items-center gap-3 rounded-lg px-3 py-2 text-start transition-colors",
         active ? "bg-primary/10 text-primary" : "hover:bg-muted/60",
       )}
     >
