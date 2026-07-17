@@ -1,4 +1,4 @@
-# AVI.APP — Session Handoff (2026-07-16)
+# AVI.APP — Session Handoff (2026-07-17)
 
 **You are continuing AVI.APP from a fresh chat.** Read this top-to-bottom first.
 Deep detail lives in the auto-loaded memory (`project_avi_app.md`) and in the
@@ -49,6 +49,13 @@ Plan file: `C:\Users\User\.claude\plans\hashed-herding-honey.md` (DEV-026 sectio
   SOFTWARE_PRODUCER_VATID/NAME; **add both to Vercel before enabling the
   module in prod.** Simulator upload how-to: charset = Windows ANSI
   ISO-8859-8-I; upload INI.TXT + BKMVDATA.TXT (extracted from the inner zip).
+- **R4 production deploy COMPLETED 2026-07-17.** The 2026-07-16 GitHub incident
+  ("Degraded REST API Availability", 22:21–23:50 UTC) had blocked Vercel from
+  starting builds on the 3 main pushes; minutes after recovery `00b8e94` built
+  **success** (23:55 UTC), then `9ed0321` (00:05) and the final retrigger
+  `f32a87a` (2026-07-17) — prod now serves latest main. Full smoke green:
+  `/api/health` 200 · `/login` 200 · `/tasks` 307 · `/api/ledgers` 401 ·
+  `/api/reports/*` + openformat export 401 (the reports-401 flip = R4-live marker).
 - **Prod state: code live but INERT** — `INVOICING_UI` flag OFF in Vercel (zero
   UI for real users). Liran QAs locally (`web/.env.local` has `INVOICING_UI=1`).
   Enable in prod = Vercel env vars (incl. the two SOFTWARE_PRODUCER_* ones) +
@@ -82,7 +89,9 @@ zero Claude/Anthropic trace in the repo. Reply to Liran in Hebrew.
   shadcn/ui · Supabase (Postgres + Auth + Realtime + RLS) · Vercel.
 - **Production:** **https://www.aviapp1.com** (Cloudflare→Vercel; old
   `avi-app-1.vercel.app` still alive). Auto-deploys on push to `main`.
-- **`main` at `9b0b041`** (2026-07-14). Shipped: **Stage 12 (DEV-019)** + **Stage 13
+- **`main` at `f32a87a`** (2026-07-17). Newest: **DEV-026 invoicing R1–R4 merged +
+  deployed, live-but-dormant** (flag off; see ACTIVE WORK above). Earlier shipped:
+  **Stage 12 (DEV-019)** + **Stage 13
   (DEV-020)** — clients-UX + task-flow bell notifications (mig `0021`), owner analytics
   **dashboard** + owner-granted **per-member dashboard access** (`0022`) + a new bilingual
   invite email + the **office chat** ("הודעות" — group + DMs, 3s polling, `0023`); then
