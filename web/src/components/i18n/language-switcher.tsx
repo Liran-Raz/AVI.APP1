@@ -3,8 +3,9 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Check, Globe } from "lucide-react";
+import { Check } from "lucide-react";
 
+import { Flag } from "@/components/i18n/flag";
 import {
   Select,
   SelectContent,
@@ -68,12 +69,17 @@ export function LanguageSelect({ className }: { className?: string }) {
       disabled={saving}
     >
       <SelectTrigger className={className} aria-label={t("language.label")}>
+        {/* Current-language flag, always shown, next to the name. */}
+        <Flag locale={locale} />
         <SelectValue />
       </SelectTrigger>
       <SelectContent>
         {SUPPORTED_LOCALES.map((l) => (
           <SelectItem key={l} value={l}>
-            {LOCALE_NATIVE_NAME[l]}
+            <span className="flex items-center gap-2">
+              <Flag locale={l} />
+              {LOCALE_NATIVE_NAME[l]}
+            </span>
           </SelectItem>
         ))}
       </SelectContent>
@@ -81,8 +87,9 @@ export function LanguageSelect({ className }: { className?: string }) {
   );
 }
 
-// Compact globe menu — for the desktop topbar. Its own dropdown (not nested
-// in another menu), so no portal/focus conflicts.
+// Compact flag menu — for the desktop topbar. The trigger shows the CURRENT
+// language's flag; the dropdown lists each language with its flag. Its own
+// dropdown (not nested in another menu), so no portal/focus conflicts.
 export function LanguageMenu() {
   const t = useT();
   const locale = useLocale();
@@ -94,9 +101,9 @@ export function LanguageMenu() {
         <button
           type="button"
           aria-label={t("language.title")}
-          className="p-2 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent"
+          className="flex items-center p-1.5 rounded-md hover:bg-accent"
         >
-          <Globe className="size-5" />
+          <Flag locale={locale} className="h-4 w-[22px]" />
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-44">
@@ -108,6 +115,7 @@ export function LanguageMenu() {
             disabled={saving}
             onClick={() => l !== locale && setLocale(l)}
           >
+            <Flag locale={l} />
             <span className="flex-1">{LOCALE_NATIVE_NAME[l]}</span>
             {l === locale ? <Check className="size-4" /> : null}
           </DropdownMenuItem>

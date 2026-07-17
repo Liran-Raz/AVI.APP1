@@ -2,8 +2,6 @@
 
 import { useState } from "react";
 
-import { Globe } from "lucide-react";
-
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { MeRole, NotificationPrefs } from "@/lib/api-client";
 import { useT } from "@/i18n/locale-provider";
@@ -70,8 +68,7 @@ export function SettingsPage({
         </div>
         {/* Language: a compact control OUTSIDE the tabs so it never changes a
             tab's height — the Settings screen stays a stable size. */}
-        <div className="shrink-0 flex items-center gap-2 pt-1">
-          <Globe className="size-4 text-muted-foreground hidden sm:block" />
+        <div className="shrink-0 pt-1">
           <LanguageSelect />
         </div>
       </div>
