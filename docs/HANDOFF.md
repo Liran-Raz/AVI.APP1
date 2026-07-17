@@ -1,13 +1,63 @@
-# AVI.APP — Session Handoff (2026-07-17)
+# AVI.APP — Session Handoff (2026-07-18)
 
 **You are continuing AVI.APP from a fresh chat.** Read this top-to-bottom first.
-Deep detail lives in the auto-loaded memory (`project_avi_app.md`) and in the
-git-tracked backlog (`docs/DEV_TRACKING.md`) — this file is the fast "where we
-are + how to continue" brief.
+Deep detail lives in the auto-loaded memory (`project_avi_app.md`,
+`feature_dev010_i18n.md`, `feature_dev013_2fa.md`) and in the git-tracked
+backlog (`docs/DEV_TRACKING.md`) — this file is the fast "where we are + how to
+continue" brief. **Load the `avi-app-architecture` skill before touching code.**
 
 ---
 
-## 🔴 ACTIVE WORK — DEV-026 invoicing module (הנהלת חשבונות) — READ FIRST
+## 🟢 ACTIVE WORK — DEV-010 i18n (multi-language) — READ FIRST
+
+**What it is:** full app-UI internationalization, 8 languages planned. **Round 1
+(Hebrew + English) is in progress and going screen-by-screen, one small PR each.**
+Full detail + conventions: memory `feature_dev010_i18n.md`.
+
+**DONE + LIVE in prod (main `fef0a82`):** infra (self-hosted catalog, cookie-based
+locale, NO next-intl, NO `[locale]` routing) + a language switcher with flags +
+**7 screens** translated he/en with correct LTR mirroring — settings (shell+forms),
+tasks, clients, team+roles, dashboard, messages+notifications, plus the app-shell
+chrome. English is AVAILABLE in prod; Hebrew is the default so existing users see
+zero change. Catalog ~470 keys; every PR: tsc/lint clean, 560 tests, no migration,
+no deps, Vercel green, QA'd + merged on Liran's word.
+
+**NEXT (fresh session, in order):** **invoicing + reports** (biggest — `components/
+invoicing/*` + `components/reports/reports-page.tsx`; the tax **PDF stays Hebrew** —
+do NOT touch `server/pdf`) → **calendar** (+ `calendar-utils` dates via `intlLocale`)
+→ **onboarding + invite** → **auth pages / landing** (still on the OLD marketing
+`t(he,en)` provider — decide: migrate or leave) → **final English QA pass**
+(`rg [֐-׿] web/src --glob '*.tsx'` for stragglers). **Then R2** = the other 6
+languages (ru/de/fr/ja/it/ar) — mostly translation JSON + fonts + Arabic RTL.
+
+**Conventions (critical):** each screen → its own branch/PR; delegate the string
+extraction to a subagent with the established prompt BUT always self-verify after
+(tsc + lint + 560 tests + `rg` no-leftover-Hebrew + spot-check en + confirm no
+`common.*` key was reused whose Hebrew differs from the original — e.g. "ערוך"≠
+common.edit "עריכה"). Hebrew values BYTE-IDENTICAL. `dir="ltr"` on email/phone/
+tax-id fields stays. CSS physical→logical is ROLE-based. **Emails, DB-trigger
+notification content, and tax PDFs stay Hebrew (guard-rail).**
+
+## 🔐 DEV-013 (2FA/TOTP) — DONE + LIVE in prod (main `3d70d1c`)
+
+Full TOTP two-factor: opt-in per user + owner-set HARD office-wide requirement +
+15s auto-cancel on disable. Live but inert (opt-in; Hebrew default). Migration
+`0028` applied. Recovery runbook: `docs/2FA_RECOVERY.md`. Detail: memory
+`feature_dev013_2fa.md`.
+
+## 🏛️ DEV-026 R5 (חשבוניות-ישראל) — WAITING on external approval
+
+R1–R4 merged + live (invoicing/reports/open-format, flag off). **R5 (allocation
+numbers via the gov gateway) is blocked on the ITA sandbox-portal approval** —
+Liran registered (liran995@gmail.com), account "pending approval", email expected
+~2026-07-19/20. When it lands: build R5 (OAuth client, allocation state machine,
+₪10K→₪5K thresholds) against the sandbox. Owner reminders: cancel/credit the old QA
+demo docs; add `SOFTWARE_PRODUCER_VATID=314954835` + `SOFTWARE_PRODUCER_NAME` to
+Vercel before enabling invoicing in prod. Detail below + memory `project_avi_app.md`.
+
+---
+
+## 🔵 EARLIER ACTIVE WORK — DEV-026 invoicing module (הנהלת חשבונות)
 
 **What it is:** a tax-compliant Invoices/Receipts + Reports module heading to
 official **software registration** with the Israel Tax Authority ("תוכנה מוכרת").
