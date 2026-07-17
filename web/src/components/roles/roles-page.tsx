@@ -30,6 +30,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { useT } from "@/i18n/locale-provider";
 import { RoleFormDialog, type RoleDialogMode } from "./role-form-dialog";
 
 type DialogState = {
@@ -45,6 +46,7 @@ export function RolesPage({
   initialRoles: RoleDTO[];
   canWrite: boolean;
 }) {
+  const t = useT();
   const [roles, setRoles] = useState<RoleDTO[]>(initialRoles);
   const [loading, setLoading] = useState(false);
   const [dialog, setDialog] = useState<DialogState>({
@@ -61,13 +63,13 @@ export function RolesPage({
     } catch (err) {
       toast.error(
         err instanceof ApiError
-          ? `שגיאה בטעינת תפקידים: ${err.message}`
-          : "שגיאה לא צפויה",
+          ? t("roles.loadError", { message: err.message })
+          : t("common.unexpectedError"),
       );
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [t]);
 
   function open(mode: RoleDialogMode, target: RoleDTO | null) {
     setDialog({ open: true, mode, target });
@@ -76,18 +78,20 @@ export function RolesPage({
   async function handleDelete(role: RoleDTO) {
     if (
       !window.confirm(
-        `למחוק את התפקיד "${role.name}"? פעולה זו אינה הפיכה.`,
+        t("roles.confirmDelete", { name: role.name }),
       )
     ) {
       return;
     }
     try {
       await apiClient.roles.delete(role.id);
-      toast.success("התפקיד נמחק");
+      toast.success(t("roles.deletedToast"));
       setRoles((prev) => prev.filter((r) => r.id !== role.id));
     } catch (err) {
       toast.error(
-        err instanceof ApiError ? `שגיאה: ${err.message}` : "שגיאה לא צפויה",
+        err instanceof ApiError
+          ? t("roles.errorWithMessage", { message: err.message })
+          : t("common.unexpectedError"),
       );
     }
   }
@@ -103,23 +107,23 @@ export function RolesPage({
         <div>
           <h1 className="text-2xl md:text-3xl font-bold tracking-tight flex items-center gap-2">
             <ShieldCheck className="size-6 text-primary" />
-            תפקידים והרשאות
+            {t("roles.title")}
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            ניהול תפקידי המשרד וההרשאות שלהם. תפקידי המערכת מוגנים לקריאה בלבד.
+            {t("roles.subtitle")}
           </p>
         </div>
         <div className="flex items-center gap-2">
           {loading && (
             <span className="flex items-center gap-1 text-xs text-muted-foreground">
               <Loader2 className="size-3 animate-spin" />
-              טוען...
+              {t("common.loading")}
             </span>
           )}
           {canWrite && (
             <Button onClick={() => open("create", null)}>
               <Plus className="size-4" />
-              תפקיד חדש
+              {t("roles.newRole")}
             </Button>
           )}
         </div>
@@ -128,16 +132,16 @@ export function RolesPage({
       <div className="border border-border rounded-lg bg-card overflow-hidden">
         {roles.length === 0 ? (
           <div className="p-10 text-center text-sm text-muted-foreground">
-            אין תפקידים להצגה.
+            {t("roles.empty")}
           </div>
         ) : (
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>שם</TableHead>
-                <TableHead>תיאור</TableHead>
-                <TableHead>סוג</TableHead>
-                <TableHead className="text-center">הרשאות</TableHead>
+                <TableHead>{t("roles.table.name")}</TableHead>
+                <TableHead>{t("roles.table.description")}</TableHead>
+                <TableHead>{t("roles.table.type")}</TableHead>
+                <TableHead className="text-center">{t("roles.table.permissions")}</TableHead>
                 <TableHead className="w-[40px]"></TableHead>
               </TableRow>
             </TableHeader>
@@ -150,9 +154,9 @@ export function RolesPage({
                   </TableCell>
                   <TableCell>
                     {role.isSystem ? (
-                      <Badge variant="secondary">מערכת</Badge>
+                      <Badge variant="secondary">{t("roles.badge.system")}</Badge>
                     ) : (
-                      <Badge variant="outline">מותאם</Badge>
+                      <Badge variant="outline">{t("roles.badge.custom")}</Badge>
                     )}
                   </TableCell>
                   <TableCell className="text-center tabular-nums">
@@ -170,13 +174,13 @@ export function RolesPage({
                         {(!canWrite || role.isSystem) && (
                           <DropdownMenuItem onClick={() => open("view", role)}>
                             <Eye className="size-4" />
-                            צפייה
+                            {t("roles.actions.view")}
                           </DropdownMenuItem>
                         )}
                         {canWrite && !role.isSystem && (
                           <DropdownMenuItem onClick={() => open("edit", role)}>
                             <Pencil className="size-4" />
-                            עריכה
+                            {t("common.edit")}
                           </DropdownMenuItem>
                         )}
                         {canWrite && (
@@ -184,7 +188,7 @@ export function RolesPage({
                             onClick={() => open("duplicate", role)}
                           >
                             <Copy className="size-4" />
-                            שכפול
+                            {t("roles.actions.duplicate")}
                           </DropdownMenuItem>
                         )}
                         {canWrite && !role.isSystem && (
@@ -193,7 +197,7 @@ export function RolesPage({
                             onClick={() => handleDelete(role)}
                           >
                             <Trash2 className="size-4" />
-                            מחיקה
+                            {t("common.delete")}
                           </DropdownMenuItem>
                         )}
                       </DropdownMenuContent>

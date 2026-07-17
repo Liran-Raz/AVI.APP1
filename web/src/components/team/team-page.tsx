@@ -41,16 +41,12 @@ import {
 } from "@/lib/api-client";
 import { hasCapability, PERMISSIONS, type Capability } from "@/lib/capabilities";
 import { cn } from "@/lib/utils";
+import { useT } from "@/i18n/locale-provider";
+import type { MessageKey } from "@/i18n/messages-types";
 
 import { InviteDialog } from "./invite-dialog";
 
 type Role = "owner" | "admin" | "employee";
-
-const ROLE_LABEL: Record<Role, string> = {
-  owner: "בעלים",
-  admin: "מנהל",
-  employee: "עובד",
-};
 
 function roleIcon(role: Role) {
   switch (role) {
@@ -124,6 +120,7 @@ export function TeamPage({
   currentUserRole: Role;
   capabilities: Capability[];
 }) {
+  const t = useT();
   const [members, setMembers] = useState<MemberDTO[]>(initialItems);
   const [inviteOpen, setInviteOpen] = useState(false);
   const [busyMemberId, setBusyMemberId] = useState<string | null>(null);
@@ -151,12 +148,12 @@ export function TeamPage({
       setMembers((prev) =>
         prev.map((m) => (m.id === updated.id ? updated : m)),
       );
-      toast.success("התפקיד עודכן");
+      toast.success(t("team.roleChange.updated"));
     } catch (err) {
       if (err instanceof ApiError) {
         toast.error(err.message);
       } else {
-        toast.error("שגיאה לא צפויה");
+        toast.error(t("common.unexpectedError"));
         console.error(err);
       }
     } finally {
@@ -177,14 +174,14 @@ export function TeamPage({
       );
       toast.success(
         updated.dashboardAccess
-          ? "הגישה לדשבורד נפתחה"
-          : "הגישה לדשבורד נחסמה",
+          ? t("team.dashboardAccess.granted")
+          : t("team.dashboardAccess.blocked"),
       );
     } catch (err) {
       if (err instanceof ApiError) {
         toast.error(err.message);
       } else {
-        toast.error("שגיאה לא צפויה");
+        toast.error(t("common.unexpectedError"));
         console.error(err);
       }
     } finally {
@@ -194,11 +191,7 @@ export function TeamPage({
 
   async function handleDeactivate(member: MemberDTO) {
     if (busyMemberId) return;
-    if (
-      !window.confirm(
-        `להסיר את "${member.fullName}" מהמשרד? המשתמש לא יוכל להיכנס יותר עד שעדכון אקטיבי יקרה ידנית.`,
-      )
-    ) {
+    if (!window.confirm(t("team.deactivate.confirm", { name: member.fullName }))) {
       return;
     }
     setBusyMemberId(member.id);
@@ -207,12 +200,12 @@ export function TeamPage({
       setMembers((prev) =>
         prev.map((m) => (m.id === updated.id ? updated : m)),
       );
-      toast.success("המשתמש הוסר מהמשרד");
+      toast.success(t("team.deactivate.done"));
     } catch (err) {
       if (err instanceof ApiError) {
         toast.error(err.message);
       } else {
-        toast.error("שגיאה לא צפויה");
+        toast.error(t("common.unexpectedError"));
         console.error(err);
       }
     } finally {
@@ -233,25 +226,25 @@ export function TeamPage({
     <div className="container mx-auto px-4 md:px-6 py-6 md:py-8 max-w-5xl">
       <div className="flex items-center justify-between mb-6 gap-4 flex-wrap">
         <div>
-          <h1 className="text-2xl md:text-3xl font-bold tracking-tight">צוות</h1>
+          <h1 className="text-2xl md:text-3xl font-bold tracking-tight">{t("team.title")}</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            ניהול עובדי המשרד והרשאותיהם
+            {t("team.subtitle")}
           </p>
         </div>
         {canManage && (
           <Button onClick={() => setInviteOpen(true)}>
             <Plus className="size-4" />
-            הזמן חבר/ה
+            {t("team.invite")}
           </Button>
         )}
       </div>
 
       <div className="flex items-center gap-3 mb-4 text-xs text-muted-foreground">
-        <span>{activeCount} חברים פעילים</span>
+        <span>{t("team.activeCount", { count: activeCount })}</span>
         {inactiveCount > 0 && (
           <>
             <span>·</span>
-            <span>{inactiveCount} לא פעילים</span>
+            <span>{t("team.inactiveCount", { count: inactiveCount })}</span>
           </>
         )}
       </div>
@@ -267,10 +260,10 @@ export function TeamPage({
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>שם</TableHead>
-                  <TableHead>אימייל</TableHead>
-                  <TableHead>תפקיד</TableHead>
-                  <TableHead>סטטוס</TableHead>
+                  <TableHead>{t("team.table.name")}</TableHead>
+                  <TableHead>{t("common.email")}</TableHead>
+                  <TableHead>{t("team.table.role")}</TableHead>
+                  <TableHead>{t("team.table.status")}</TableHead>
                   <TableHead className="w-[40px]"></TableHead>
                 </TableRow>
               </TableHeader>
@@ -289,7 +282,7 @@ export function TeamPage({
                           <span>
                             {m.fullName}
                             {perms.isSelf && (
-                              <span className="text-muted-foreground text-xs"> (אני)</span>
+                              <span className="text-muted-foreground text-xs">{t("team.selfSuffix")}</span>
                             )}
                           </span>
                         </div>
@@ -300,20 +293,20 @@ export function TeamPage({
                       <TableCell>
                         <Badge variant="outline" className="gap-1">
                           {roleIcon(m.role)}
-                          {ROLE_LABEL[m.role]}
+                          {t(`role.${m.role}` as MessageKey)}
                         </Badge>
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-2 flex-wrap">
                           {m.isActive ? (
-                            <Badge variant="secondary">פעיל</Badge>
+                            <Badge variant="secondary">{t("team.status.active")}</Badge>
                           ) : (
-                            <Badge variant="outline">לא פעיל</Badge>
+                            <Badge variant="outline">{t("team.status.inactive")}</Badge>
                           )}
                           {m.dashboardAccess && m.role !== "owner" && (
                             <Badge variant="outline" className="gap-1">
                               <LayoutDashboard className="size-3" />
-                              דשבורד
+                              {t("team.dashboardBadge")}
                             </Badge>
                           )}
                         </div>
@@ -386,6 +379,7 @@ function MemberActionsMenu({
   onDeactivate: (m: MemberDTO) => void;
   onToggleDashboard: (m: MemberDTO) => void;
 }) {
+  const t = useT();
   if (!perms.showMenu) return null;
   return (
     <DropdownMenu>
@@ -393,7 +387,7 @@ function MemberActionsMenu({
         <Button
           variant="ghost"
           size="icon"
-          aria-label={`פעולות עבור ${member.fullName}`}
+          aria-label={t("team.actions.for", { name: member.fullName })}
           disabled={busy}
         >
           {busy ? (
@@ -405,18 +399,18 @@ function MemberActionsMenu({
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-48">
         <DropdownMenuLabel className="text-xs text-muted-foreground">
-          שינוי תפקיד
+          {t("team.actions.roleChangeLabel")}
         </DropdownMenuLabel>
         {perms.canChangeRole && member.role !== "admin" && (
           <DropdownMenuItem onClick={() => onChangeRole(member, "admin")}>
             <ShieldCheck className="size-4" />
-            הפוך למנהל
+            {t("team.actions.makeAdmin")}
           </DropdownMenuItem>
         )}
         {perms.canChangeRole && member.role !== "employee" && (
           <DropdownMenuItem onClick={() => onChangeRole(member, "employee")}>
             <User className="size-4" />
-            הפוך לעובד
+            {t("team.actions.makeEmployee")}
           </DropdownMenuItem>
         )}
         {perms.canManageDashboard && (
@@ -425,8 +419,8 @@ function MemberActionsMenu({
             <DropdownMenuItem onClick={() => onToggleDashboard(member)}>
               <LayoutDashboard className="size-4" />
               {member.dashboardAccess
-                ? "חסום גישה לדשבורד"
-                : "פתח גישה לדשבורד"}
+                ? t("team.actions.blockDashboard")
+                : t("team.actions.openDashboard")}
             </DropdownMenuItem>
           </>
         )}
@@ -438,7 +432,7 @@ function MemberActionsMenu({
               className="text-destructive focus:text-destructive"
             >
               <UserMinus className="size-4" />
-              הסר מהמשרד
+              {t("team.actions.remove")}
             </DropdownMenuItem>
           </>
         )}
@@ -463,6 +457,7 @@ function MemberCard({
   onDeactivate: (m: MemberDTO) => void;
   onToggleDashboard: (m: MemberDTO) => void;
 }) {
+  const t = useT();
   return (
     <div
       className={cn(
@@ -481,7 +476,7 @@ function MemberCard({
             <p className="font-medium truncate">
               {m.fullName}
               {perms.isSelf && (
-                <span className="text-muted-foreground text-xs"> (אני)</span>
+                <span className="text-muted-foreground text-xs">{t("team.selfSuffix")}</span>
               )}
             </p>
             <p className="text-xs text-muted-foreground truncate" dir="ltr">
@@ -501,17 +496,17 @@ function MemberCard({
       <div className="flex items-center gap-2 mt-3 flex-wrap">
         <Badge variant="outline" className="gap-1">
           {roleIcon(m.role)}
-          {ROLE_LABEL[m.role]}
+          {t(`role.${m.role}` as MessageKey)}
         </Badge>
         {m.isActive ? (
-          <Badge variant="secondary">פעיל</Badge>
+          <Badge variant="secondary">{t("team.status.active")}</Badge>
         ) : (
-          <Badge variant="outline">לא פעיל</Badge>
+          <Badge variant="outline">{t("team.status.inactive")}</Badge>
         )}
         {m.dashboardAccess && m.role !== "owner" && (
           <Badge variant="outline" className="gap-1">
             <LayoutDashboard className="size-3" />
-            דשבורד
+            {t("team.dashboardBadge")}
           </Badge>
         )}
       </div>
@@ -526,19 +521,20 @@ function EmptyState({
   canManage: boolean;
   onInvite: () => void;
 }) {
+  const t = useT();
   return (
     <div className="p-12 text-center">
       <div className="size-12 mx-auto rounded-full bg-primary/10 text-primary flex items-center justify-center mb-4">
         <Users className="size-6" />
       </div>
-      <h2 className="font-semibold text-lg mb-2">המשרד שלך הוא בן אדם אחד כרגע</h2>
+      <h2 className="font-semibold text-lg mb-2">{t("team.empty.title")}</h2>
       <p className="text-muted-foreground text-sm max-w-md mx-auto mb-4">
-        כאשר תזמין עובדים, הם יופיעו כאן עם התפקיד והסטטוס שלהם.
+        {t("team.empty.hint")}
       </p>
       {canManage && (
         <Button onClick={onInvite}>
           <Plus className="size-4" />
-          הזמן עובד/ת
+          {t("team.empty.invite")}
         </Button>
       )}
     </div>

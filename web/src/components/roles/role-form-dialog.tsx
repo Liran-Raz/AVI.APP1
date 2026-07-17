@@ -31,9 +31,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { useT } from "@/i18n/locale-provider";
+import type { MessageKey } from "@/i18n/messages-types";
 import {
   buildCatalog,
-  SCOPE_LABELS,
   SUPPORTED_SCOPES,
   type CatalogEntry,
 } from "./permission-catalog";
@@ -52,11 +53,11 @@ function initialGrants(role: RoleDTO | null): GrantState {
   return m;
 }
 
-const TITLES: Record<RoleDialogMode, string> = {
-  create: "תפקיד חדש",
-  edit: "עריכת תפקיד",
-  view: "צפייה בתפקיד",
-  duplicate: "שכפול תפקיד",
+const TITLE_KEY: Record<RoleDialogMode, MessageKey> = {
+  create: "roles.form.createTitle",
+  edit: "roles.form.editTitle",
+  view: "roles.form.viewTitle",
+  duplicate: "roles.form.duplicateTitle",
 };
 
 export function RoleFormDialog({
@@ -100,12 +101,14 @@ function RoleFormBody({
   onCancel: () => void;
   onSaved: () => void;
 }) {
+  const t = useT();
   const catalog = useMemo(() => buildCatalog(), []);
   const readOnly = mode === "view";
   const isDuplicate = mode === "duplicate";
 
   const [name, setName] = useState(() => {
-    if (mode === "duplicate") return `עותק של ${target?.name ?? ""}`;
+    if (mode === "duplicate")
+      return t("roles.form.copyOfName", { name: target?.name ?? "" });
     if (mode === "edit" || mode === "view") return target?.name ?? "";
     return "";
   });
@@ -155,7 +158,7 @@ function RoleFormBody({
     e.preventDefault();
     const trimmed = name.trim();
     if (!trimmed) {
-      setError("שם התפקיד הוא שדה חובה");
+      setError(t("roles.form.nameRequired"));
       return;
     }
     setSubmitting(true);
@@ -167,7 +170,7 @@ function RoleFormBody({
           description: description.trim() || null,
           permissions: buildPermissions(),
         });
-        toast.success("התפקיד נוצר");
+        toast.success(t("roles.form.createdToast"));
       } else if (mode === "edit" && target) {
         await apiClient.roles.update(target.id, {
           name: trimmed,
@@ -175,16 +178,16 @@ function RoleFormBody({
           permissions: buildPermissions(),
           expectedUpdatedAt: target.updatedAt,
         });
-        toast.success("התפקיד עודכן");
+        toast.success(t("roles.form.updatedToast"));
       } else if (mode === "duplicate" && target) {
         await apiClient.roles.duplicate(target.id, { name: trimmed });
-        toast.success("התפקיד שוכפל");
+        toast.success(t("roles.form.duplicatedToast"));
       }
       onSaved();
     } catch (err) {
-      const msg = err instanceof ApiError ? err.message : "שגיאה לא צפויה";
+      const msg = err instanceof ApiError ? err.message : t("common.unexpectedError");
       setError(msg);
-      toast.error(`שגיאה: ${msg}`);
+      toast.error(t("roles.errorWithMessage", { message: msg }));
     } finally {
       setSubmitting(false);
     }
@@ -193,20 +196,20 @@ function RoleFormBody({
   return (
     <form onSubmit={handleSubmit} className="flex flex-col min-h-0 flex-1">
       <DialogHeader>
-        <DialogTitle>{TITLES[mode]}</DialogTitle>
+        <DialogTitle>{t(TITLE_KEY[mode])}</DialogTitle>
         <DialogDescription>
           {isDuplicate
-            ? `העתקת ההרשאות מהתפקיד "${target?.name}" לתפקיד חדש.`
+            ? t("roles.form.duplicateDesc", { name: target?.name ?? "" })
             : readOnly
-              ? "תפקיד מערכת — לקריאה בלבד."
-              : "הגדרת שם, תיאור ומערך ההרשאות של התפקיד."}
+              ? t("roles.form.viewDesc")
+              : t("roles.form.desc")}
         </DialogDescription>
       </DialogHeader>
 
       <div className="space-y-4 py-2 overflow-y-auto flex-1 min-h-0">
         <div className="space-y-2">
           <Label htmlFor="role-name">
-            שם <span className="text-destructive">*</span>
+            {t("roles.form.name")} <span className="text-destructive">*</span>
           </Label>
           <Input
             id="role-name"
@@ -221,7 +224,7 @@ function RoleFormBody({
 
         {!isDuplicate && (
           <div className="space-y-2">
-            <Label htmlFor="role-desc">תיאור</Label>
+            <Label htmlFor="role-desc">{t("roles.form.description")}</Label>
             <Textarea
               id="role-desc"
               value={description}
@@ -235,13 +238,15 @@ function RoleFormBody({
 
         {!isDuplicate && (
           <div className="space-y-3">
-            <Label>הרשאות</Label>
+            <Label>{t("roles.form.permissions")}</Label>
             {catalog.map((group) => (
               <div
                 key={group.category}
                 className="rounded-md border border-border p-3"
               >
-                <div className="font-medium text-sm mb-2">{group.label}</div>
+                <div className="font-medium text-sm mb-2">
+                  {t(`permCategory.${group.category}` as MessageKey)}
+                </div>
                 <div className="space-y-2">
                   {group.entries.map((entry) => {
                     const g = grants.get(entry.key);
@@ -257,7 +262,7 @@ function RoleFormBody({
                             disabled={readOnly}
                             onCheckedChange={(v) => toggle(entry, v === true)}
                           />
-                          {entry.label}
+                          {`${t(`permCategory.${group.category}` as MessageKey)} — ${t(`permVerb.${entry.verb}` as MessageKey)}`}
                         </label>
                         {entry.scoped && checked && (
                           <Select
@@ -273,7 +278,7 @@ function RoleFormBody({
                             <SelectContent>
                               {SUPPORTED_SCOPES.map((s) => (
                                 <SelectItem key={s} value={s}>
-                                  {SCOPE_LABELS[s]}
+                                  {t(`permScope.${s}` as MessageKey)}
                                 </SelectItem>
                               ))}
                             </SelectContent>
@@ -298,16 +303,16 @@ function RoleFormBody({
           onClick={onCancel}
           disabled={submitting}
         >
-          {readOnly ? "סגירה" : "ביטול"}
+          {readOnly ? t("common.close") : t("common.cancel")}
         </Button>
         {!readOnly && (
           <Button type="submit" disabled={submitting}>
             {submitting && <Loader2 className="size-4 animate-spin" />}
             {mode === "create"
-              ? "צור תפקיד"
+              ? t("roles.form.submitCreate")
               : mode === "duplicate"
-                ? "שכפל"
-                : "שמור שינויים"}
+                ? t("roles.form.submitDuplicate")
+                : t("roles.form.submitSave")}
           </Button>
         )}
       </DialogFooter>
