@@ -10,35 +10,37 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { ApiError, apiClient } from "@/lib/api-client";
+import { useT } from "@/i18n/locale-provider";
 import type { SettingsOrganization } from "./settings-page";
 
 // The office code is the invite/join identifier — always shown, always
 // read-only, with a copy button (used when inviting teammates).
 function OrgCodeRow({ code }: { code: string }) {
+  const t = useT();
   const [copied, setCopied] = useState(false);
 
   async function copy() {
     try {
       await navigator.clipboard.writeText(code);
       setCopied(true);
-      toast.success("קוד המשרד הועתק");
+      toast.success(t("settings.office.codeCopied"));
       setTimeout(() => setCopied(false), 1500);
     } catch {
-      toast.error("לא ניתן להעתיק");
+      toast.error(t("settings.office.copyFailed"));
     }
   }
 
   return (
     <div className="space-y-2">
-      <Label>קוד משרד</Label>
+      <Label>{t("settings.office.code")}</Label>
       <div className="flex items-center gap-2">
         <Input value={code} readOnly disabled dir="ltr" className="font-mono" />
-        <Button type="button" variant="outline" size="icon" onClick={copy} aria-label="העתקת קוד משרד">
+        <Button type="button" variant="outline" size="icon" onClick={copy} aria-label={t("settings.office.copyAria")}>
           {copied ? <Check className="size-4" /> : <Copy className="size-4" />}
         </Button>
       </div>
       <p className="text-xs text-muted-foreground">
-        הקוד משמש להזמנת חברי צוות והצטרפות למשרד. אינו ניתן לשינוי.
+        {t("settings.office.codeHint")}
       </p>
     </div>
   );
@@ -52,6 +54,7 @@ export function OfficeForm({
   canEdit: boolean;
 }) {
   const router = useRouter();
+  const t = useT();
   const [saved, setSaved] = useState(initial);
   const [name, setName] = useState(initial.name);
   const [email, setEmail] = useState(initial.email ?? "");
@@ -68,7 +71,7 @@ export function OfficeForm({
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!name.trim()) {
-      toast.error("שם המשרד הוא שדה חובה");
+      toast.error(t("settings.office.nameRequired"));
       return;
     }
     if (!dirty) return;
@@ -93,12 +96,12 @@ export function OfficeForm({
       setEmail(next.email ?? "");
       setPhone(next.phone ?? "");
       setAddress(next.address ?? "");
-      toast.success("פרטי המשרד עודכנו");
+      toast.success(t("settings.office.updated"));
       router.refresh();
     } catch (err) {
       if (err instanceof ApiError) toast.error(err.message);
       else {
-        toast.error("שגיאה לא צפויה");
+        toast.error(t("common.unexpectedError"));
         console.error(err);
       }
     } finally {
@@ -110,13 +113,13 @@ export function OfficeForm({
   if (!canEdit) {
     return (
       <div className="border border-border rounded-lg glass-card shadow-card p-6 space-y-5">
-        <ReadOnlyRow label="שם המשרד" value={initial.name} />
+        <ReadOnlyRow label={t("settings.office.name")} value={initial.name} />
         <OrgCodeRow code={initial.orgCode} />
-        <ReadOnlyRow label="אימייל" value={initial.email} ltr />
-        <ReadOnlyRow label="טלפון" value={initial.phone} ltr />
-        <ReadOnlyRow label="כתובת" value={initial.address} />
+        <ReadOnlyRow label={t("common.email")} value={initial.email} ltr />
+        <ReadOnlyRow label={t("common.phone")} value={initial.phone} ltr />
+        <ReadOnlyRow label={t("settings.office.address")} value={initial.address} />
         <p className="text-xs text-muted-foreground">
-          רק בעלים של המשרד יכול לערוך את הפרטים האלה.
+          {t("settings.office.readonlyHint")}
         </p>
       </div>
     );
@@ -129,7 +132,7 @@ export function OfficeForm({
       className="border border-border rounded-lg glass-card shadow-card p-6 space-y-5"
     >
       <div className="space-y-2">
-        <Label htmlFor="officeName">שם המשרד</Label>
+        <Label htmlFor="officeName">{t("settings.office.name")}</Label>
         <Input
           id="officeName"
           value={name}
@@ -142,7 +145,7 @@ export function OfficeForm({
       <OrgCodeRow code={initial.orgCode} />
 
       <div className="space-y-2">
-        <Label htmlFor="officeEmail">אימייל</Label>
+        <Label htmlFor="officeEmail">{t("common.email")}</Label>
         <Input
           id="officeEmail"
           type="email"
@@ -155,7 +158,7 @@ export function OfficeForm({
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="officePhone">טלפון</Label>
+        <Label htmlFor="officePhone">{t("common.phone")}</Label>
         <Input
           id="officePhone"
           value={phone}
@@ -167,7 +170,7 @@ export function OfficeForm({
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="officeAddress">כתובת</Label>
+        <Label htmlFor="officeAddress">{t("settings.office.address")}</Label>
         <Textarea
           id="officeAddress"
           value={address}
@@ -180,7 +183,7 @@ export function OfficeForm({
       <div className="flex justify-start pt-1">
         <Button type="submit" disabled={saving || !dirty}>
           {saving && <Loader2 className="size-4 animate-spin" />}
-          שמירת שינויים
+          {t("common.saveChanges")}
         </Button>
       </div>
     </form>

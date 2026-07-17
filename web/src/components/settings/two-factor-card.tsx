@@ -17,6 +17,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { ApiError, apiClient, type MfaEnrollResult } from "@/lib/api-client";
+import { useT } from "@/i18n/locale-provider";
 
 function errorReason(err: ApiError): string | null {
   if (typeof err.details === "object" && err.details !== null) {
@@ -38,6 +39,7 @@ export function TwoFactorCard({
   onChange: (enabled: boolean) => void;
 }) {
   const router = useRouter();
+  const t = useT();
   const [enrollment, setEnrollment] = useState<MfaEnrollResult | null>(null);
   const [code, setCode] = useState("");
   const [invalid, setInvalid] = useState(false);
@@ -70,14 +72,14 @@ export function TwoFactorCard({
       if (err instanceof ApiError) {
         if (errorReason(err) === "already_enrolled") {
           // Another device/tab finished enrollment first.
-          toast.error("אימות דו-שלבי כבר מופעל בחשבון הזה");
+          toast.error(t("settings.twoFactor.alreadyEnabled"));
           onChange(true);
           router.refresh();
         } else {
           toast.error(err.message);
         }
       } else {
-        toast.error("שגיאה לא צפויה");
+        toast.error(t("common.unexpectedError"));
         console.error(err);
       }
     } finally {
@@ -92,7 +94,7 @@ export function TwoFactorCard({
     setInvalid(false);
     try {
       await apiClient.auth.mfa.confirm({ factorId: enrollment.factorId, code });
-      toast.success("אימות דו-שלבי הופעל בהצלחה");
+      toast.success(t("settings.twoFactor.enabledSuccess"));
       setEnrollment(null);
       setCode("");
       onChange(true);
@@ -101,14 +103,14 @@ export function TwoFactorCard({
       if (err instanceof ApiError) {
         if (errorReason(err) === "invalid_code") {
           setInvalid(true);
-          toast.error("הקוד שגוי או שפג תוקפו — נסה שוב");
+          toast.error(t("settings.twoFactor.invalidCodeToast"));
         } else if (err.code === "RATE_LIMITED") {
-          toast.error("יותר מדי ניסיונות. המתן מספר דקות ונסה שוב.");
+          toast.error(t("settings.twoFactor.rateLimited"));
         } else {
           toast.error(err.message);
         }
       } else {
-        toast.error("שגיאה לא צפויה");
+        toast.error(t("common.unexpectedError"));
         console.error(err);
       }
     } finally {
@@ -120,14 +122,14 @@ export function TwoFactorCard({
     setLoading(true);
     try {
       await apiClient.auth.mfa.disable();
-      toast.success("אימות דו-שלבי הושבת");
+      toast.success(t("settings.twoFactor.disabled"));
       setDisableTimer(0);
       onChange(false);
       router.refresh();
     } catch (err) {
       if (err instanceof ApiError) toast.error(err.message);
       else {
-        toast.error("שגיאה לא צפויה");
+        toast.error(t("common.unexpectedError"));
         console.error(err);
       }
     } finally {
@@ -144,11 +146,11 @@ export function TwoFactorCard({
           <ShieldOff className="size-5 text-muted-foreground shrink-0 mt-0.5" />
         )}
         <div className="space-y-1">
-          <h3 className="font-semibold">אימות דו-שלבי (2FA)</h3>
+          <h3 className="font-semibold">{t("settings.twoFactor.title")}</h3>
           <p className="text-sm text-muted-foreground">
             {enabled
-              ? "פעיל — בכל כניסה תתבקש להזין קוד מאפליקציית האימות בנוסף לסיסמה."
-              : "שכבת הגנה נוספת לחשבון: בנוסף לסיסמה, קוד חד-פעמי מאפליקציית אימות (Google Authenticator, Microsoft Authenticator וכדומה)."}
+              ? t("settings.twoFactor.descEnabled")
+              : t("settings.twoFactor.descDisabled")}
           </p>
         </div>
       </div>
@@ -158,7 +160,7 @@ export function TwoFactorCard({
         <div className="flex justify-start">
           <Button type="button" onClick={startEnrollment} disabled={loading}>
             {loading && <Loader2 className="size-4 animate-spin" />}
-            הפעלת אימות דו-שלבי
+            {t("settings.twoFactor.enableButton")}
           </Button>
         </div>
       )}
@@ -167,9 +169,9 @@ export function TwoFactorCard({
       {!enabled && enrollment && (
         <form onSubmit={confirmEnrollment} className="space-y-4">
           <ol className="text-sm text-muted-foreground space-y-1 list-decimal ps-5">
-            <li>פתח את אפליקציית האימות בטלפון</li>
-            <li>סרוק את קוד ה-QR (או הזן את המפתח ידנית)</li>
-            <li>הזן למטה את הקוד בן 6 הספרות שמופיע באפליקציה</li>
+            <li>{t("settings.twoFactor.step1")}</li>
+            <li>{t("settings.twoFactor.step2")}</li>
+            <li>{t("settings.twoFactor.step3")}</li>
           </ol>
 
           <div className="flex flex-col items-center gap-3">
@@ -178,13 +180,13 @@ export function TwoFactorCard({
               {/* eslint-disable-next-line @next/next/no-img-element -- provider-generated data: URI, not an optimizable asset */}
               <img
                 src={enrollment.qrCode}
-                alt="קוד QR להוספת החשבון לאפליקציית האימות"
+                alt={t("settings.twoFactor.qrAlt")}
                 className="size-40"
               />
             </div>
             <div className="text-center space-y-1">
               <p className="text-xs text-muted-foreground">
-                לא מצליח לסרוק? הזן את המפתח הזה ידנית:
+                {t("settings.twoFactor.manualKeyHint")}
               </p>
               <p
                 dir="ltr"
@@ -196,7 +198,7 @@ export function TwoFactorCard({
           </div>
 
           <div className="space-y-2 max-w-xs">
-            <Label htmlFor="mfa-enroll-code">קוד מהאפליקציה</Label>
+            <Label htmlFor="mfa-enroll-code">{t("settings.twoFactor.codeLabel")}</Label>
             <Input
               id="mfa-enroll-code"
               value={code}
@@ -215,7 +217,7 @@ export function TwoFactorCard({
             />
             {invalid && (
               <p className="text-xs text-destructive">
-                הקוד שגוי או שפג תוקפו. הקודים מתחלפים כל 30 שניות.
+                {t("settings.twoFactor.invalidCodeInline")}
               </p>
             )}
           </div>
@@ -223,7 +225,7 @@ export function TwoFactorCard({
           <div className="flex gap-2">
             <Button type="submit" disabled={loading || code.length !== 6}>
               {loading && <Loader2 className="size-4 animate-spin" />}
-              אישור והפעלה
+              {t("settings.twoFactor.confirmButton")}
             </Button>
             <Button
               type="button"
@@ -235,7 +237,7 @@ export function TwoFactorCard({
                 setInvalid(false);
               }}
             >
-              ביטול
+              {t("common.cancel")}
             </Button>
           </div>
         </form>
@@ -251,13 +253,13 @@ export function TwoFactorCard({
             onClick={() => setDisableTimer(DISABLE_TIMEOUT)}
             disabled={loading}
           >
-            השבתת אימות דו-שלבי
+            {t("settings.twoFactor.disableButton")}
           </Button>
         </div>
       )}
 
       <p className="text-xs text-muted-foreground">
-        איבדת גישה לאפליקציית האימות? פנה לתמיכת המערכת לשחזור הגישה לחשבון.
+        {t("settings.twoFactor.lostAccess")}
       </p>
 
       <Dialog
@@ -269,10 +271,9 @@ export function TwoFactorCard({
       >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>להשבית את האימות הדו-שלבי?</DialogTitle>
+            <DialogTitle>{t("settings.twoFactor.disableConfirmTitle")}</DialogTitle>
             <DialogDescription>
-              החשבון יהיה מוגן בסיסמה בלבד. אם המשרד שלך מחייב אימות דו-שלבי,
-              תתבקש להפעיל אותו מחדש. אם לא תבחר, החלון ייסגר אוטומטית ללא שינוי.
+              {t("settings.twoFactor.disableConfirmDesc")}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -282,7 +283,7 @@ export function TwoFactorCard({
               onClick={() => setDisableTimer(0)}
               disabled={loading}
             >
-              ביטול{!loading && ` (${disableTimer})`}
+              {t("common.cancel")}{!loading && ` (${disableTimer})`}
             </Button>
             <Button
               type="button"
@@ -291,7 +292,7 @@ export function TwoFactorCard({
               disabled={loading}
             >
               {loading && <Loader2 className="size-4 animate-spin" />}
-              השבתה
+              {t("settings.twoFactor.disableAction")}
             </Button>
           </DialogFooter>
         </DialogContent>

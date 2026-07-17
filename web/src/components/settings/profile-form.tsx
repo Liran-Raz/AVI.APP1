@@ -10,12 +10,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ApiError, apiClient, type MeRole } from "@/lib/api-client";
+import { useT } from "@/i18n/locale-provider";
+import type { MessageKey } from "@/i18n/messages-types";
 import type { SettingsProfile } from "./settings-page";
 
-const ROLE_LABEL: Record<MeRole, string> = {
-  owner: "בעלים",
-  admin: "מנהל",
-  employee: "עובד",
+const ROLE_LABEL_KEYS: Record<MeRole, MessageKey> = {
+  owner: "role.owner",
+  admin: "role.admin",
+  employee: "role.employee",
 };
 
 function roleIcon(role: MeRole) {
@@ -31,6 +33,7 @@ function roleIcon(role: MeRole) {
 
 export function ProfileForm({ initial }: { initial: SettingsProfile }) {
   const router = useRouter();
+  const t = useT();
   // Baseline reflects what's persisted; updated after a successful save so the
   // dirty check + "no changes" state stay accurate without a refetch.
   const [savedName, setSavedName] = useState(initial.fullName);
@@ -45,7 +48,7 @@ export function ProfileForm({ initial }: { initial: SettingsProfile }) {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!fullName.trim()) {
-      toast.error("שם מלא הוא שדה חובה");
+      toast.error(t("settings.profile.nameRequired"));
       return;
     }
     if (!dirty) return;
@@ -59,13 +62,13 @@ export function ProfileForm({ initial }: { initial: SettingsProfile }) {
       setSavedPhone(updated.phone ?? "");
       setFullName(updated.fullName);
       setPhone(updated.phone ?? "");
-      toast.success("הפרופיל עודכן");
+      toast.success(t("settings.profile.updated"));
       // Server components (e.g. the sidebar avatar initials) re-read the name.
       router.refresh();
     } catch (err) {
       if (err instanceof ApiError) toast.error(err.message);
       else {
-        toast.error("שגיאה לא צפויה");
+        toast.error(t("common.unexpectedError"));
         console.error(err);
       }
     } finally {
@@ -90,7 +93,7 @@ export function ProfileForm({ initial }: { initial: SettingsProfile }) {
         className="border border-border rounded-lg glass-card shadow-card p-6 space-y-5"
       >
         <div className="space-y-2">
-          <Label htmlFor="fullName">שם מלא</Label>
+          <Label htmlFor="fullName">{t("settings.profile.fullName")}</Label>
           <Input
             id="fullName"
             value={fullName}
@@ -101,15 +104,15 @@ export function ProfileForm({ initial }: { initial: SettingsProfile }) {
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="email">אימייל</Label>
+          <Label htmlFor="email">{t("common.email")}</Label>
           <Input id="email" value={initial.email} readOnly disabled dir="ltr" />
           <p className="text-xs text-muted-foreground">
-            האימייל משמש לזיהוי ולהתחברות ולא ניתן לשינוי כאן.
+            {t("settings.profile.emailHint")}
           </p>
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="phone">טלפון</Label>
+          <Label htmlFor="phone">{t("common.phone")}</Label>
           <Input
             id="phone"
             value={phone}
@@ -121,34 +124,34 @@ export function ProfileForm({ initial }: { initial: SettingsProfile }) {
         </div>
 
         <div className="space-y-2">
-          <Label>התפקיד שלך</Label>
+          <Label>{t("settings.profile.yourRole")}</Label>
           <div>
             <Badge variant="outline" className="gap-1">
               {roleIcon(initial.role)}
-              {ROLE_LABEL[initial.role]}
+              {t(ROLE_LABEL_KEYS[initial.role])}
             </Badge>
           </div>
           <p className="text-xs text-muted-foreground">
-            התפקיד נקבע ומשתנה במסך &quot;צוות&quot; ע&quot;י בעלים/מנהל.
+            {t("settings.profile.roleHint")}
           </p>
         </div>
 
         <div className="flex justify-start pt-1">
           <Button type="submit" disabled={saving || !dirty}>
             {saving && <Loader2 className="size-4 animate-spin" />}
-            שמירת שינויים
+            {t("common.saveChanges")}
           </Button>
         </div>
       </form>
 
       <div className="border border-border rounded-lg glass-card shadow-card p-4 flex items-center justify-between gap-4">
         <div>
-          <p className="text-sm font-medium">התנתקות</p>
-          <p className="text-xs text-muted-foreground">יציאה מהחשבון במכשיר הזה.</p>
+          <p className="text-sm font-medium">{t("settings.profile.logoutTitle")}</p>
+          <p className="text-xs text-muted-foreground">{t("settings.profile.logoutHint")}</p>
         </div>
         <Button variant="outline" onClick={handleLogout}>
           <LogOut className="size-4" />
-          התנתקות
+          {t("appShell.logout")}
         </Button>
       </div>
     </div>

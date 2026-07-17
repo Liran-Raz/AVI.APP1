@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { ApiError, apiClient, type NotificationPrefs } from "@/lib/api-client";
+import { useT } from "@/i18n/locale-provider";
 
 // Controlled: the source of truth lives in SettingsPage (which stays mounted
 // across tab switches), so toggling here — and then leaving/returning to the
@@ -18,6 +19,7 @@ export function NotificationPrefsForm({
   value: NotificationPrefs;
   onChange: (next: NotificationPrefs) => void;
 }) {
+  const t = useT();
   const [saving, setSaving] = useState(false);
 
   async function toggleEmailOnAssignment(next: boolean) {
@@ -29,12 +31,12 @@ export function NotificationPrefsForm({
         emailOnTaskAssignment: next,
       });
       onChange(updated); // confirm with the persisted server value
-      toast.success("ההעדפות עודכנו");
+      toast.success(t("settings.notifications.updated"));
     } catch (err) {
       onChange(prev); // rollback
       if (err instanceof ApiError) toast.error(err.message);
       else {
-        toast.error("שגיאה לא צפויה");
+        toast.error(t("common.unexpectedError"));
         console.error(err);
       }
     } finally {
@@ -54,12 +56,12 @@ export function NotificationPrefsForm({
         bellOnTaskAssignment: next,
       });
       onChange(updated); // confirm with the persisted server value
-      toast.success("ההעדפות עודכנו");
+      toast.success(t("settings.notifications.updated"));
     } catch (err) {
       onChange(prev); // rollback
       if (err instanceof ApiError) toast.error(err.message);
       else {
-        toast.error("שגיאה לא צפויה");
+        toast.error(t("common.unexpectedError"));
         console.error(err);
       }
     } finally {
@@ -73,10 +75,10 @@ export function NotificationPrefsForm({
       <div className="flex items-start justify-between gap-4 p-6">
         <div className="min-w-0">
           <Label htmlFor="emailOnTaskAssignment" className="text-sm font-medium">
-            מייל בשיוך משימה חדשה
+            {t("settings.notifications.emailOnAssignment")}
           </Label>
           <p className="text-xs text-muted-foreground mt-1">
-            קבלת אימייל כשמשימה חדשה משויכת אליך.
+            {t("settings.notifications.emailOnAssignmentHint")}
           </p>
         </div>
         <Switch
@@ -91,11 +93,10 @@ export function NotificationPrefsForm({
       <div className="flex items-start justify-between gap-4 p-6">
         <div className="min-w-0">
           <Label htmlFor="bellOnTaskAssignment" className="text-sm font-medium">
-            התראת פעמון בשיוך משימה חדשה
+            {t("settings.notifications.bellOnAssignment")}
           </Label>
           <p className="text-xs text-muted-foreground mt-1">
-            כשמכובה: ההתראה עדיין תופיע ברשימת הפעמון, אבל לא תדליק את מונה
-            ההתראות האדום (בלי נדנוד).
+            {t("settings.notifications.bellOnAssignmentHint")}
           </p>
         </div>
         <Switch
