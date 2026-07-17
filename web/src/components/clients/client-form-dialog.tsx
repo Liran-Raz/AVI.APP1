@@ -32,7 +32,8 @@ import {
   type MemberDTO,
   type UpdateClientPayload,
 } from "@/lib/api-client";
-import { BUSINESS_TYPE_LABELS } from "./business-types";
+import { useT } from "@/i18n/locale-provider";
+import type { MessageKey } from "@/i18n/messages-types";
 
 type Mode = "create" | "edit";
 
@@ -94,6 +95,7 @@ export function ClientFormDialog({
   members,
   onSaved,
 }: Props) {
+  const t = useT();
   // Keying the inner form by mode + id ensures fresh state every time the
   // dialog opens for a different target — no useEffect-driven resets.
   const formKey = mode === "edit" ? (initial?.id ?? "edit") : "create";
@@ -103,12 +105,14 @@ export function ClientFormDialog({
       <DialogContent className="sm:max-w-xl">
         <DialogHeader>
           <DialogTitle>
-            {mode === "create" ? "לקוח חדש" : "עריכת לקוח"}
+            {mode === "create"
+              ? t("clients.form.createTitle")
+              : t("clients.form.editTitle")}
           </DialogTitle>
           <DialogDescription>
             {mode === "create"
-              ? "הוספת לקוח חדש למשרד שלך."
-              : "עדכון פרטי הלקוח."}
+              ? t("clients.form.createDesc")
+              : t("clients.form.editDesc")}
           </DialogDescription>
         </DialogHeader>
 
@@ -141,6 +145,7 @@ function ClientFormBody({
   onCancel: () => void;
   onSaved: (saved: ClientDTO) => void;
 }) {
+  const t = useT();
   const [form, setForm] = useState<FormState>(() =>
     mode === "edit" && initial ? stateFromDTO(initial) : emptyState(),
   );
@@ -195,7 +200,7 @@ function ClientFormBody({
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!form.name.trim()) {
-      setError("שם הלקוח הוא שדה חובה");
+      setError(t("clients.form.nameRequired"));
       return;
     }
     setSubmitting(true);
@@ -205,15 +210,19 @@ function ClientFormBody({
         mode === "create"
           ? await apiClient.clients.create(buildCreatePayload())
           : await apiClient.clients.update(initial!.id, buildUpdatePayload());
-      toast.success(mode === "create" ? "לקוח נוצר" : "לקוח עודכן");
+      toast.success(
+        mode === "create"
+          ? t("clients.form.createdToast")
+          : t("clients.form.updatedToast"),
+      );
       onSaved(saved);
     } catch (err) {
       if (err instanceof ApiError) {
         setError(err.message);
-        toast.error(`שגיאה: ${err.message}`);
+        toast.error(t("clients.errorWithMessage", { message: err.message }));
       } else {
-        setError("שגיאה לא צפויה");
-        toast.error("שגיאה לא צפויה");
+        setError(t("common.unexpectedError"));
+        toast.error(t("common.unexpectedError"));
         console.error(err);
       }
     } finally {
@@ -228,7 +237,7 @@ function ClientFormBody({
     >
       <div className="space-y-2 sm:col-span-2">
         <Label htmlFor="client-name">
-          שם <span className="text-destructive">*</span>
+          {t("clients.form.name")} <span className="text-destructive">*</span>
         </Label>
         <Input
           id="client-name"
@@ -241,19 +250,23 @@ function ClientFormBody({
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="client-business-type">סוג עסק</Label>
+        <Label htmlFor="client-business-type">
+          {t("clients.form.businessType")}
+        </Label>
         <Select
           value={form.businessType}
           onValueChange={(v) => set("businessType", v)}
         >
           <SelectTrigger id="client-business-type" className="w-full">
-            <SelectValue placeholder="בחר סוג עסק" />
+            <SelectValue placeholder={t("clients.form.businessTypePlaceholder")} />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value={NONE}>ללא</SelectItem>
+            <SelectItem value={NONE}>
+              {t("clients.form.businessTypeNone")}
+            </SelectItem>
             {BUSINESS_TYPES.map((bt) => (
               <SelectItem key={bt} value={bt}>
-                {BUSINESS_TYPE_LABELS[bt]}
+                {t(`businessType.${bt}` as MessageKey)}
               </SelectItem>
             ))}
           </SelectContent>
@@ -261,7 +274,7 @@ function ClientFormBody({
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="client-tax-id">מספר עוסק / ח״פ</Label>
+        <Label htmlFor="client-tax-id">{t("clients.form.taxId")}</Label>
         <Input
           id="client-tax-id"
           value={form.taxId}
@@ -272,7 +285,7 @@ function ClientFormBody({
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="client-email">אימייל</Label>
+        <Label htmlFor="client-email">{t("common.email")}</Label>
         <Input
           id="client-email"
           type="email"
@@ -284,7 +297,7 @@ function ClientFormBody({
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="client-phone">טלפון</Label>
+        <Label htmlFor="client-phone">{t("common.phone")}</Label>
         <Input
           id="client-phone"
           type="tel"
@@ -296,7 +309,7 @@ function ClientFormBody({
       </div>
 
       <div className="space-y-2 sm:col-span-2">
-        <Label htmlFor="client-address">כתובת</Label>
+        <Label htmlFor="client-address">{t("clients.form.address")}</Label>
         <Input
           id="client-address"
           value={form.address}
@@ -306,20 +319,20 @@ function ClientFormBody({
       </div>
 
       <div className="space-y-2 sm:col-span-2">
-        <Label htmlFor="client-handler">גורם מטפל</Label>
+        <Label htmlFor="client-handler">{t("clients.form.handler")}</Label>
         <Select
           value={form.handlingUserId}
           onValueChange={(v) => set("handlingUserId", v)}
         >
           <SelectTrigger id="client-handler" className="w-full">
-            <SelectValue placeholder="בחר גורם מטפל" />
+            <SelectValue placeholder={t("clients.form.handlerPlaceholder")} />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value={NONE}>ללא גורם מטפל</SelectItem>
+            <SelectItem value={NONE}>{t("clients.form.handlerNone")}</SelectItem>
             {handlerOptions.map((m) => (
               <SelectItem key={m.id} value={m.id}>
                 {m.fullName}
-                {!m.isActive ? " (לא פעיל)" : ""}
+                {!m.isActive ? t("clients.form.inactiveSuffix") : ""}
               </SelectItem>
             ))}
           </SelectContent>
@@ -327,7 +340,7 @@ function ClientFormBody({
       </div>
 
       <div className="space-y-2 sm:col-span-2">
-        <Label htmlFor="client-notes">הערות</Label>
+        <Label htmlFor="client-notes">{t("clients.form.notes")}</Label>
         <Textarea
           id="client-notes"
           value={form.notes}
@@ -348,11 +361,13 @@ function ClientFormBody({
           onClick={onCancel}
           disabled={submitting}
         >
-          ביטול
+          {t("common.cancel")}
         </Button>
         <Button type="submit" disabled={submitting}>
           {submitting && <Loader2 className="size-4 animate-spin" />}
-          {mode === "create" ? "צור לקוח" : "שמור שינויים"}
+          {mode === "create"
+            ? t("clients.form.submitCreate")
+            : t("clients.form.submitSave")}
         </Button>
       </DialogFooter>
     </form>

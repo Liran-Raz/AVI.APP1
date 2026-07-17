@@ -51,8 +51,9 @@ import {
   type MemberDTO,
 } from "@/lib/api-client";
 import { hasCapability, PERMISSIONS, type Capability } from "@/lib/capabilities";
+import { useT } from "@/i18n/locale-provider";
+import type { MessageKey } from "@/i18n/messages-types";
 import { ClientFormDialog } from "./client-form-dialog";
-import { BUSINESS_TYPE_LABELS, formatBusinessType } from "./business-types";
 
 type StatusFilter = "active" | "archived" | "all";
 type BusinessTypeFilter = "all" | (typeof BUSINESS_TYPES)[number];
@@ -68,6 +69,7 @@ export function ClientsPage({
   initialMembers: MemberDTO[];
   capabilities: Capability[];
 }) {
+  const t = useT();
   const [items, setItems] = useState<ClientDTO[]>(initialItems);
   const [members] = useState<MemberDTO[]>(initialMembers);
   const router = useRouter();
@@ -112,15 +114,15 @@ export function ClientsPage({
       setItems(result.items);
     } catch (err) {
       if (err instanceof ApiError) {
-        toast.error(`שגיאה בטעינת לקוחות: ${err.message}`);
+        toast.error(t("clients.loadError", { message: err.message }));
       } else {
-        toast.error("שגיאה לא צפויה");
+        toast.error(t("common.unexpectedError"));
         console.error(err);
       }
     } finally {
       setLoading(false);
     }
-  }, [status, businessType, debouncedSearch]);
+  }, [status, businessType, debouncedSearch, t]);
 
   useEffect(() => {
     if (isFirstRun.current) {
@@ -144,15 +146,17 @@ export function ClientsPage({
 
   async function handleArchive(client: ClientDTO) {
     if (!canArchive) return;
-    if (!window.confirm(`להעביר את "${client.name}" לארכיון?`)) return;
+    if (!window.confirm(t("clients.confirmArchive", { name: client.name })))
+      return;
     try {
       await apiClient.clients.archive(client.id);
-      toast.success("לקוח הועבר לארכיון");
+      toast.success(t("clients.archivedToast"));
       await refetch();
     } catch (err) {
-      if (err instanceof ApiError) toast.error(`שגיאה: ${err.message}`);
+      if (err instanceof ApiError)
+        toast.error(t("clients.errorWithMessage", { message: err.message }));
       else {
-        toast.error("שגיאה לא צפויה");
+        toast.error(t("common.unexpectedError"));
         console.error(err);
       }
     }
@@ -162,12 +166,13 @@ export function ClientsPage({
     if (!canArchive) return;
     try {
       await apiClient.clients.restore(client.id);
-      toast.success("לקוח שוחזר");
+      toast.success(t("clients.restoredToast"));
       await refetch();
     } catch (err) {
-      if (err instanceof ApiError) toast.error(`שגיאה: ${err.message}`);
+      if (err instanceof ApiError)
+        toast.error(t("clients.errorWithMessage", { message: err.message }));
       else {
-        toast.error("שגיאה לא צפויה");
+        toast.error(t("common.unexpectedError"));
         console.error(err);
       }
     }
@@ -201,25 +206,27 @@ export function ClientsPage({
     <div className="container mx-auto px-4 md:px-6 py-6 md:py-8 max-w-6xl">
       <div className="flex items-center justify-between mb-6 gap-4 flex-wrap">
         <div>
-          <h1 className="text-2xl md:text-3xl font-bold tracking-tight">לקוחות</h1>
+          <h1 className="text-2xl md:text-3xl font-bold tracking-tight">
+            {t("clients.title")}
+          </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            ניהול הלקוחות של המשרד
+            {t("clients.subtitle")}
           </p>
         </div>
         <Button onClick={handleCreateClick}>
           <Plus className="size-4" />
-          לקוח חדש
+          {t("clients.newClient")}
         </Button>
       </div>
 
       <div className="flex flex-wrap items-center gap-3 mb-4">
         <div className="relative flex-1 min-w-[200px]">
-          <Search className="absolute right-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground pointer-events-none" />
+          <Search className="absolute start-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground pointer-events-none" />
           <Input
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
-            placeholder="חיפוש לפי שם, ח״פ, אימייל או טלפון"
-            className="pr-9"
+            placeholder={t("clients.searchPlaceholder")}
+            className="ps-9"
             maxLength={100}
           />
         </div>
@@ -232,10 +239,10 @@ export function ClientsPage({
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">כל סוגי העסק</SelectItem>
+            <SelectItem value="all">{t("clients.allBusinessTypes")}</SelectItem>
             {BUSINESS_TYPES.map((bt) => (
               <SelectItem key={bt} value={bt}>
-                {BUSINESS_TYPE_LABELS[bt]}
+                {t(`businessType.${bt}` as MessageKey)}
               </SelectItem>
             ))}
           </SelectContent>
@@ -246,21 +253,23 @@ export function ClientsPage({
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="active">פעילים</SelectItem>
-            <SelectItem value="archived">בארכיון</SelectItem>
-            <SelectItem value="all">הכל</SelectItem>
+            <SelectItem value="active">{t("clients.filter.active")}</SelectItem>
+            <SelectItem value="archived">
+              {t("clients.filter.archived")}
+            </SelectItem>
+            <SelectItem value="all">{t("clients.filter.all")}</SelectItem>
           </SelectContent>
         </Select>
 
         {loading && (
           <div className="flex items-center gap-1 text-xs text-muted-foreground">
             <Loader2 className="size-3 animate-spin" />
-            טוען...
+            {t("common.loading")}
           </div>
         )}
 
-        <div className="text-xs text-muted-foreground mr-auto">
-          {items.length} לקוחות
+        <div className="text-xs text-muted-foreground ms-auto">
+          {t("clients.countClients", { count: items.length })}
         </div>
       </div>
 
@@ -275,12 +284,12 @@ export function ClientsPage({
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>שם</TableHead>
-                  <TableHead>סוג עסק</TableHead>
-                  <TableHead>טלפון</TableHead>
-                  <TableHead>אימייל</TableHead>
-                  <TableHead>גורם מטפל</TableHead>
-                  <TableHead>סטטוס</TableHead>
+                  <TableHead>{t("clients.table.name")}</TableHead>
+                  <TableHead>{t("clients.table.businessType")}</TableHead>
+                  <TableHead>{t("common.phone")}</TableHead>
+                  <TableHead>{t("common.email")}</TableHead>
+                  <TableHead>{t("clients.table.handler")}</TableHead>
+                  <TableHead>{t("clients.table.status")}</TableHead>
                   <TableHead className="w-[40px]"></TableHead>
                 </TableRow>
               </TableHeader>
@@ -300,7 +309,11 @@ export function ClientsPage({
                         {client.name}
                       </Link>
                     </TableCell>
-                    <TableCell>{formatBusinessType(client.businessType)}</TableCell>
+                    <TableCell>
+                      {client.businessType
+                        ? t(`businessType.${client.businessType}` as MessageKey)
+                        : "—"}
+                    </TableCell>
                     <TableCell dir="ltr" className="text-start">
                       {client.phone ?? "—"}
                     </TableCell>
@@ -314,9 +327,13 @@ export function ClientsPage({
                     </TableCell>
                     <TableCell>
                       {client.isActive ? (
-                        <Badge variant="secondary">פעיל</Badge>
+                        <Badge variant="secondary">
+                          {t("clients.badge.active")}
+                        </Badge>
                       ) : (
-                        <Badge variant="outline">בארכיון</Badge>
+                        <Badge variant="outline">
+                          {t("clients.badge.archived")}
+                        </Badge>
                       )}
                     </TableCell>
                     <TableCell>
@@ -374,13 +391,14 @@ function ClientActionsMenu({
   onArchive: (c: ClientDTO) => void;
   onRestore: (c: ClientDTO) => void;
 }) {
+  const t = useT();
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button
           variant="ghost"
           size="icon"
-          aria-label={`פעולות עבור ${client.name}`}
+          aria-label={t("clients.actionsFor", { name: client.name })}
           onClick={(e) => e.stopPropagation()}
         >
           <MoreHorizontal className="size-4" />
@@ -390,23 +408,23 @@ function ClientActionsMenu({
         <DropdownMenuItem asChild>
           <Link href={`/clients/${client.id}`}>
             <Eye className="size-4" />
-            צפייה
+            {t("clients.actions.view")}
           </Link>
         </DropdownMenuItem>
         <DropdownMenuItem onClick={() => onEdit(client)}>
           <Pencil className="size-4" />
-          ערוך
+          {t("clients.actions.edit")}
         </DropdownMenuItem>
         {canArchive && client.isActive && (
           <DropdownMenuItem onClick={() => onArchive(client)}>
             <Archive className="size-4" />
-            העבר לארכיון
+            {t("clients.actions.archive")}
           </DropdownMenuItem>
         )}
         {canArchive && !client.isActive && (
           <DropdownMenuItem onClick={() => onRestore(client)}>
             <ArchiveRestore className="size-4" />
-            שחזר מהארכיון
+            {t("clients.actions.restore")}
           </DropdownMenuItem>
         )}
       </DropdownMenuContent>
@@ -431,6 +449,7 @@ function ClientCard({
   onRestore: (c: ClientDTO) => void;
 }) {
   const router = useRouter();
+  const t = useT();
   return (
     <div
       className="rounded-lg border border-border glass-card shadow-card p-4 cursor-pointer"
@@ -446,7 +465,9 @@ function ClientCard({
             {client.name}
           </Link>
           <p className="text-xs text-muted-foreground mt-0.5">
-            {formatBusinessType(client.businessType)}
+            {client.businessType
+              ? t(`businessType.${client.businessType}` as MessageKey)
+              : "—"}
           </p>
         </div>
         <ClientActionsMenu
@@ -487,15 +508,16 @@ function ClientCard({
 
       {handlerName && (
         <p className="mt-3 text-xs text-muted-foreground">
-          גורם מטפל: <span className="text-foreground">{handlerName}</span>
+          {t("clients.table.handler")}:{" "}
+          <span className="text-foreground">{handlerName}</span>
         </p>
       )}
 
       <div className="mt-3">
         {client.isActive ? (
-          <Badge variant="secondary">פעיל</Badge>
+          <Badge variant="secondary">{t("clients.badge.active")}</Badge>
         ) : (
-          <Badge variant="outline">בארכיון</Badge>
+          <Badge variant="outline">{t("clients.badge.archived")}</Badge>
         )}
       </div>
     </div>
@@ -509,10 +531,13 @@ function EmptyState({
   hasFilters: boolean;
   onAddClient: () => void;
 }) {
+  const t = useT();
   if (hasFilters) {
     return (
       <div className="p-12 text-center">
-        <p className="text-sm text-muted-foreground">אין לקוחות התואמים לסינון.</p>
+        <p className="text-sm text-muted-foreground">
+          {t("clients.emptyFiltered")}
+        </p>
       </div>
     );
   }
@@ -521,13 +546,13 @@ function EmptyState({
       <div className="size-12 mx-auto rounded-full bg-primary/10 text-primary flex items-center justify-center mb-4">
         <UserSquare2 className="size-6" />
       </div>
-      <h2 className="font-semibold text-lg mb-2">עוד אין לקוחות במשרד</h2>
+      <h2 className="font-semibold text-lg mb-2">{t("clients.emptyTitle")}</h2>
       <p className="text-muted-foreground text-sm max-w-md mx-auto mb-4">
-        הוסף את הלקוח הראשון כדי להתחיל לנהל פרטים, הערות, וקישור למשימות בעתיד.
+        {t("clients.emptyHint")}
       </p>
       <Button onClick={onAddClient}>
         <Plus className="size-4" />
-        הוסף לקוח ראשון
+        {t("clients.emptyAddFirst")}
       </Button>
     </div>
   );
