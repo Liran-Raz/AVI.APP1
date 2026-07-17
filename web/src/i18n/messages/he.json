@@ -1,0 +1,50 @@
+{
+  "meta.title": "AVI.APP — ניהול משימות למשרדי רואי חשבון",
+  "meta.description": "מערכת ניהול משימות פנים-ארגונית למשרדי רואי חשבון: תור משימות יומי, לוח שבועי, ניהול לקוחות.",
+
+  "common.save": "שמירה",
+  "common.saveChanges": "שמירת שינויים",
+  "common.cancel": "ביטול",
+  "common.close": "סגירה",
+  "common.delete": "מחיקה",
+  "common.edit": "עריכה",
+  "common.loading": "טוען...",
+  "common.unexpectedError": "שגיאה לא צפויה",
+  "common.copied": "הועתק",
+
+  "language.title": "שפה",
+  "language.subtitle": "בחר את שפת הממשק. הבחירה נשמרת ומיושמת בכל המכשיר.",
+  "language.label": "שפת ממשק",
+  "language.name.he": "עברית",
+  "language.name.en": "English",
+
+  "nav.tasks": "תור משימות",
+  "nav.calendar": "לוח שבועי",
+  "nav.clients": "לקוחות",
+  "nav.team": "צוות",
+  "nav.messages": "הודעות",
+  "nav.invoicing": "הנהלת חשבונות",
+  "nav.reports": "דוחות",
+  "nav.roles": "תפקידים",
+  "nav.dashboard": "דשבורד",
+  "nav.settings": "הגדרות",
+  "nav.menu": "תפריט",
+
+  "appShell.officeCode": "קוד משרד",
+  "appShell.logout": "התנתקות",
+  "appShell.account": "חשבון",
+  "appShell.openMenu": "פתיחת תפריט הניווט",
+  "appShell.closeMenu": "סגירת התפריט",
+  "appShell.navMenu": "תפריט ניווט",
+
+  "role.owner": "בעלים",
+  "role.admin": "מנהל",
+  "role.employee": "עובד",
+
+  "settings.title": "הגדרות",
+  "settings.subtitle": "ניהול הפרופיל, האבטחה ופרטי המשרד שלך",
+  "settings.tab.profile": "פרופיל",
+  "settings.tab.security": "אבטחה",
+  "settings.tab.office": "משרד",
+  "settings.tab.notifications": "התראות"
+}

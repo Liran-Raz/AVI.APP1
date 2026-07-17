@@ -41,25 +41,33 @@ import {
   type SwitcherOffice,
 } from "@/components/dashboard/office-switcher";
 import type { Organization, Profile } from "@/lib/types/database";
+import { useT } from "@/i18n/locale-provider";
+import type { MessageKey } from "@/i18n/messages-types";
+import {
+  LanguageMenu,
+  LanguageSelect,
+} from "@/components/i18n/language-switcher";
 
-const NAV_ITEMS = [
-  { href: "/tasks", label: "תור משימות", icon: ListChecks },
-  { href: "/calendar", label: "לוח שבועי", icon: CalendarDays },
-  { href: "/clients", label: "לקוחות", icon: UserSquare2 },
-  { href: "/team", label: "צוות", icon: Users },
-  { href: "/messages", label: "הודעות", icon: MessageSquare },
-  { href: "/settings", label: "הגדרות", icon: Settings },
+type NavItem = { href: string; labelKey: MessageKey; icon: typeof ListChecks };
+
+const NAV_ITEMS: NavItem[] = [
+  { href: "/tasks", labelKey: "nav.tasks", icon: ListChecks },
+  { href: "/calendar", labelKey: "nav.calendar", icon: CalendarDays },
+  { href: "/clients", labelKey: "nav.clients", icon: UserSquare2 },
+  { href: "/team", labelKey: "nav.team", icon: Users },
+  { href: "/messages", labelKey: "nav.messages", icon: MessageSquare },
+  { href: "/settings", labelKey: "nav.settings", icon: Settings },
 ];
 
 // Mobile bottom bar shows ONLY these 3 everyday screens (in this order — Liran's
-// pick) + a "תפריט" button that opens the full navigation drawer. Everything
-// else (לוח שבועי, צוות, דשבורד, תפקידים, הגדרות) lives in the drawer.
+// pick) + a "menu" button that opens the full navigation drawer. Everything
+// else (calendar, team, dashboard, roles, settings) lives in the drawer.
 const MOBILE_BAR_HREFS = ["/tasks", "/clients", "/messages"];
 
-const ROLE_LABELS: Record<"owner" | "admin" | "employee", string> = {
-  owner: "בעלים",
-  admin: "מנהל",
-  employee: "עובד",
+const ROLE_LABEL_KEYS: Record<"owner" | "admin" | "employee", MessageKey> = {
+  owner: "role.owner",
+  admin: "role.admin",
+  employee: "role.employee",
 };
 
 export function AppShell({
@@ -97,8 +105,10 @@ export function AppShell({
 }) {
   const pathname = usePathname();
   const router = useRouter();
+  const t = useT();
 
-  // Mobile navigation drawer (slides in from the right, RTL). Closed by the
+  // Mobile navigation drawer (slides in from the inline-end edge — right in
+  // RTL, left in LTR). Closed by the
   // scrim, the X, Escape, or tapping any nav link. Desktop is untouched.
   const [drawerOpen, setDrawerOpen] = useState(false);
 
@@ -154,7 +164,7 @@ export function AppShell({
     const at = clientsIdx >= 0 ? clientsIdx + 1 : navItems.length;
     navItems = [
       ...navItems.slice(0, at),
-      { href: "/invoicing", label: "הנהלת חשבונות", icon: Receipt },
+      { href: "/invoicing", labelKey: "nav.invoicing", icon: Receipt },
       ...navItems.slice(at),
     ];
   }
@@ -171,7 +181,7 @@ export function AppShell({
           : navItems.length;
     navItems = [
       ...navItems.slice(0, at),
-      { href: "/reports", label: "דוחות", icon: BarChart3 },
+      { href: "/reports", labelKey: "nav.reports", icon: BarChart3 },
       ...navItems.slice(at),
     ];
   }
@@ -181,14 +191,14 @@ export function AppShell({
     const at = teamIdx >= 0 ? teamIdx + 1 : navItems.length;
     navItems = [
       ...navItems.slice(0, at),
-      { href: "/roles", label: "תפקידים", icon: ShieldCheck },
+      { href: "/roles", labelKey: "nav.roles", icon: ShieldCheck },
       ...navItems.slice(at),
     ];
   }
   // Dashboard: owner-only, first entry.
   if (showDashboardNav) {
     navItems = [
-      { href: "/dashboard", label: "דשבורד", icon: LayoutDashboard },
+      { href: "/dashboard", labelKey: "nav.dashboard", icon: LayoutDashboard },
       ...navItems,
     ];
   }
@@ -197,7 +207,7 @@ export function AppShell({
   // them). The drawer shows the FULL navItems list incl. gated entries.
   const mobileBarItems = MOBILE_BAR_HREFS.map((href) =>
     NAV_ITEMS.find((i) => i.href === href),
-  ).filter((i): i is (typeof NAV_ITEMS)[number] => Boolean(i));
+  ).filter((i): i is NavItem => Boolean(i));
 
   // Drawer layout: everything except הגדרות, a separator, then הגדרות.
   const drawerMainItems = navItems.filter((i) => i.href !== "/settings");
@@ -223,7 +233,7 @@ export function AppShell({
   return (
     <div className="flex flex-1 min-h-screen">
       {/* Sidebar (desktop) */}
-      <aside className="hidden md:flex flex-col w-64 border-l border-white/10 glass-sidebar text-sidebar-foreground">
+      <aside className="hidden md:flex flex-col w-64 border-e border-white/10 glass-sidebar text-sidebar-foreground">
         <div className="h-16 flex items-center gap-2 px-4 border-b border-white/10">
           <div className="size-9 rounded-lg bg-primary text-primary-foreground flex items-center justify-center font-bold shadow-[0_8px_18px_-6px_rgba(2,106,255,0.6)]">
             א
@@ -254,7 +264,7 @@ export function AppShell({
                 )}
               >
                 <item.icon className="size-4" />
-                <span className="flex-1">{item.label}</span>
+                <span className="flex-1">{t(item.labelKey)}</span>
                 {item.href === "/messages" && unreadMessages > 0 ? (
                   <span className="min-w-[20px] rounded-full bg-[#16a34a] px-1.5 text-center text-[11px] font-bold text-white">
                     {unreadMessages > 99 ? "99+" : unreadMessages}
@@ -266,7 +276,7 @@ export function AppShell({
         </nav>
         <div className="border-t border-white/10 p-3">
           <div className="text-xs text-sidebar-foreground/70 px-1">
-            קוד משרד: <span className="font-mono text-white/90">{organization.org_code}</span>
+            {t("appShell.officeCode")}: <span className="font-mono text-white/90">{organization.org_code}</span>
           </div>
         </div>
       </aside>
@@ -291,9 +301,12 @@ export function AppShell({
             </span>
           </div>
 
-          <div className="flex items-center gap-2 mr-auto">
+          <div className="flex items-center gap-2 me-auto">
             <TopbarConnectivity />
             <TopbarClock />
+            <div className="hidden md:block">
+              <LanguageMenu />
+            </div>
             <ReportBugButton />
             <NotificationBell />
 
@@ -321,13 +334,13 @@ export function AppShell({
                 <DropdownMenuItem asChild>
                   <Link href="/settings">
                     <Settings className="size-4" />
-                    הגדרות
+                    {t("nav.settings")}
                   </Link>
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={handleLogout}>
                   <LogOut className="size-4" />
-                  התנתקות
+                  {t("appShell.logout")}
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -357,18 +370,18 @@ export function AppShell({
                     </span>
                   ) : null}
                 </span>
-                <span className="text-xs whitespace-nowrap">{item.label}</span>
+                <span className="text-xs whitespace-nowrap">{t(item.labelKey)}</span>
               </Link>
             );
           })}
           <button
             type="button"
             onClick={() => setDrawerOpen(true)}
-            aria-label="פתיחת תפריט הניווט"
+            aria-label={t("appShell.openMenu")}
             className="flex flex-col items-center justify-center gap-1 py-2 px-1 grow shrink-0 min-w-[4rem] text-muted-foreground"
           >
             <Menu className="size-5" />
-            <span className="text-xs whitespace-nowrap">תפריט</span>
+            <span className="text-xs whitespace-nowrap">{t("nav.menu")}</span>
           </button>
         </nav>
 
@@ -386,12 +399,19 @@ export function AppShell({
         <aside
           role="dialog"
           aria-modal="true"
-          aria-label="תפריט ניווט"
+          aria-label={t("appShell.navMenu")}
           className={cn(
-            "md:hidden fixed inset-y-0 right-0 z-50 w-[300px] max-w-[85vw] flex flex-col",
-            "glass-sidebar text-sidebar-foreground border-l border-white/10 shadow-2xl",
+            // Anchored to the inline-START edge: right in RTL (unchanged
+            // Hebrew), left in LTR. The divider (border) faces the content on
+            // the END side. Closed = pushed off the start edge; physical
+            // translate-x is NOT direction-aware, so scope it (RTL slides out
+            // rightward, LTR leftward) — same pattern as ui/switch.tsx.
+            "md:hidden fixed inset-y-0 start-0 z-50 w-[300px] max-w-[85vw] flex flex-col",
+            "glass-sidebar text-sidebar-foreground border-e border-white/10 shadow-2xl",
             "transition-transform duration-300 ease-out",
-            drawerOpen ? "translate-x-0" : "translate-x-full",
+            drawerOpen
+              ? "translate-x-0"
+              : "rtl:translate-x-full ltr:-translate-x-full",
           )}
         >
           {/* Header: logo + office (or switcher) + close */}
@@ -412,7 +432,7 @@ export function AppShell({
             <button
               type="button"
               onClick={() => setDrawerOpen(false)}
-              aria-label="סגירת התפריט"
+              aria-label={t("appShell.closeMenu")}
               className="ms-auto p-2 rounded-md text-sidebar-foreground hover:bg-white/5 hover:text-white"
             >
               <X className="size-5" />
@@ -433,8 +453,13 @@ export function AppShell({
               </p>
             </div>
             <span className="ms-auto shrink-0 rounded-full bg-white/10 px-2.5 py-0.5 text-[11px] text-white">
-              {ROLE_LABELS[profile.role]}
+              {t(ROLE_LABEL_KEYS[profile.role])}
             </span>
+          </div>
+
+          {/* Language selector (mobile quick access; desktop uses the topbar globe) */}
+          <div className="mx-3 mb-2">
+            <LanguageSelect className="w-full bg-white/5 border-white/15 text-white" />
           </div>
 
           {/* Full navigation */}
@@ -454,7 +479,7 @@ export function AppShell({
                   )}
                 >
                   <item.icon className="size-4" />
-                  <span className="flex-1">{item.label}</span>
+                  <span className="flex-1">{t(item.labelKey)}</span>
                   {item.href === "/messages" && unreadMessages > 0 ? (
                     <span className="min-w-[20px] rounded-full bg-[#16a34a] px-1.5 text-center text-[11px] font-bold text-white">
                       {unreadMessages > 99 ? "99+" : unreadMessages}
@@ -478,7 +503,7 @@ export function AppShell({
                   )}
                 >
                   <drawerSettingsItem.icon className="size-4" />
-                  {drawerSettingsItem.label}
+                  {t(drawerSettingsItem.labelKey)}
                 </Link>
               </>
             ) : null}
@@ -487,7 +512,7 @@ export function AppShell({
           {/* Footer: office code + logout */}
           <div className="border-t border-white/10 px-3 pb-drawer-safe pt-2">
             <div className="text-xs text-sidebar-foreground/70 px-3 pb-2">
-              קוד משרד: <span className="font-mono text-white/90">{organization.org_code}</span>
+              {t("appShell.officeCode")}: <span className="font-mono text-white/90">{organization.org_code}</span>
             </div>
             <button
               type="button"
@@ -495,7 +520,7 @@ export function AppShell({
               className="flex w-full items-center gap-3 px-3 py-2.5 rounded-md text-sm text-red-300 hover:bg-red-500/10 transition-colors"
             >
               <LogOut className="size-4" />
-              התנתקות
+              {t("appShell.logout")}
             </button>
           </div>
         </aside>

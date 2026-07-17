@@ -1,0 +1,132 @@
+"use client";
+
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { toast } from "sonner";
+import { Check, Globe } from "lucide-react";
+
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  LOCALE_NATIVE_NAME,
+  SUPPORTED_LOCALES,
+  type Locale,
+} from "@/i18n/config";
+import { useLocale, useT } from "@/i18n/locale-provider";
+import { ApiError, apiClient } from "@/lib/api-client";
+
+// Shared: persist the chosen locale, then refresh so the server layout
+// re-renders with the new dir/lang/catalog. Returns a busy flag + setter.
+function useSetLocale() {
+  const router = useRouter();
+  const [saving, setSaving] = useState(false);
+
+  async function setLocale(locale: Locale) {
+    setSaving(true);
+    try {
+      await apiClient.locale.set({ locale });
+      router.refresh();
+    } catch (err) {
+      setSaving(false);
+      if (err instanceof ApiError) toast.error(err.message);
+      else toast.error("Something went wrong");
+    }
+    // On success we keep saving=true through the refresh — the tree
+    // re-renders and this component remounts with the new locale.
+  }
+
+  return { saving, setLocale };
+}
+
+// Dropdown-select variant — for the Settings card and the mobile drawer.
+export function LanguageSelect({ className }: { className?: string }) {
+  const locale = useLocale();
+  const { saving, setLocale } = useSetLocale();
+
+  return (
+    <Select
+      value={locale}
+      onValueChange={(v) => setLocale(v as Locale)}
+      disabled={saving}
+    >
+      <SelectTrigger className={className}>
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        {SUPPORTED_LOCALES.map((l) => (
+          <SelectItem key={l} value={l}>
+            {LOCALE_NATIVE_NAME[l]}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
+
+// Settings card wrapper — the primary, discoverable home for the choice.
+export function LanguageSettingsCard() {
+  const t = useT();
+  return (
+    <div className="border border-border rounded-lg glass-card shadow-card p-6 space-y-4">
+      <div className="flex items-start gap-3">
+        <Globe className="size-5 text-muted-foreground shrink-0 mt-0.5" />
+        <div className="space-y-1">
+          <h3 className="font-semibold">{t("language.title")}</h3>
+          <p className="text-sm text-muted-foreground">{t("language.subtitle")}</p>
+        </div>
+      </div>
+      <div className="max-w-xs">
+        <LanguageSelect className="w-full" />
+      </div>
+    </div>
+  );
+}
+
+// Compact globe menu — for the desktop topbar. Its own dropdown (not nested
+// in another menu), so no portal/focus conflicts.
+export function LanguageMenu() {
+  const t = useT();
+  const locale = useLocale();
+  const { saving, setLocale } = useSetLocale();
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          aria-label={t("language.title")}
+          className="p-2 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent"
+        >
+          <Globe className="size-5" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-44">
+        <DropdownMenuLabel>{t("language.label")}</DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        {SUPPORTED_LOCALES.map((l) => (
+          <DropdownMenuItem
+            key={l}
+            disabled={saving}
+            onClick={() => l !== locale && setLocale(l)}
+          >
+            <span className="flex-1">{LOCALE_NATIVE_NAME[l]}</span>
+            {l === locale ? <Check className="size-4" /> : null}
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}

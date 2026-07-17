@@ -1,0 +1,50 @@
+{
+  "meta.title": "AVI.APP — Task management for accounting offices",
+  "meta.description": "In-house task-management for accounting offices: a daily task queue, a weekly board, and client management.",
+
+  "common.save": "Save",
+  "common.saveChanges": "Save changes",
+  "common.cancel": "Cancel",
+  "common.close": "Close",
+  "common.delete": "Delete",
+  "common.edit": "Edit",
+  "common.loading": "Loading…",
+  "common.unexpectedError": "Something went wrong",
+  "common.copied": "Copied",
+
+  "language.title": "Language",
+  "language.subtitle": "Choose the interface language. Your choice is saved and applied on this device.",
+  "language.label": "Interface language",
+  "language.name.he": "עברית",
+  "language.name.en": "English",
+
+  "nav.tasks": "Tasks",
+  "nav.calendar": "Weekly board",
+  "nav.clients": "Clients",
+  "nav.team": "Team",
+  "nav.messages": "Messages",
+  "nav.invoicing": "Accounting",
+  "nav.reports": "Reports",
+  "nav.roles": "Roles",
+  "nav.dashboard": "Dashboard",
+  "nav.settings": "Settings",
+  "nav.menu": "Menu",
+
+  "appShell.officeCode": "Office code",
+  "appShell.logout": "Log out",
+  "appShell.account": "Account",
+  "appShell.openMenu": "Open navigation menu",
+  "appShell.closeMenu": "Close menu",
+  "appShell.navMenu": "Navigation menu",
+
+  "role.owner": "Owner",
+  "role.admin": "Manager",
+  "role.employee": "Employee",
+
+  "settings.title": "Settings",
+  "settings.subtitle": "Manage your profile, security and office details",
+  "settings.tab.profile": "Profile",
+  "settings.tab.security": "Security",
+  "settings.tab.office": "Office",
+  "settings.tab.notifications": "Notifications"
+}

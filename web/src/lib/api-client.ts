@@ -15,6 +15,7 @@ import type {
   SignupPayload,
 } from "@/server/validators/auth.schema";
 import type { MfaEnrollResult } from "@/server/services/auth.service";
+import type { SetLocalePayload } from "@/server/validators/locale.schema";
 import type { BootstrapOrgPayload } from "@/server/validators/onboarding.schema";
 import type {
   UpdateNotificationPrefsPayload,
@@ -239,6 +240,8 @@ export type {
   MfaVerifyPayload,
 } from "@/server/validators/auth.schema";
 export type { MfaEnrollResult } from "@/server/services/auth.service";
+// UI locale (DEV-010 i18n).
+export type { SetLocalePayload } from "@/server/validators/locale.schema";
 
 // ============================================================
 // Response payloads — match what each /api route actually returns
@@ -443,6 +446,12 @@ export const apiClient = {
   onboarding: {
     bootstrap: (input: BootstrapOrgPayload) =>
       postJson<BootstrapOrgResult>("/api/onboarding/bootstrap", input),
+  },
+  locale: {
+    // Persist the UI-language choice (cookie). Caller should router.refresh()
+    // afterwards so the server layout re-renders with the new dir/lang + text.
+    set: (input: SetLocalePayload) =>
+      postJson<{ locale: string }>("/api/locale", input),
   },
   me: {
     get: () => getJson<Me>("/api/me"),
