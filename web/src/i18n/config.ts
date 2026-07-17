@@ -36,3 +36,15 @@ export const LOCALE_NATIVE_NAME: Record<Locale, string> = {
   he: "עברית",
   en: "English",
 };
+
+// BCP-47 tag per locale, for Intl date/number formatting (toLocaleString,
+// Intl.DateTimeFormat, date-fns). Keeps dates/times in the user's language
+// instead of a hardcoded "he-IL". Round 2 extends this alongside SUPPORTED.
+const INTL_TAG: Record<Locale, string> = {
+  he: "he-IL",
+  en: "en-GB",
+};
+
+export function intlLocale(locale: Locale): string {
+  return INTL_TAG[locale];
+}

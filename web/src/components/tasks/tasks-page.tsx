@@ -31,15 +31,12 @@ import {
   type TaskDTO,
   type TaskPriorityValue,
 } from "@/lib/api-client";
+import { useT } from "@/i18n/locale-provider";
+import type { MessageKey } from "@/i18n/messages-types";
 
 import { TaskCard } from "./task-card";
 import { TaskFormDialog } from "./task-form-dialog";
-import {
-  KANBAN_COLUMNS,
-  LIFECYCLE_LABELS,
-  PRIORITY_LABELS,
-  kanbanColumnForStatus,
-} from "./task-utils";
+import { KANBAN_COLUMNS, kanbanColumnForStatus } from "./task-utils";
 import { useLiveTaskRefresh } from "./use-live-task-refresh";
 
 const SEARCH_DEBOUNCE_MS = 300;
@@ -60,6 +57,7 @@ export function TasksPage({
   currentUserId,
   currentUserRole,
 }: Props) {
+  const t = useT();
   const [items, setItems] = useState<TaskDTO[]>(initialItems);
   const [clients] = useState<ClientDTO[]>(initialClients);
   const [members] = useState<MemberDTO[]>(initialMembers);
@@ -114,15 +112,15 @@ export function TasksPage({
       setItems(result.items);
     } catch (err) {
       if (err instanceof ApiError) {
-        toast.error(`שגיאה בטעינת משימות: ${err.message}`);
+        toast.error(t("tasks.loadError", { message: err.message }));
       } else {
-        toast.error("שגיאה לא צפויה");
+        toast.error(t("common.unexpectedError"));
         console.error(err);
       }
     } finally {
       setLoading(false);
     }
-  }, [lifecycle, priorityFilter, debouncedSearch, boardFor]);
+  }, [lifecycle, priorityFilter, debouncedSearch, boardFor, t]);
 
   useEffect(() => {
     if (isFirstRun.current) {
@@ -168,12 +166,13 @@ export function TasksPage({
     if (!nextStatus) return;
     try {
       await apiClient.tasks.setStatus(task.id, { status: nextStatus });
-      toast.success("סטטוס עודכן");
+      toast.success(t("tasks.statusUpdated"));
       await refetch();
     } catch (err) {
-      if (err instanceof ApiError) toast.error(`שגיאה: ${err.message}`);
+      if (err instanceof ApiError)
+        toast.error(t("tasks.errorWithMessage", { message: err.message }));
       else {
-        toast.error("שגיאה לא צפויה");
+        toast.error(t("common.unexpectedError"));
         console.error(err);
       }
     }
@@ -182,12 +181,13 @@ export function TasksPage({
   async function handleArchive(task: TaskDTO) {
     try {
       await apiClient.tasks.archive(task.id);
-      toast.success("הועבר לארכיון");
+      toast.success(t("tasks.archived"));
       await refetch();
     } catch (err) {
-      if (err instanceof ApiError) toast.error(`שגיאה: ${err.message}`);
+      if (err instanceof ApiError)
+        toast.error(t("tasks.errorWithMessage", { message: err.message }));
       else {
-        toast.error("שגיאה לא צפויה");
+        toast.error(t("common.unexpectedError"));
         console.error(err);
       }
     }
@@ -196,27 +196,29 @@ export function TasksPage({
   async function handleUnarchive(task: TaskDTO) {
     try {
       await apiClient.tasks.unarchive(task.id);
-      toast.success("הוחזר מהארכיון");
+      toast.success(t("tasks.unarchived"));
       await refetch();
     } catch (err) {
-      if (err instanceof ApiError) toast.error(`שגיאה: ${err.message}`);
+      if (err instanceof ApiError)
+        toast.error(t("tasks.errorWithMessage", { message: err.message }));
       else {
-        toast.error("שגיאה לא צפויה");
+        toast.error(t("common.unexpectedError"));
         console.error(err);
       }
     }
   }
 
   async function handleDelete(task: TaskDTO) {
-    if (!window.confirm(`להעביר את "${task.title}" לפח?`)) return;
+    if (!window.confirm(t("tasks.confirmDelete", { title: task.title }))) return;
     try {
       await apiClient.tasks.delete(task.id);
-      toast.success("הועבר לפח");
+      toast.success(t("tasks.deleted"));
       await refetch();
     } catch (err) {
-      if (err instanceof ApiError) toast.error(`שגיאה: ${err.message}`);
+      if (err instanceof ApiError)
+        toast.error(t("tasks.errorWithMessage", { message: err.message }));
       else {
-        toast.error("שגיאה לא צפויה");
+        toast.error(t("common.unexpectedError"));
         console.error(err);
       }
     }
@@ -225,12 +227,13 @@ export function TasksPage({
   async function handleRestore(task: TaskDTO) {
     try {
       await apiClient.tasks.restore(task.id);
-      toast.success("שוחזר מהפח");
+      toast.success(t("tasks.restored"));
       await refetch();
     } catch (err) {
-      if (err instanceof ApiError) toast.error(`שגיאה: ${err.message}`);
+      if (err instanceof ApiError)
+        toast.error(t("tasks.errorWithMessage", { message: err.message }));
       else {
-        toast.error("שגיאה לא צפויה");
+        toast.error(t("common.unexpectedError"));
         console.error(err);
       }
     }
@@ -242,12 +245,13 @@ export function TasksPage({
     // in-progress task back to the new queue).
     try {
       await apiClient.tasks.setStatus(task.id, { status: "new" });
-      toast.success("המשימה הוחזרה לחדשות");
+      toast.success(t("tasks.returnedToNew"));
       await refetch();
     } catch (err) {
-      if (err instanceof ApiError) toast.error(`שגיאה: ${err.message}`);
+      if (err instanceof ApiError)
+        toast.error(t("tasks.errorWithMessage", { message: err.message }));
       else {
-        toast.error("שגיאה לא צפויה");
+        toast.error(t("common.unexpectedError"));
         console.error(err);
       }
     }
@@ -293,26 +297,26 @@ export function TasksPage({
       <div className="flex items-center justify-between mb-6 gap-4 flex-wrap">
         <div>
           <h1 className="text-2xl md:text-3xl font-bold tracking-tight">
-            תור משימות
+            {t("tasks.title")}
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            הלוח האישי — חדשות, במעקב והושלמו
+            {t("tasks.subtitle")}
           </p>
         </div>
         <Button onClick={handleCreateClick}>
           <Plus className="size-4" />
-          משימה חדשה
+          {t("tasks.newTask")}
         </Button>
       </div>
 
       <div className="flex flex-wrap items-center gap-3 mb-4">
         <div className="relative flex-1 min-w-[200px]">
-          <Search className="absolute right-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground pointer-events-none" />
+          <Search className="absolute start-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground pointer-events-none" />
           <Input
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
-            placeholder="חיפוש לפי כותרת או תיאור"
-            className="pr-9"
+            placeholder={t("tasks.searchPlaceholder")}
+            className="ps-9"
             maxLength={100}
           />
         </div>
@@ -323,12 +327,14 @@ export function TasksPage({
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value={currentUserId}>הלוח שלי</SelectItem>
+              <SelectItem value={currentUserId}>
+                {t("tasks.board.mine")}
+              </SelectItem>
               {members
                 .filter((m) => m.isActive && m.id !== currentUserId)
                 .map((m) => (
                   <SelectItem key={m.id} value={m.id}>
-                    הלוח של: {m.fullName}
+                    {t("tasks.board.of", { name: m.fullName })}
                   </SelectItem>
                 ))}
             </SelectContent>
@@ -343,10 +349,12 @@ export function TasksPage({
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value={PRIORITY_FILTER_ALL}>כל העדיפויות</SelectItem>
+            <SelectItem value={PRIORITY_FILTER_ALL}>
+              {t("tasks.allPriorities")}
+            </SelectItem>
             {TASK_PRIORITIES.map((p) => (
               <SelectItem key={p} value={p}>
-                {PRIORITY_LABELS[p]}
+                {t(`taskPriority.${p}` as MessageKey)}
               </SelectItem>
             ))}
           </SelectContent>
@@ -362,7 +370,7 @@ export function TasksPage({
           <SelectContent>
             {LIFECYCLE_FILTERS.map((lf) => (
               <SelectItem key={lf} value={lf}>
-                {LIFECYCLE_LABELS[lf]}
+                {t(`lifecycle.${lf}` as MessageKey)}
               </SelectItem>
             ))}
           </SelectContent>
@@ -371,12 +379,12 @@ export function TasksPage({
         {loading && (
           <div className="flex items-center gap-1 text-xs text-muted-foreground">
             <Loader2 className="size-3 animate-spin" />
-            טוען...
+            {t("common.loading")}
           </div>
         )}
 
-        <div className="text-xs text-muted-foreground mr-auto">
-          {items.length} משימות
+        <div className="text-xs text-muted-foreground ms-auto">
+          {t("tasks.countTasks", { count: items.length })}
         </div>
       </div>
 
@@ -440,6 +448,7 @@ function KanbanView({
   clientNameById: Record<string, string>;
   handlers: CardHandlers;
 }) {
+  const t = useT();
   return (
     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
       {KANBAN_COLUMNS.map((col) => {
@@ -450,7 +459,9 @@ function KanbanView({
             className="rounded-lg border border-border glass-column p-3 space-y-3"
           >
             <div className="flex items-center justify-between">
-              <h2 className="font-semibold text-sm">{col.label}</h2>
+              <h2 className="font-semibold text-sm">
+                {t(`kanban.${col.key}` as MessageKey)}
+              </h2>
               <span className="text-xs text-muted-foreground bg-muted rounded-full px-2 py-0.5">
                 {colItems.length}
               </span>
@@ -458,7 +469,7 @@ function KanbanView({
             <div className="space-y-2 min-h-[60px]">
               {colItems.length === 0 ? (
                 <p className="text-xs text-muted-foreground text-center py-6">
-                  אין משימות
+                  {t("tasks.noTasks")}
                 </p>
               ) : (
                 colItems.map((task) => (
@@ -520,11 +531,12 @@ function EmptyState({
   hasFilters: boolean;
   onAddTask: () => void;
 }) {
+  const t = useT();
   if (hasFilters) {
     return (
       <div className="border border-border rounded-lg glass-card shadow-card p-12 text-center">
         <p className="text-sm text-muted-foreground">
-          אין משימות התואמות לסינון.
+          {t("tasks.noMatchingFilters")}
         </p>
       </div>
     );
@@ -534,13 +546,13 @@ function EmptyState({
       <div className="size-12 mx-auto rounded-full bg-primary/10 text-primary flex items-center justify-center mb-4">
         <ListChecks className="size-6" />
       </div>
-      <h2 className="font-semibold text-lg mb-2">עוד אין משימות בתור</h2>
+      <h2 className="font-semibold text-lg mb-2">{t("tasks.emptyTitle")}</h2>
       <p className="text-muted-foreground text-sm max-w-md mx-auto mb-4">
-        צור את המשימה הראשונה — תיכנס לעמודה &quot;חדשות&quot; של איש הביצוע.
+        {t("tasks.emptyHint")}
       </p>
       <Button onClick={onAddTask}>
         <Plus className="size-4" />
-        משימה ראשונה
+        {t("tasks.firstTask")}
       </Button>
     </div>
   );
