@@ -81,3 +81,30 @@ export const changePasswordSchema = z
   });
 
 export type ChangePasswordPayload = z.infer<typeof changePasswordSchema>;
+
+// ============================================================
+// MFA (TOTP) — DEV-013
+// ============================================================
+
+// A TOTP code is exactly 6 digits. Trim first (mobile keyboards love
+// trailing whitespace); anything else is a clean 400.
+export const mfaCodeField = z
+  .string()
+  .trim()
+  .regex(/^\d{6}$/, "Code must be 6 digits");
+
+// Confirm enrollment: the factorId returned by /api/auth/mfa/enroll plus
+// the first code from the authenticator app.
+export const mfaConfirmSchema = z.object({
+  factorId: z.string().uuid("Invalid factor id"),
+  code: mfaCodeField,
+});
+
+// Login-time challenge: only the code — the server locates the user's
+// verified factor itself (the client never chooses the factor).
+export const mfaVerifySchema = z.object({
+  code: mfaCodeField,
+});
+
+export type MfaConfirmPayload = z.infer<typeof mfaConfirmSchema>;
+export type MfaVerifyPayload = z.infer<typeof mfaVerifySchema>;

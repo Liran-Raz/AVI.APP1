@@ -8,10 +8,13 @@
 import type {
   ChangePasswordPayload,
   ForgotPasswordPayload,
+  MfaConfirmPayload,
+  MfaVerifyPayload,
   ResetPasswordPayload,
   SigninPayload,
   SignupPayload,
 } from "@/server/validators/auth.schema";
+import type { MfaEnrollResult } from "@/server/services/auth.service";
 import type { BootstrapOrgPayload } from "@/server/validators/onboarding.schema";
 import type {
   UpdateNotificationPrefsPayload,
@@ -230,6 +233,12 @@ export type {
 export type { OrganizationDTO } from "@/server/services/organization.service";
 export type { UpdateOrganizationPayload } from "@/server/validators/organization.schema";
 export type { ChangePasswordPayload } from "@/server/validators/auth.schema";
+// MFA (TOTP) — DEV-013.
+export type {
+  MfaConfirmPayload,
+  MfaVerifyPayload,
+} from "@/server/validators/auth.schema";
+export type { MfaEnrollResult } from "@/server/services/auth.service";
 
 // ============================================================
 // Response payloads — match what each /api route actually returns
@@ -239,6 +248,10 @@ export type AuthOperationResult = {
   userId: string;
   email: string;
   needsEmailConfirmation: boolean;
+  // True when the password was correct but the account has 2FA enabled —
+  // the client must route to /mfa to complete the TOTP challenge before
+  // any data access works.
+  needsMfa: boolean;
 };
 
 // Public signup response — intentionally omits userId so an
@@ -409,6 +422,23 @@ export const apiClient = {
     // tagged details.reason = "wrong_current_password".
     changePassword: (input: ChangePasswordPayload) =>
       postJson<null>("/api/auth/change-password", input),
+    // Two-factor authentication (TOTP) — DEV-013.
+    mfa: {
+      // Start enrollment: returns { factorId, qrCode, secret } to render
+      // the QR + manual secret. The factor stays unverified until confirm.
+      enroll: () => postJson<MfaEnrollResult>("/api/auth/mfa/enroll"),
+      // Complete enrollment with the first authenticator code. On success
+      // 2FA is ON and this session is already elevated (no /mfa bounce).
+      confirm: (input: MfaConfirmPayload) =>
+        postJson<null>("/api/auth/mfa/confirm", input),
+      // Login-time challenge: verify a 6-digit code; the session is
+      // elevated to aal2 on success. Wrong/expired code comes back as a
+      // VALIDATION_ERROR tagged details.reason = "invalid_code".
+      verify: (input: MfaVerifyPayload) =>
+        postJson<null>("/api/auth/mfa/verify", input),
+      // Turn 2FA off (removes the TOTP factor).
+      disable: () => postJson<null>("/api/auth/mfa/disable"),
+    },
   },
   onboarding: {
     bootstrap: (input: BootstrapOrgPayload) =>

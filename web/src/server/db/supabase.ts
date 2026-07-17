@@ -67,3 +67,29 @@ export function createSupabasePublicClient(): SupabaseClient<Database> {
   }
   return publicClient;
 }
+
+// Cookie-less, PER-CALL auth client for PASSWORD VERIFICATION only
+// (DEV-013). signInWithPassword on the regular cookie-bound client would
+// REPLACE the caller's session — and since a fresh password sign-in is
+// aal1 while an MFA-verified session is aal2, that replacement silently
+// downgrades the session (GoTrue then refuses password updates for
+// MFA-enrolled users). Verifying against a throwaway client leaves the
+// request's real session untouched.
+//
+// NOT a singleton on purpose: a successful sign-in stores that session in
+// the client instance's memory for the duration of the call. And never
+// call signOut() on it without { scope: "local" } — the default scope is
+// "global", which would revoke ALL of the user's real sessions.
+export function createSupabaseStatelessAuthClient(): SupabaseClient<Database> {
+  return createClient<Database>(
+    env.NEXT_PUBLIC_SUPABASE_URL,
+    env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+    {
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+        detectSessionInUrl: false,
+      },
+    },
+  );
+}

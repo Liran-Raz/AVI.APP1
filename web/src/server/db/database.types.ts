@@ -938,6 +938,9 @@ export type Database = {
           name: string
           org_code: string
           phone: string | null
+          // DEV-013 (migration 0028): office-wide 2FA requirement. Reads
+          // must stay defensive (=== true) until 0028 is applied.
+          require_mfa: boolean
           updated_at: string
         }
         Insert: {
@@ -948,6 +951,7 @@ export type Database = {
           name: string
           org_code: string
           phone?: string | null
+          require_mfa?: boolean
           updated_at?: string
         }
         Update: {
@@ -958,6 +962,7 @@ export type Database = {
           name?: string
           org_code?: string
           phone?: string | null
+          require_mfa?: boolean
           updated_at?: string
         }
         Relationships: []

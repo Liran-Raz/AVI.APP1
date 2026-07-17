@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 
 import { AppShell } from "@/components/dashboard/app-shell";
+import { MfaEnforcementPrompt } from "@/components/mfa/mfa-enforcement-prompt";
 import { getCurrentSession, type FullSession } from "@/server/auth/session";
 import { can } from "@/server/auth/authorization";
 import { PERMISSIONS } from "@/server/auth/permissions";
@@ -15,6 +16,12 @@ export default async function DashboardLayout({
 }) {
   const session = await getCurrentSession();
   if (!session) redirect("/login");
+  if (session.mfaPending) {
+    // DEV-013: enrolled user, aal1 session (e.g. straight from Google
+    // OAuth) — complete the TOTP challenge first. Checked before the
+    // onboarding branch so a pending user can't reach any app surface.
+    redirect("/mfa");
+  }
   if (!session.profile || !session.activeOrg) {
     // Authed but no active office (no profile yet, or deactivated
     // everywhere) — finish / create org setup first.
@@ -50,6 +57,12 @@ export default async function DashboardLayout({
     isInvoicingUiEnabled() &&
     can(session as FullSession, PERMISSIONS.REPORTS_VIEW);
 
+  // DEV-013: the office requires 2FA but this member hasn't set it up —
+  // show the (dismissible-per-session) setup prompt. Defensive read: the
+  // require_mfa column lands with migration 0028.
+  const showMfaSetupPrompt =
+    session.activeOrg.require_mfa === true && !session.user.hasVerifiedTotp;
+
   return (
     <AppShell
       profile={session.profile}
@@ -61,6 +74,7 @@ export default async function DashboardLayout({
       showInvoicingNav={showInvoicingNav}
       showReportsNav={showReportsNav}
     >
+      {showMfaSetupPrompt && <MfaEnforcementPrompt />}
       {children}
     </AppShell>
   );

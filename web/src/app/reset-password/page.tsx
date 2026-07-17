@@ -1,5 +1,7 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 
+import { getCurrentSession } from "@/server/auth/session";
 import { ResetPasswordForm } from "./reset-password-form";
 import {
   Card,
@@ -15,7 +17,13 @@ import {
 // page itself can render either way; if the user lands here without a
 // session, the form will simply fail on submit and they can request
 // a new reset link.
-export default function ResetPasswordPage() {
+//
+// DEV-013: for a 2FA-enrolled user the recovery-link session is aal1 and
+// the provider REFUSES the password update until the TOTP challenge
+// passes — so we hop through /mfa first and return here at aal2.
+export default async function ResetPasswordPage() {
+  const session = await getCurrentSession();
+  if (session?.mfaPending) redirect("/mfa?next=/reset-password");
   return (
     <div className="flex flex-1 items-center justify-center px-4 py-12 bg-muted/30">
       <div className="w-full max-w-md space-y-6">

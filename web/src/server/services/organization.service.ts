@@ -14,6 +14,8 @@ export type OrganizationDTO = {
   email: string | null;
   phone: string | null;
   address: string | null;
+  // DEV-013: office-wide 2FA requirement (owner-controlled).
+  requireMfa: boolean;
 };
 
 // Update the ACTIVE office's details. Owner-only (trust boundary); the DB RLS
@@ -31,11 +33,13 @@ export async function updateOrganization(
     email?: string | null;
     phone?: string | null;
     address?: string | null;
+    require_mfa?: boolean;
   } = {};
   if (input.name !== undefined) patch.name = input.name;
   if (input.email !== undefined) patch.email = input.email;
   if (input.phone !== undefined) patch.phone = input.phone;
   if (input.address !== undefined) patch.address = input.address;
+  if (input.requireMfa !== undefined) patch.require_mfa = input.requireMfa;
 
   const updated = await organizationRepo.update(session.activeOrg.id, patch);
   if (!updated) {
@@ -51,5 +55,8 @@ export async function updateOrganization(
     email: updated.email,
     phone: updated.phone,
     address: updated.address,
+    // Defensive read: the column exists only after migration 0028 is
+    // applied (same pattern as memberships.dashboard_access).
+    requireMfa: updated.require_mfa === true,
   };
 }

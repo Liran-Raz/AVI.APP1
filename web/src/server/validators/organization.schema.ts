@@ -28,6 +28,9 @@ export const updateOrganizationSchema = z
     email: optionalNullable(emailField),
     phone: optionalNullable(phoneField),
     address: optionalNullable(addressField),
+    // DEV-013: office-wide 2FA requirement (soft enforcement — members
+    // without 2FA get a persistent setup prompt).
+    requireMfa: z.boolean().optional(),
   })
   .refine((obj) => Object.keys(obj).length > 0, {
     message: "At least one field is required for update",
