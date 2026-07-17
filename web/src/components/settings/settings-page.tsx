@@ -2,10 +2,12 @@
 
 import { useState } from "react";
 
+import { Globe } from "lucide-react";
+
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { MeRole, NotificationPrefs } from "@/lib/api-client";
 import { useT } from "@/i18n/locale-provider";
-import { LanguageSettingsCard } from "@/components/i18n/language-switcher";
+import { LanguageSelect } from "@/components/i18n/language-switcher";
 
 import { ProfileForm } from "./profile-form";
 import { ChangePasswordForm } from "./change-password-form";
@@ -57,13 +59,21 @@ export function SettingsPage({
 
   return (
     <div className="container mx-auto px-4 md:px-6 py-6 md:py-8 max-w-3xl">
-      <div className="mb-6">
-        <h1 className="text-2xl md:text-3xl font-bold tracking-tight">
-          {t("settings.title")}
-        </h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          {t("settings.subtitle")}
-        </p>
+      <div className="mb-6 flex items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl md:text-3xl font-bold tracking-tight">
+            {t("settings.title")}
+          </h1>
+          <p className="text-sm text-muted-foreground mt-1">
+            {t("settings.subtitle")}
+          </p>
+        </div>
+        {/* Language: a compact control OUTSIDE the tabs so it never changes a
+            tab's height — the Settings screen stays a stable size. */}
+        <div className="shrink-0 flex items-center gap-2 pt-1">
+          <Globe className="size-4 text-muted-foreground hidden sm:block" />
+          <LanguageSelect />
+        </div>
       </div>
 
       <Tabs defaultValue={initialTab} className="w-full">
@@ -76,9 +86,8 @@ export function SettingsPage({
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="profile" className="mt-4 space-y-4">
+        <TabsContent value="profile" className="mt-4">
           <ProfileForm initial={profile} />
-          <LanguageSettingsCard />
         </TabsContent>
 
         <TabsContent value="security" className="mt-4 space-y-4">

@@ -55,8 +55,9 @@ function useSetLocale() {
   return { saving, setLocale };
 }
 
-// Dropdown-select variant — for the Settings card and the mobile drawer.
+// Dropdown-select variant — for the Settings header and the mobile drawer.
 export function LanguageSelect({ className }: { className?: string }) {
+  const t = useT();
   const locale = useLocale();
   const { saving, setLocale } = useSetLocale();
 
@@ -66,7 +67,7 @@ export function LanguageSelect({ className }: { className?: string }) {
       onValueChange={(v) => setLocale(v as Locale)}
       disabled={saving}
     >
-      <SelectTrigger className={className}>
+      <SelectTrigger className={className} aria-label={t("language.label")}>
         <SelectValue />
       </SelectTrigger>
       <SelectContent>
@@ -77,25 +78,6 @@ export function LanguageSelect({ className }: { className?: string }) {
         ))}
       </SelectContent>
     </Select>
-  );
-}
-
-// Settings card wrapper — the primary, discoverable home for the choice.
-export function LanguageSettingsCard() {
-  const t = useT();
-  return (
-    <div className="border border-border rounded-lg glass-card shadow-card p-6 space-y-4">
-      <div className="flex items-start gap-3">
-        <Globe className="size-5 text-muted-foreground shrink-0 mt-0.5" />
-        <div className="space-y-1">
-          <h3 className="font-semibold">{t("language.title")}</h3>
-          <p className="text-sm text-muted-foreground">{t("language.subtitle")}</p>
-        </div>
-      </div>
-      <div className="max-w-xs">
-        <LanguageSelect className="w-full" />
-      </div>
-    </div>
   );
 }
 
