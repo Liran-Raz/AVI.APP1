@@ -227,16 +227,20 @@ chose to stop — DEV-001/003).
 
 Nothing is blocked. Pick from the backlog when Liran wants:
 
-- **DEV-013 (2FA/TOTP) — CODE COMPLETE, in review ([PR #84](https://github.com/Liran-Raz/AVI.APP1/pull/84), 2026-07-17).**
-  TOTP two-factor: opt-in per user + owner-set office-wide requirement (soft
-  prompt). Architecture chain preserved; `requireSession`→`MFA_REQUIRED` gate;
-  `/mfa` challenge page (covers Google OAuth + password recovery without
-  touching middleware). Migration `0028` (`organizations.require_mfa`, additive,
-  **operator-applied, NOT yet run**). Also fixed a latent app-wide bug — the
-  `<Toaster/>` was never mounted, so every `toast()` was a silent no-op. No new
-  deps. tsc/lint/**556 tests** green; Vercel preview build **success**. Owner
-  gates before QA: enable TOTP in Supabase Dashboard (Auth → MFA) + run 0028 +
-  QA with a real authenticator app. **Merge = Liran's call.**
+- **DEV-013 (2FA/TOTP) — 🟢 MERGED + LIVE 2026-07-17** ([PR #84](https://github.com/Liran-Raz/AVI.APP1/pull/84) → main `3d70d1c`).
+  TOTP two-factor: opt-in per user + owner-set **hard** office-wide requirement
+  (a member who hasn't enrolled reaches only Settings until they do). Disable
+  dialog auto-cancels after 15s (safe default). Architecture chain preserved;
+  `requireSession`→`MFA_REQUIRED` gate; `/mfa` challenge page (covers Google
+  OAuth + password recovery without touching middleware). **Live but INERT** —
+  no feature flag, but opt-in: `require_mfa` defaults false and nobody's enrolled,
+  so nothing changes until a user enables it / an owner turns on the office
+  requirement. All 3 owner gates DONE: TOTP enabled in Supabase, migration `0028`
+  (`organizations.require_mfa`) applied+verified in Prod, Liran's QA passed
+  ("עובד טוב"). Also fixed a latent app-wide bug — `<Toaster/>` was never mounted
+  so every `toast()` was a silent no-op (now live). No new deps. Recovery runbook:
+  `docs/2FA_RECOVERY.md` (lost device → cloud-sync authenticator restores; else
+  Liran removes the factor in Supabase Dashboard). 556 tests.
 - **DEV-010→016 (P3 nice-to-haves, added 2026-07-11):** EN form-field labels
   (010) · client testimonial block (011, needs a real quote) · office logo+ח.פ.
   (012, needs migration + Storage) · ~~2FA (013)~~ **CODE COMPLETE — PR #84, see above** ·
