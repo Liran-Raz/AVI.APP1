@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { FormError } from "@/components/ui/form-error";
 import { ApiError, apiClient } from "@/lib/api-client";
 import { useT } from "@/i18n/locale-provider";
 
@@ -19,10 +20,13 @@ export function ForgotPasswordForm() {
   const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  // Field-tied, screen-reader-announced error (alongside the toast).
+  const [error, setError] = useState<string | null>(null);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
+    setError(null);
     try {
       await apiClient.auth.requestPasswordReset({ email });
       toast.success(genericSuccess);
@@ -32,8 +36,10 @@ export function ForgotPasswordForm() {
       // branch usually means a validation error (e.g. malformed email)
       // or a transport/network failure — not "email unknown".
       if (err instanceof ApiError) {
+        setError(err.message);
         toast.error(err.message);
       } else {
+        setError(t("common.unexpectedErrorRetry"));
         toast.error(t("common.unexpectedErrorRetry"));
         console.error(err);
       }
@@ -45,7 +51,10 @@ export function ForgotPasswordForm() {
   if (submitted) {
     return (
       <div className="space-y-3 text-sm text-center">
-        <div className="rounded-md border border-primary/30 bg-primary/5 p-4">
+        <div
+          role="status"
+          className="rounded-md border border-primary/30 bg-primary/5 p-4"
+        >
           📧 {genericSuccess}
         </div>
         <p className="text-muted-foreground text-xs">
@@ -63,13 +72,20 @@ export function ForgotPasswordForm() {
           id="email"
           type="email"
           value={email}
-          onChange={(e) => setEmail(e.target.value)}
+          onChange={(e) => {
+            setEmail(e.target.value);
+            if (error) setError(null);
+          }}
           placeholder="name@example.com"
           dir="ltr"
           className="text-start"
+          autoComplete="email"
+          aria-invalid={error ? true : undefined}
+          aria-describedby={error ? "forgot-error" : undefined}
           required
         />
       </div>
+      <FormError id="forgot-error" message={error} />
       <Button type="submit" className="w-full h-11" disabled={loading}>
         {loading ? t("auth.sending") : t("auth.forgot.submit")}
       </Button>

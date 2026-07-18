@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { FormError } from "@/components/ui/form-error";
 import { ApiError, apiClient } from "@/lib/api-client";
 import { useT } from "@/i18n/locale-provider";
 
@@ -21,10 +22,13 @@ export function InviteSignupForm({ token, email }: Props) {
   const [fullName, setFullName] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
+  // Field-tied, screen-reader-announced error (alongside the toast).
+  const [error, setError] = useState<string | null>(null);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
+    setError(null);
     try {
       const result = await apiClient.invite.signup({
         token,
@@ -45,8 +49,10 @@ export function InviteSignupForm({ token, email }: Props) {
       router.refresh();
     } catch (err) {
       if (err instanceof ApiError) {
+        setError(err.message);
         toast.error(err.message);
       } else {
+        setError(t("common.unexpectedError"));
         toast.error(t("common.unexpectedError"));
         console.error(err);
       }
@@ -67,8 +73,10 @@ export function InviteSignupForm({ token, email }: Props) {
           disabled
           dir="ltr"
           className="text-start font-mono bg-muted/50"
+          autoComplete="email"
+          aria-describedby="invite-email-hint"
         />
-        <p className="text-xs text-muted-foreground">
+        <p id="invite-email-hint" className="text-xs text-muted-foreground">
           {t("invite.signupEmailLocked")}
         </p>
       </div>
@@ -78,8 +86,14 @@ export function InviteSignupForm({ token, email }: Props) {
         <Input
           id="fullName"
           value={fullName}
-          onChange={(e) => setFullName(e.target.value)}
+          onChange={(e) => {
+            setFullName(e.target.value);
+            if (error) setError(null);
+          }}
           placeholder={t("invite.signupNamePlaceholder")}
+          autoComplete="name"
+          aria-invalid={error ? true : undefined}
+          aria-describedby={error ? "invite-error" : undefined}
           required
           maxLength={120}
         />
@@ -91,13 +105,24 @@ export function InviteSignupForm({ token, email }: Props) {
           id="password"
           type="password"
           value={password}
-          onChange={(e) => setPassword(e.target.value)}
+          onChange={(e) => {
+            setPassword(e.target.value);
+            if (error) setError(null);
+          }}
           minLength={8}
+          autoComplete="new-password"
+          aria-invalid={error ? true : undefined}
+          aria-describedby={
+            error ? "invite-password-hint invite-error" : "invite-password-hint"
+          }
           required
         />
-        <p className="text-xs text-muted-foreground">{t("invite.passwordHint")}</p>
+        <p id="invite-password-hint" className="text-xs text-muted-foreground">
+          {t("invite.passwordHint")}
+        </p>
       </div>
 
+      <FormError id="invite-error" message={error} />
       <Button type="submit" className="w-full h-11" disabled={loading}>
         {loading ? t("invite.signupSubmitting") : t("invite.signupSubmit")}
       </Button>

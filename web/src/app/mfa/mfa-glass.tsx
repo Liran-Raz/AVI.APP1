@@ -16,12 +16,13 @@ export function MfaGlass({ next }: { next: string }) {
   const locale = useLocale();
   return (
     <div className="mkt auth-wrap" dir={dirFor(locale)} lang={locale}>
+      <a className="skip" href="#main">{t("common.skipToContent")}</a>
       <Aurora />
       <div className="auth-topbar">
         <Link className="brand" href="/"><span className="logo-mark">א</span> AVI.APP</Link>
         <AuthLangToggle />
       </div>
-      <div className="auth-main">
+      <main id="main" className="auth-main">
         <div className="glass auth-card">
           <h1>{t("auth.mfa.title")}</h1>
           <span className="auth-sub">{t("auth.mfa.subtitle")}</span>
@@ -29,7 +30,7 @@ export function MfaGlass({ next }: { next: string }) {
             <MfaForm next={next} />
           </div>
         </div>
-      </div>
+      </main>
     </div>
   );
 }

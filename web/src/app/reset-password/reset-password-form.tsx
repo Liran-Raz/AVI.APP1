@@ -89,15 +89,23 @@ export function ResetPasswordForm() {
             if (sameAsCurrent) setSameAsCurrent(false);
           }}
           minLength={8}
+          autoComplete="new-password"
           required
           aria-invalid={sameAsCurrent || undefined}
+          aria-describedby="reset-password-hint"
         />
         {sameAsCurrent ? (
-          <p className="text-xs text-destructive">
+          <p
+            id="reset-password-hint"
+            role="alert"
+            className="text-xs text-destructive"
+          >
             {t("auth.reset.sameAsCurrent")}
           </p>
         ) : (
-          <p className="text-xs text-muted-foreground">{t("auth.passwordHint")}</p>
+          <p id="reset-password-hint" className="text-xs text-muted-foreground">
+            {t("auth.passwordHint")}
+          </p>
         )}
       </div>
       <div className="space-y-2">
@@ -108,11 +116,15 @@ export function ResetPasswordForm() {
           value={confirmPassword}
           onChange={(e) => setConfirmPassword(e.target.value)}
           minLength={8}
+          autoComplete="new-password"
           required
           aria-invalid={mismatch || undefined}
+          aria-describedby={mismatch ? "reset-confirm-msg" : undefined}
         />
         {mismatch && (
-          <p className="text-xs text-destructive">{t("auth.reset.mismatch")}</p>
+          <p id="reset-confirm-msg" role="alert" className="text-xs text-destructive">
+            {t("auth.reset.mismatch")}
+          </p>
         )}
       </div>
       <Button
