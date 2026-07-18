@@ -2,6 +2,8 @@
 
 import type { TaskDTO } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
+import { intlLocale } from "@/i18n/config";
+import { useLocale, useT } from "@/i18n/locale-provider";
 
 import {
   CALENDAR_HOUR_END,
@@ -48,6 +50,8 @@ export function WeekGrid({
   clientNameById,
   onTaskClick,
 }: Props) {
+  const t = useT();
+  const localeTag = intlLocale(useLocale());
   const days = weekDays(weekStart);
   const hours = hourRange();
 
@@ -90,11 +94,11 @@ export function WeekGrid({
           <div
             key={d.toISOString()}
             className={cn(
-              "text-center py-2 text-xs font-medium border-r border-border last:border-r-0",
+              "text-center py-2 text-xs font-medium border-s border-border last:border-s-0",
               isToday(d) && "bg-primary/5 text-primary font-bold",
             )}
           >
-            {dayLabel(d)}
+            {dayLabel(d, localeTag)}
           </div>
         ))}
       </div>
@@ -113,7 +117,7 @@ export function WeekGrid({
           {hours.map((h) => (
             <div
               key={h}
-              className="flex items-start justify-end pr-2 pt-1 border-b border-border last:border-b-0"
+              className="flex items-start justify-end ps-2 pt-1 border-b border-border last:border-b-0"
               style={{ height: HOUR_PX }}
             >
               {String(h).padStart(2, "0")}:00
@@ -126,7 +130,7 @@ export function WeekGrid({
           <div
             key={d.toISOString()}
             className={cn(
-              "relative border-r border-border last:border-r-0",
+              "relative border-s border-border last:border-s-0",
               isToday(d) && "bg-primary/5",
             )}
           >
@@ -159,7 +163,7 @@ export function WeekGrid({
                     insetInlineEnd: "4px",
                     height: Math.max(BLOCK_MIN_HEIGHT, BLOCK_FIXED_HEIGHT),
                   }}
-                  aria-label={`משימה: ${task.title}`}
+                  aria-label={t("calendar.taskAria", { title: task.title })}
                 >
                   <div className="font-semibold truncate">{task.title}</div>
                   {task.clientId && clientNameById[task.clientId] && (
@@ -181,8 +185,8 @@ export function WeekGrid({
           see them. */}
       {outsideWindow.length > 0 && (
         <div className="border-t border-border bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
-          <span className="font-medium">{outsideWindow.length}</span> משימות
-          מחוץ לטווח השעות המוצג בשבוע הזה.
+          <span className="font-medium">{outsideWindow.length}</span>{" "}
+          {t("calendar.outsideWindow")}
         </div>
       )}
     </div>

@@ -203,6 +203,16 @@
   "businessType.amuta": "Nonprofit association",
   "businessType.agudat_shitufit": "Cooperative society",
 
+  "calendar.title": "Weekly calendar",
+  "calendar.subtitle": "All active tasks by due date",
+  "calendar.loadError": "Error loading tasks: {message}",
+  "calendar.prevWeek": "Previous week",
+  "calendar.nextWeek": "Next week",
+  "calendar.today": "Today",
+  "calendar.tasksInWeek": "{count} tasks this week",
+  "calendar.taskAria": "Task: {title}",
+  "calendar.outsideWindow": "tasks outside the displayed hours this week.",
+
   "clients.title": "Clients",
   "clients.subtitle": "Manage your office's clients",
   "clients.newClient": "New client",

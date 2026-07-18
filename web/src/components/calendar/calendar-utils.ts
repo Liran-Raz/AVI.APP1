@@ -19,6 +19,9 @@ import { he } from "date-fns/locale";
 export const CALENDAR_HOUR_START = 8;
 export const CALENDAR_HOUR_END = 20; // exclusive (last shown hour label = 19)
 
+// Hebrew keeps this exact hand-picked set (Intl he-IL would render "א׳" with a
+// typographic geresh — different bytes than the shipped UI). Other locales get
+// Intl short weekday names, which also covers R2's languages for free.
 export const HEBREW_WEEKDAY_SHORT = [
   "א'", // Sunday
   "ב'", // Monday
@@ -28,6 +31,19 @@ export const HEBREW_WEEKDAY_SHORT = [
   "ו'", // Friday
   "ש'", // Saturday
 ];
+
+// One cached Intl formatter per (locale, kind) — created lazily.
+const DTF_CACHE = new Map<string, Intl.DateTimeFormat>();
+
+function dtf(localeTag: string, opts: Intl.DateTimeFormatOptions): Intl.DateTimeFormat {
+  const key = `${localeTag}|${JSON.stringify(opts)}`;
+  let fmt = DTF_CACHE.get(key);
+  if (!fmt) {
+    fmt = new Intl.DateTimeFormat(localeTag, opts);
+    DTF_CACHE.set(key, fmt);
+  }
+  return fmt;
+}
 
 export function startOfWeek(d: Date): Date {
   return dfStartOfWeek(d, { weekStartsOn: 0 });
@@ -57,21 +73,33 @@ export function hourRange(): number[] {
   );
 }
 
-// Hebrew display string for the week range: "26-30 במאי" or, when the
-// week spans two months, "30 במאי - 5 ביוני".
-export function formatWeekRange(weekStart: Date): string {
+// Display string for the week range, e.g. he "26-30 במאי" / en "26-30 May" or,
+// when the week spans two months, he "30 במאי - 5 ביוני" / en "30 May - 5 June".
+// `localeTag` is a BCP-47 tag from intlLocale(useLocale()). The Hebrew branch
+// keeps the original date-fns path so its output stays byte-identical.
+export function formatWeekRange(weekStart: Date, localeTag = "he-IL"): string {
   const ws = weekStart;
   const we = endOfWeek(weekStart);
   const sameMonth = ws.getMonth() === we.getMonth();
-  if (sameMonth) {
-    return `${ws.getDate()}-${we.getDate()} ${format(we, "MMMM", { locale: he })}`;
+  if (localeTag.startsWith("he")) {
+    if (sameMonth) {
+      return `${ws.getDate()}-${we.getDate()} ${format(we, "MMMM", { locale: he })}`;
+    }
+    return `${format(ws, "d במLLLL", { locale: he })} - ${format(we, "d במLLLL", { locale: he })}`;
   }
-  return `${format(ws, "d במLLLL", { locale: he })} - ${format(we, "d במLLLL", { locale: he })}`;
+  if (sameMonth) {
+    return `${ws.getDate()}-${we.getDate()} ${dtf(localeTag, { month: "long" }).format(we)}`;
+  }
+  const dayMonth = dtf(localeTag, { day: "numeric", month: "long" });
+  return `${dayMonth.format(ws)} - ${dayMonth.format(we)}`;
 }
 
-export function dayLabel(d: Date): string {
-  // "א'" + "26"
-  return `${HEBREW_WEEKDAY_SHORT[d.getDay()]} ${d.getDate()}`;
+export function dayLabel(d: Date, localeTag = "he-IL"): string {
+  // he: "א'" + "26"; other locales: Intl short weekday, e.g. "Sun 26".
+  if (localeTag.startsWith("he")) {
+    return `${HEBREW_WEEKDAY_SHORT[d.getDay()]} ${d.getDate()}`;
+  }
+  return `${dtf(localeTag, { weekday: "short" }).format(d)} ${d.getDate()}`;
 }
 
 // Position of a task (by its due_at ISO) on the calendar grid.
