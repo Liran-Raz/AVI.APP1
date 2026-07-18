@@ -15,10 +15,10 @@ The ITA sandbox-portal approval email (for חשבוניות-ישראל R5) was e
 the next build (see the DEV-026 R5 section below). If not, escalate to
 ITAOpenApiSupport@taxes.gov.il after 1–2 business days.
 
-## 🟢 TODAY (2026-07-18/19) — Accessibility (DEV-027 + DEV-028) — DONE + LIVE
-Triggered by Liran asking to security-review a 3rd-party a11y skill (→ **safe**)
-+ wanting an accessibility button. All live in prod (main `e8720df`). Detail:
-memory `feature_accessibility.md`.
+## 🟢 Accessibility (DEV-027 + DEV-028) — DONE + LIVE (statement + widget + ALL code-fixes)
+Statement (PR #97/#99) + widget (PR #98) + the REAL code-fixes in **4 rounds
+(PR #100–#103)** — ALL live in prod (main `61ade54`). Detail: memory
+`feature_accessibility.md` + DEV_TRACKING DEV-027 detail.
 - **DEV-027 accessibility statement** — `/accessibility` (he binding) + `/en`,
   footer link. **Re-worded to the standard Israeli template** (rail.co.il model
   Liran supplied): positive conformance + a GENERAL reservation, **NO specific
@@ -29,12 +29,22 @@ memory `feature_accessibility.md`.
   menu (text-size/contrast/links/headings/font/spacing/stop-motion/cursor),
   real CSS via `<html data-a11y-*>`, no-flash `/public/a11y-init.js`. **Floating
   FAB on PUBLIC pages only; in-app it's Settings → נגישות tab** (Liran's call).
-- **OPEN (Liran deferred): the REAL a11y code-fixes** = the strongest legal
-  protection. Forms: add `autocomplete` + tie errors to fields
-  (`aria-invalid`/live-region, not just toasts); fix borderline contrast
-  (`#67718a` muted, white-on-`#2563eb`); `aria-hidden` the landing's fake demo
-  mockups (AT-exposed). Also consider a professional a11y audit. Statement +
-  privacy/terms all merit an Israeli-counsel glance (non-blocking).
+- **🟢 DONE (2026-07-19): the REAL a11y code-fixes — 4 rounds, all live in prod**
+  (the strongest legal protection). **A** (PR #100) public auth forms:
+  `autoComplete` + screen-reader-announced field-tied errors via a new shared
+  `FormError` (`role="alert"` + `aria-invalid`/`aria-describedby`, toast kept) +
+  `<main>`/skip-link on all 6 auth pages. **B** (PR #101) `aria-hidden` on the
+  landing's fake demo mockups (`.hero-demo-wrap` + 5 `.screen-stage`). **C**
+  (PR #102) contrast `--ink-faint` `#67718a`→`#5e6880` (was 4.26:1 on the page
+  bg, now 4.87:1; accent button white-on-`#2563eb` 5.17 untouched; approved via a
+  before/after mockup). **D** (PR #103) same pattern on 8 in-app forms
+  (profile/office/client/contact/task/role/onboarding/invite; done via 4 parallel
+  agents + central verify). Each round: tsc/lint/560 tests/Vercel/prod-deploy
+  green, Hebrew unchanged, no migration/deps. **Reusable:**
+  `components/ui/form-error.tsx`.
+- **Remaining (minor, deferred):** 🟡 consistent decorative-SVG `aria-hidden`;
+  per-phrase `lang`; optional professional a11y audit. Statement + privacy/terms
+  still merit an Israeli-counsel glance (non-blocking).
 
 ---
 
