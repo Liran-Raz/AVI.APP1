@@ -86,6 +86,8 @@
   "a11y.reset": "איפוס הכל",
   "a11y.shortcut": "Alt+A לפתיחת התפריט",
   "a11y.statement": "הצהרת הנגישות המלאה",
+  "a11y.settings.title": "התאמות נגישות",
+  "a11y.settings.subtitle": "התאם את התצוגה לצרכיך. ההעדפות נשמרות במכשיר הזה וחלות על כל המסכים.",
 
   "role.owner": "בעלים",
   "role.admin": "מנהל",
@@ -97,6 +99,7 @@
   "settings.tab.security": "אבטחה",
   "settings.tab.office": "משרד",
   "settings.tab.notifications": "התראות",
+  "settings.tab.accessibility": "נגישות",
 
   "settings.profile.fullName": "שם מלא",
   "settings.profile.emailHint": "האימייל משמש לזיהוי ולהתחברות ולא ניתן לשינוי כאן.",

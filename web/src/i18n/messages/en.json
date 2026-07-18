@@ -86,6 +86,8 @@
   "a11y.reset": "Reset all",
   "a11y.shortcut": "Alt+A to open the menu",
   "a11y.statement": "Full accessibility statement",
+  "a11y.settings.title": "Accessibility adjustments",
+  "a11y.settings.subtitle": "Adjust the display to your needs. Preferences are saved on this device and apply across all screens.",
 
   "role.owner": "Owner",
   "role.admin": "Manager",
@@ -97,6 +99,7 @@
   "settings.tab.security": "Security",
   "settings.tab.office": "Office",
   "settings.tab.notifications": "Notifications",
+  "settings.tab.accessibility": "Accessibility",
 
   "settings.profile.fullName": "Full name",
   "settings.profile.emailHint": "Your email is used for identification and sign-in and cannot be changed here.",

@@ -13,6 +13,7 @@ import { TwoFactorCard } from "./two-factor-card";
 import { OfficeForm } from "./office-form";
 import { MfaPolicyCard } from "./mfa-policy-card";
 import { NotificationPrefsForm } from "./notification-prefs-form";
+import { AccessibilitySettings } from "@/components/a11y/accessibility-settings";
 
 export type SettingsProfile = {
   fullName: string;
@@ -44,7 +45,7 @@ export function SettingsPage({
   isOwner: boolean;
   notificationPrefs: NotificationPrefs;
   mfaEnabled: boolean;
-  initialTab?: "profile" | "security" | "office" | "notifications";
+  initialTab?: "profile" | "security" | "office" | "notifications" | "accessibility";
 }) {
   const t = useT();
   // Source of truth for the notifications toggle lives HERE (SettingsPage stays
@@ -81,6 +82,9 @@ export function SettingsPage({
           <TabsTrigger value="notifications">
             {t("settings.tab.notifications")}
           </TabsTrigger>
+          <TabsTrigger value="accessibility">
+            {t("settings.tab.accessibility")}
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="profile" className="mt-4">
@@ -101,6 +105,10 @@ export function SettingsPage({
 
         <TabsContent value="notifications" className="mt-4">
           <NotificationPrefsForm value={notifPrefs} onChange={setNotifPrefs} />
+        </TabsContent>
+
+        <TabsContent value="accessibility" className="mt-4">
+          <AccessibilitySettings />
         </TabsContent>
       </Tabs>
     </div>
