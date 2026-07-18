@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ApiError, apiClient } from "@/lib/api-client";
+import { useT } from "@/i18n/locale-provider";
 
 type Props = {
   token: string;
@@ -15,6 +16,7 @@ type Props = {
 };
 
 export function InviteSignupForm({ token, email }: Props) {
+  const t = useT();
   const router = useRouter();
   const [fullName, setFullName] = useState("");
   const [password, setPassword] = useState("");
@@ -30,16 +32,14 @@ export function InviteSignupForm({ token, email }: Props) {
         fullName,
       });
       if (result.needsEmailConfirmation) {
-        toast.success(
-          "שלחנו לך מייל אישור. לחץ על הלינק במייל כדי לסיים את ההצטרפות.",
-        );
+        toast.success(t("invite.signupConfirmToast"));
         // Email-confirmation flow: link in the email points to
         // /auth/confirm?next=/invite/accept?token=... — invitee will
         // land on the accept page after clicking.
         router.push(`/login?pending=${encodeURIComponent(result.email)}`);
       } else {
         // Direct-session flow (rare in our setup; email confirmation is ON).
-        toast.success("החשבון נוצר. ממשיך לאשר את ההזמנה...");
+        toast.success(t("invite.signupCreatedToast"));
         router.push(`/invite/accept?token=${encodeURIComponent(token)}`);
       }
       router.refresh();
@@ -47,7 +47,7 @@ export function InviteSignupForm({ token, email }: Props) {
       if (err instanceof ApiError) {
         toast.error(err.message);
       } else {
-        toast.error("שגיאה לא צפויה");
+        toast.error(t("common.unexpectedError"));
         console.error(err);
       }
     } finally {
@@ -58,7 +58,7 @@ export function InviteSignupForm({ token, email }: Props) {
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       <div className="space-y-2">
-        <Label htmlFor="invitedEmail">אימייל</Label>
+        <Label htmlFor="invitedEmail">{t("common.email")}</Label>
         <Input
           id="invitedEmail"
           type="email"
@@ -69,24 +69,24 @@ export function InviteSignupForm({ token, email }: Props) {
           className="text-start font-mono bg-muted/50"
         />
         <p className="text-xs text-muted-foreground">
-          האימייל קבוע לפי ההזמנה ולא ניתן לשינוי.
+          {t("invite.signupEmailLocked")}
         </p>
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="fullName">שמך המלא</Label>
+        <Label htmlFor="fullName">{t("common.fullName")}</Label>
         <Input
           id="fullName"
           value={fullName}
           onChange={(e) => setFullName(e.target.value)}
-          placeholder="ישראל ישראלי"
+          placeholder={t("invite.signupNamePlaceholder")}
           required
           maxLength={120}
         />
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="password">סיסמה</Label>
+        <Label htmlFor="password">{t("invite.passwordLabel")}</Label>
         <Input
           id="password"
           type="password"
@@ -95,11 +95,11 @@ export function InviteSignupForm({ token, email }: Props) {
           minLength={8}
           required
         />
-        <p className="text-xs text-muted-foreground">לפחות 8 תווים</p>
+        <p className="text-xs text-muted-foreground">{t("invite.passwordHint")}</p>
       </div>
 
       <Button type="submit" className="w-full h-11" disabled={loading}>
-        {loading ? "יוצר חשבון..." : "צור חשבון והצטרף"}
+        {loading ? t("invite.signupSubmitting") : t("invite.signupSubmit")}
       </Button>
     </form>
   );

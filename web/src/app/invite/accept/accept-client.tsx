@@ -7,6 +7,7 @@ import { LogOut } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { ApiError, apiClient } from "@/lib/api-client";
+import { useT } from "@/i18n/locale-provider";
 
 type Props = {
   token: string;
@@ -26,6 +27,7 @@ export function AcceptClient({
   currentUserEmail,
   hasExistingProfile,
 }: Props) {
+  const t = useT();
   const router = useRouter();
   const [loading, setLoading] = useState(false);
 
@@ -39,7 +41,7 @@ export function AcceptClient({
     setLoading(true);
     try {
       const result = await apiClient.invite.accept({ token });
-      toast.success("הצטרפת למשרד");
+      toast.success(t("invite.joinedToast"));
       router.push("/tasks");
       router.refresh();
       // result is intentionally unused beyond the toast — the RPC
@@ -49,7 +51,7 @@ export function AcceptClient({
       if (err instanceof ApiError) {
         toast.error(err.message);
       } else {
-        toast.error("שגיאה לא צפויה");
+        toast.error(t("common.unexpectedError"));
         console.error(err);
       }
     } finally {
@@ -77,8 +79,7 @@ export function AcceptClient({
     return (
       <div className="space-y-3">
         <div className="rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm">
-          אתה כבר חבר בארגון אחר. כדי לאשר את ההזמנה הזו, התנתק והיכנס עם החשבון
-          שאליו ההזמנה נשלחה (
+          {t("invite.alreadyMemberOther")}
           <span dir="ltr" className="font-mono">
             {invitedEmail}
           </span>
@@ -90,7 +91,7 @@ export function AcceptClient({
           onClick={handleLogoutAndRelink}
         >
           <LogOut className="size-4" />
-          התנתק והיכנס מחדש
+          {t("invite.logoutRelink")}
         </Button>
       </div>
     );
@@ -100,13 +101,13 @@ export function AcceptClient({
     <div className="space-y-3">
       <div className="rounded-md border border-border bg-muted/30 p-3 text-xs">
         <div>
-          <span className="text-muted-foreground">החשבון שלך:</span>{" "}
+          <span className="text-muted-foreground">{t("invite.yourAccount")}</span>{" "}
           <span dir="ltr" className="font-mono">
             {currentUserEmail}
           </span>
         </div>
         <div className="mt-1">
-          <span className="text-muted-foreground">ההזמנה ל:</span>{" "}
+          <span className="text-muted-foreground">{t("invite.invitationTo")}</span>{" "}
           <span dir="ltr" className="font-mono">
             {invitedEmail}
           </span>
@@ -115,7 +116,7 @@ export function AcceptClient({
 
       {emailMismatch && (
         <div className="rounded-md border border-destructive/40 bg-destructive/5 p-3 text-xs">
-          האימיילים לא תואמים. ההזמנה תידחה בשרת. התנתק והיכנס עם האימייל הנכון.
+          {t("invite.emailMismatchWarning")}
         </div>
       )}
 
@@ -124,7 +125,7 @@ export function AcceptClient({
         onClick={handleAccept}
         disabled={loading || emailMismatch}
       >
-        {loading ? "מצטרף..." : "אשר הזמנה"}
+        {loading ? t("invite.accepting") : t("invite.acceptButton")}
       </Button>
     </div>
   );

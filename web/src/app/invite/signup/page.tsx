@@ -12,6 +12,8 @@ import {
 import { AppError } from "@/server/errors/app-error";
 import * as teamService from "@/server/services/team.service";
 import { checkRateLimit, clientIp } from "@/server/security/rate-limit";
+import { getServerT } from "@/i18n/server";
+import { readLocale } from "@/server/i18n/locale-cookie";
 
 // Public — dedicated signup form for invited users. We deliberately do
 // NOT reuse /signup because:
@@ -29,13 +31,15 @@ export default async function InviteSignupPage({
   searchParams: SearchParams;
 }) {
   const { token } = await searchParams;
+  const t = await getServerT(await readLocale());
 
   if (!token) {
     return (
       <Shell>
         <ErrorCard
-          title="קישור לא תקין"
-          message="חסר token. נסה לפתוח את הקישור המלא מהמייל שוב."
+          title={t("invite.errInvalidLinkTitle")}
+          message={t("invite.signupErrInvalidLinkMsg")}
+          backLabel={t("invite.backToLogin")}
         />
       </Shell>
     );
@@ -52,7 +56,11 @@ export default async function InviteSignupPage({
   if (!previewLimit.allowed) {
     return (
       <Shell>
-        <ErrorCard title="יותר מדי בקשות" message="נסה שוב בעוד כמה דקות." />
+        <ErrorCard
+          title={t("invite.errTooManyRequestsTitle")}
+          message={t("invite.errTooManyRequestsMsg")}
+          backLabel={t("invite.backToLogin")}
+        />
       </Shell>
     );
   }
@@ -65,8 +73,9 @@ export default async function InviteSignupPage({
       return (
         <Shell>
           <ErrorCard
-            title="הזמנה לא נמצאה"
-            message="הקישור שגוי או שההזמנה כבר נמחקה."
+            title={t("invite.errNotFoundTitle")}
+            message={t("invite.signupErrNotFoundMsg")}
+            backLabel={t("invite.backToLogin")}
           />
         </Shell>
       );
@@ -78,8 +87,9 @@ export default async function InviteSignupPage({
     return (
       <Shell>
         <ErrorCard
-          title="הזמנה לא פעילה"
-          message="ההזמנה כבר אושרה, פגה או בוטלה. בקש מהמנהל לשלוח לך הזמנה חדשה."
+          title={t("invite.errInactiveTitle")}
+          message={t("invite.signupErrInactiveMsg")}
+          backLabel={t("invite.backToLogin")}
         />
       </Shell>
     );
@@ -88,8 +98,9 @@ export default async function InviteSignupPage({
     return (
       <Shell>
         <ErrorCard
-          title="ההזמנה פגה"
-          message="בקש מהמנהל לשלוח לך הזמנה חדשה."
+          title={t("invite.errExpiredTitle")}
+          message={t("invite.errExpiredMsg")}
+          backLabel={t("invite.backToLogin")}
         />
       </Shell>
     );
@@ -99,9 +110,11 @@ export default async function InviteSignupPage({
     <Shell>
       <Card>
         <CardHeader className="text-center space-y-2">
-          <CardTitle className="text-2xl">הצטרפות ל-{preview.orgName}</CardTitle>
+          <CardTitle className="text-2xl">
+            {t("invite.signupJoinTitle", { orgName: preview.orgName })}
+          </CardTitle>
           <CardDescription>
-            יצירת חשבון חדש עם האימייל{" "}
+            {t("invite.signupCreateAccountWith")}
             <span dir="ltr" className="font-mono">
               {preview.email}
             </span>
@@ -113,12 +126,12 @@ export default async function InviteSignupPage({
         </CardContent>
       </Card>
       <p className="text-center text-sm text-muted-foreground">
-        כבר יש לך חשבון?{" "}
+        {t("invite.alreadyHaveAccountQ")}{" "}
         <Link
           href={`/login?redirect=${encodeURIComponent(`/invite/accept?token=${token}`)}`}
           className="text-primary hover:underline font-medium"
         >
-          התחבר במקום
+          {t("invite.loginInstead")}
         </Link>
       </p>
     </Shell>
@@ -143,7 +156,15 @@ function Shell({ children }: { children: React.ReactNode }) {
   );
 }
 
-function ErrorCard({ title, message }: { title: string; message: string }) {
+function ErrorCard({
+  title,
+  message,
+  backLabel,
+}: {
+  title: string;
+  message: string;
+  backLabel: string;
+}) {
   return (
     <Card>
       <CardHeader className="text-center space-y-2">
@@ -155,7 +176,7 @@ function ErrorCard({ title, message }: { title: string; message: string }) {
           href="/login"
           className="inline-flex items-center justify-center w-full h-11 rounded-md border border-border bg-background font-medium hover:bg-muted/50"
         >
-          חזרה להתחברות
+          {backLabel}
         </Link>
       </CardContent>
     </Card>
