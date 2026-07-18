@@ -1,7 +1,9 @@
 import type { Metadata, Viewport } from "next";
 import { Heebo } from "next/font/google";
+import Script from "next/script";
 import "./globals.css";
 import { NativeBridge } from "@/components/native/native-bridge";
+import { AccessibilityWidget } from "@/components/a11y/accessibility-widget";
 import { Toaster } from "@/components/ui/sonner";
 import { LocaleProvider } from "@/i18n/locale-provider";
 import { dirFor } from "@/i18n/config";
@@ -68,9 +70,16 @@ export default async function RootLayout({
       suppressHydrationWarning
     >
       <body className="min-h-full flex flex-col font-sans bg-background text-foreground">
+        {/* Pre-hydration no-flash: apply saved accessibility prefs to <html>
+            before paint (safe — <html> has suppressHydrationWarning). Served as
+            a static /public file (not an inline script in the React tree) so
+            React 19 never warns about a rendered <script>. */}
+        <Script src="/a11y-init.js" strategy="beforeInteractive" />
         <LocaleProvider locale={locale} messages={messages}>
           <NativeBridge />
           {children}
+          {/* Site-wide accessibility widget (floating button + adjustments). */}
+          <AccessibilityWidget />
           {/* Global toast host. Every toast() call in the app renders here —
               without a mounted Toaster, sonner toasts are silent no-ops. */}
           <Toaster position="top-center" dir={dir} />

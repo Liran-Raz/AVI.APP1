@@ -4,7 +4,13 @@ import { getCurrentSession } from "@/server/auth/session";
 import { getNotificationPrefs } from "@/server/services/profile.service";
 import { SettingsPage } from "@/components/settings/settings-page";
 
-const SETTINGS_TABS = ["profile", "security", "office", "notifications"] as const;
+const SETTINGS_TABS = [
+  "profile",
+  "security",
+  "office",
+  "notifications",
+  "accessibility",
+] as const;
 type SettingsTab = (typeof SETTINGS_TABS)[number];
 
 export default async function SettingsRoute(props: {
