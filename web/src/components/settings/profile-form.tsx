@@ -7,6 +7,7 @@ import { Crown, Loader2, LogOut, ShieldCheck, User } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { FormError } from "@/components/ui/form-error";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ApiError, apiClient, type MeRole } from "@/lib/api-client";
@@ -41,6 +42,7 @@ export function ProfileForm({ initial }: { initial: SettingsProfile }) {
   const [fullName, setFullName] = useState(initial.fullName);
   const [phone, setPhone] = useState(initial.phone ?? "");
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const dirty =
     fullName.trim() !== savedName.trim() || phone.trim() !== savedPhone.trim();
@@ -53,6 +55,7 @@ export function ProfileForm({ initial }: { initial: SettingsProfile }) {
     }
     if (!dirty) return;
     setSaving(true);
+    setError(null);
     try {
       const updated = await apiClient.me.updateProfile({
         fullName: fullName.trim(),
@@ -66,8 +69,11 @@ export function ProfileForm({ initial }: { initial: SettingsProfile }) {
       // Server components (e.g. the sidebar avatar initials) re-read the name.
       router.refresh();
     } catch (err) {
-      if (err instanceof ApiError) toast.error(err.message);
-      else {
+      if (err instanceof ApiError) {
+        setError(err.message);
+        toast.error(err.message);
+      } else {
+        setError(t("common.unexpectedError"));
         toast.error(t("common.unexpectedError"));
         console.error(err);
       }
@@ -97,9 +103,15 @@ export function ProfileForm({ initial }: { initial: SettingsProfile }) {
           <Input
             id="fullName"
             value={fullName}
-            onChange={(e) => setFullName(e.target.value)}
+            onChange={(e) => {
+              if (error) setError(null);
+              setFullName(e.target.value);
+            }}
             maxLength={120}
             required
+            autoComplete="name"
+            aria-invalid={error ? true : undefined}
+            aria-describedby={error ? "profile-error" : undefined}
           />
         </div>
 
@@ -116,10 +128,14 @@ export function ProfileForm({ initial }: { initial: SettingsProfile }) {
           <Input
             id="phone"
             value={phone}
-            onChange={(e) => setPhone(e.target.value)}
+            onChange={(e) => {
+              if (error) setError(null);
+              setPhone(e.target.value);
+            }}
             maxLength={50}
             dir="ltr"
             placeholder="050-0000000"
+            autoComplete="tel"
           />
         </div>
 
@@ -135,6 +151,8 @@ export function ProfileForm({ initial }: { initial: SettingsProfile }) {
             {t("settings.profile.roleHint")}
           </p>
         </div>
+
+        <FormError id="profile-error" message={error} />
 
         <div className="flex justify-start pt-1">
           <Button type="submit" disabled={saving || !dirty}>

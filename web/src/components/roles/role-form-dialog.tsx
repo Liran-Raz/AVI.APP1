@@ -20,6 +20,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { FormError } from "@/components/ui/form-error";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -214,11 +215,17 @@ function RoleFormBody({
           <Input
             id="role-name"
             value={name}
-            onChange={(e) => setName(e.target.value)}
+            onChange={(e) => {
+              if (error) setError(null);
+              setName(e.target.value);
+            }}
             maxLength={100}
             required
             disabled={readOnly}
             autoFocus
+            autoComplete="off"
+            aria-invalid={error ? true : undefined}
+            aria-describedby={error ? "role-error" : undefined}
           />
         </div>
 
@@ -293,7 +300,7 @@ function RoleFormBody({
           </div>
         )}
 
-        {error && <p className="text-sm text-destructive">{error}</p>}
+        <FormError id="role-error" message={error} />
       </div>
 
       <DialogFooter className="mt-2">
