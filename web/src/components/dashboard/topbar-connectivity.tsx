@@ -4,6 +4,8 @@ import { useCallback, useEffect, useState } from "react";
 
 import { ApiError, apiClient } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
+import { useT } from "@/i18n/locale-provider";
+import type { MessageKey } from "@/i18n/messages-types";
 
 // Topbar connectivity indicators:
 //   A — database reachability, via the authenticated /api/health/db
@@ -25,13 +27,14 @@ function dotClass(state: IndicatorState): string {
   return "bg-muted-foreground/30";
 }
 
-function stateText(state: IndicatorState): string {
-  if (state === true) return "מחובר";
-  if (state === false) return "אין תקשורת";
-  return "בודק…";
+function stateTextKey(state: IndicatorState): MessageKey {
+  if (state === true) return "connectivity.connected";
+  if (state === false) return "connectivity.down";
+  return "connectivity.checking";
 }
 
 export function TopbarConnectivity() {
+  const t = useT();
   const [dbOk, setDbOk] = useState<IndicatorState>(null);
   const [online, setOnline] = useState<IndicatorState>(null);
 
@@ -79,8 +82,8 @@ export function TopbarConnectivity() {
     };
   }, [checkDb]);
 
-  const dbTitle = `מסד נתונים: ${stateText(dbOk)}`;
-  const netTitle = `אינטרנט: ${stateText(online)}`;
+  const dbTitle = t("connectivity.dbTitle", { state: t(stateTextKey(dbOk)) });
+  const netTitle = t("connectivity.netTitle", { state: t(stateTextKey(online)) });
 
   return (
     <div
@@ -94,7 +97,7 @@ export function TopbarConnectivity() {
           aria-hidden
         />
         <span className="hidden md:inline text-[10px] leading-none text-muted-foreground">
-          מסד נתונים
+          {t("connectivity.db")}
         </span>
       </span>
       <span className="h-3 w-px bg-border/70" aria-hidden />
@@ -104,7 +107,7 @@ export function TopbarConnectivity() {
           aria-hidden
         />
         <span className="hidden md:inline text-[10px] leading-none text-muted-foreground">
-          אינטרנט
+          {t("connectivity.net")}
         </span>
       </span>
     </div>

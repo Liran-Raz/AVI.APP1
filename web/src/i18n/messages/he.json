@@ -41,6 +41,35 @@
   "appShell.closeMenu": "סגירת התפריט",
   "appShell.navMenu": "תפריט ניווט",
 
+  "clock.aria": "השעה {time}, {date}",
+  "clock.label": "שעון",
+
+  "connectivity.connected": "מחובר",
+  "connectivity.down": "אין תקשורת",
+  "connectivity.checking": "בודק…",
+  "connectivity.db": "מסד נתונים",
+  "connectivity.net": "אינטרנט",
+  "connectivity.dbTitle": "מסד נתונים: {state}",
+  "connectivity.netTitle": "אינטרנט: {state}",
+
+  "officeSwitcher.myOffices": "המשרדים שלי",
+
+  "mfaGate.title": "נדרש אימות דו-שלבי",
+  "mfaGate.body": "בעל המשרד הגדיר אימות דו-שלבי (2FA) כחובה עבור כל חברי הצוות. כדי להמשיך להשתמש במערכת יש להגדיר אותו. ההגדרה אורכת כדקה: סורקים קוד QR עם אפליקציית אימות בטלפון ומזינים קוד חד-פעמי.",
+  "mfaGate.cta": "להגדרת האימות הדו-שלבי",
+
+  "bugReport.button": "מצאת תקלה?",
+  "bugReport.dialogTitle": "דיווח על תקלה",
+  "bugReport.dialogDesc": "ספר/י לנו במה נתקלת. אנחנו מצרפים אוטומטית מידע טכני קצר (שגיאות ופעולות אחרונות במסך) כדי שיהיה לנו קל יותר להבין מה קרה.",
+  "bugReport.whatHappened": "מה קרה?",
+  "bugReport.descPlaceholder": "תארו את התקלה...",
+  "bugReport.attemptedAction": "מה ניסית לעשות? (לא חובה)",
+  "bugReport.attemptedPlaceholder": "למשל: ניסיתי לשמור משימה חדשה...",
+  "bugReport.submitting": "שולח...",
+  "bugReport.submit": "שליחת דיווח",
+  "bugReport.successToast": "תודה! קיבלנו את הדיווח ונבדוק את זה.",
+  "bugReport.errorToast": "שגיאה בשליחת הדיווח — נסה/י שוב",
+
   "role.owner": "בעלים",
   "role.admin": "מנהל",
   "role.employee": "עובד",

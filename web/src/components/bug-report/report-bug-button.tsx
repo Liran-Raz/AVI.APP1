@@ -22,6 +22,7 @@ import {
   initBugReportTracker,
   recordAction,
 } from "@/lib/bug-report-tracker";
+import { useT } from "@/i18n/locale-provider";
 
 // "מצאת תקלה?" (DEV-002). Mounted ONCE in the dashboard shell so it's
 // visible on every authenticated screen. Submits the user's description
@@ -29,6 +30,7 @@ import {
 // failed requests, and the last few actions/navigations) — no server-side
 // logging component, per the approved DEV-002 scope in docs/DEV_TRACKING.md.
 export function ReportBugButton() {
+  const t = useT();
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const [description, setDescription] = useState("");
@@ -71,13 +73,13 @@ export function ReportBugButton() {
         userAgent: navigator.userAgent,
         clientLogs: getClientLogsSnapshot(),
       });
-      toast.success("תודה! קיבלנו את הדיווח ונבדוק את זה.");
+      toast.success(t("bugReport.successToast"));
       resetAndClose();
     } catch (err) {
       if (err instanceof ApiError) {
         toast.error(err.message);
       } else {
-        toast.error("שגיאה בשליחת הדיווח — נסה/י שוב");
+        toast.error(t("bugReport.errorToast"));
         console.error(err);
       }
     } finally {
@@ -95,27 +97,24 @@ export function ReportBugButton() {
         onClick={() => setOpen(true)}
       >
         <MessageCircleWarning className="size-4" />
-        <span className="hidden sm:inline">מצאת תקלה?</span>
+        <span className="hidden sm:inline">{t("bugReport.button")}</span>
       </Button>
 
       <Dialog open={open} onOpenChange={(o) => (!o ? resetAndClose() : setOpen(o))}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>דיווח על תקלה</DialogTitle>
-            <DialogDescription>
-              ספר/י לנו במה נתקלת. אנחנו מצרפים אוטומטית מידע טכני קצר
-              (שגיאות ופעולות אחרונות במסך) כדי שיהיה לנו קל יותר להבין מה קרה.
-            </DialogDescription>
+            <DialogTitle>{t("bugReport.dialogTitle")}</DialogTitle>
+            <DialogDescription>{t("bugReport.dialogDesc")}</DialogDescription>
           </DialogHeader>
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="bug-description">מה קרה?</Label>
+              <Label htmlFor="bug-description">{t("bugReport.whatHappened")}</Label>
               <Textarea
                 id="bug-description"
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
-                placeholder="תארו את התקלה..."
+                placeholder={t("bugReport.descPlaceholder")}
                 rows={4}
                 required
               />
@@ -123,13 +122,13 @@ export function ReportBugButton() {
 
             <div className="space-y-2">
               <Label htmlFor="bug-attempted-action">
-                מה ניסית לעשות? (לא חובה)
+                {t("bugReport.attemptedAction")}
               </Label>
               <Textarea
                 id="bug-attempted-action"
                 value={attemptedAction}
                 onChange={(e) => setAttemptedAction(e.target.value)}
-                placeholder="למשל: ניסיתי לשמור משימה חדשה..."
+                placeholder={t("bugReport.attemptedPlaceholder")}
                 rows={2}
               />
             </div>
@@ -141,10 +140,10 @@ export function ReportBugButton() {
                 onClick={() => setOpen(false)}
                 disabled={submitting}
               >
-                ביטול
+                {t("common.cancel")}
               </Button>
               <Button type="submit" disabled={submitting || !description.trim()}>
-                {submitting ? "שולח..." : "שליחת דיווח"}
+                {submitting ? t("bugReport.submitting") : t("bugReport.submit")}
               </Button>
             </DialogFooter>
           </form>

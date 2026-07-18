@@ -4,6 +4,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { ShieldAlert } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { useT } from "@/i18n/locale-provider";
 
 // HARD office-wide 2FA enforcement (DEV-013). When the office requires 2FA
 // and the signed-in member hasn't set it up, the ONLY reachable page is
@@ -21,6 +22,7 @@ export function MfaEnforcementGate({
   required: boolean;
   children: React.ReactNode;
 }) {
+  const t = useT();
   const pathname = usePathname();
   const router = useRouter();
 
@@ -36,14 +38,10 @@ export function MfaEnforcementGate({
         <div className="flex justify-center">
           <ShieldAlert className="size-10 text-amber-500" />
         </div>
-        <h2 className="text-xl font-bold">נדרש אימות דו-שלבי</h2>
-        <p className="text-sm text-muted-foreground">
-          בעל המשרד הגדיר אימות דו-שלבי (2FA) כחובה עבור כל חברי הצוות.
-          כדי להמשיך להשתמש במערכת יש להגדיר אותו. ההגדרה אורכת כדקה: סורקים
-          קוד QR עם אפליקציית אימות בטלפון ומזינים קוד חד-פעמי.
-        </p>
+        <h2 className="text-xl font-bold">{t("mfaGate.title")}</h2>
+        <p className="text-sm text-muted-foreground">{t("mfaGate.body")}</p>
         <Button onClick={() => router.push("/settings?tab=security")}>
-          להגדרת האימות הדו-שלבי
+          {t("mfaGate.cta")}
         </Button>
       </div>
     </div>

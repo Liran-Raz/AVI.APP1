@@ -41,6 +41,35 @@
   "appShell.closeMenu": "Close menu",
   "appShell.navMenu": "Navigation menu",
 
+  "clock.aria": "Time {time}, {date}",
+  "clock.label": "Clock",
+
+  "connectivity.connected": "Connected",
+  "connectivity.down": "No connection",
+  "connectivity.checking": "Checking…",
+  "connectivity.db": "Database",
+  "connectivity.net": "Internet",
+  "connectivity.dbTitle": "Database: {state}",
+  "connectivity.netTitle": "Internet: {state}",
+
+  "officeSwitcher.myOffices": "My offices",
+
+  "mfaGate.title": "Two-factor authentication required",
+  "mfaGate.body": "The office owner has made two-factor authentication (2FA) mandatory for all team members. To keep using the system you need to set it up. It takes about a minute: scan a QR code with an authenticator app on your phone and enter a one-time code.",
+  "mfaGate.cta": "Set up two-factor authentication",
+
+  "bugReport.button": "Found a bug?",
+  "bugReport.dialogTitle": "Report a bug",
+  "bugReport.dialogDesc": "Tell us what you ran into. We automatically attach a short technical snapshot (recent errors and actions on screen) so it's easier for us to understand what happened.",
+  "bugReport.whatHappened": "What happened?",
+  "bugReport.descPlaceholder": "Describe the bug...",
+  "bugReport.attemptedAction": "What were you trying to do? (optional)",
+  "bugReport.attemptedPlaceholder": "For example: I tried to save a new task...",
+  "bugReport.submitting": "Sending...",
+  "bugReport.submit": "Send report",
+  "bugReport.successToast": "Thanks! We've received your report and will look into it.",
+  "bugReport.errorToast": "Error sending the report — please try again",
+
   "role.owner": "Owner",
   "role.admin": "Manager",
   "role.employee": "Employee",

@@ -3,6 +3,9 @@
 import { useEffect, useState } from "react";
 import { Clock } from "lucide-react";
 
+import { intlLocale } from "@/i18n/config";
+import { useLocale, useT } from "@/i18n/locale-provider";
+
 // Live clock + current date for the topbar.
 //
 // Hydration-safe: the server knows no client time, so the first client
@@ -10,6 +13,8 @@ import { Clock } from "lucide-react";
 // placeholder until mounted, then an interval takes over. Same
 // mount-then-set discipline as the notification bell's poll loop.
 export function TopbarClock() {
+  const t = useT();
+  const localeTag = intlLocale(useLocale());
   const [now, setNow] = useState<Date | null>(null);
 
   useEffect(() => {
@@ -22,10 +27,10 @@ export function TopbarClock() {
   }, []);
 
   const time = now
-    ? now.toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit" })
+    ? now.toLocaleTimeString(localeTag, { hour: "2-digit", minute: "2-digit" })
     : null;
   const date = now
-    ? now.toLocaleDateString("he-IL", {
+    ? now.toLocaleDateString(localeTag, {
         weekday: "short",
         day: "numeric",
         month: "long",
@@ -35,7 +40,9 @@ export function TopbarClock() {
   return (
     <div
       className="flex items-center gap-1.5 text-xs text-muted-foreground"
-      aria-label={now ? `השעה ${time}, ${date}` : "שעון"}
+      aria-label={
+        now ? t("clock.aria", { time: time ?? "", date: date ?? "" }) : t("clock.label")
+      }
     >
       <Clock className="hidden sm:block size-3.5" aria-hidden />
       {now ? (
