@@ -3,16 +3,28 @@
 // Client-safe (no server imports). Parsing is STRING-BASED — never multiply
 // floats (0.1+0.2 style drift is unacceptable in tax documents).
 
-const ILS_FORMATTER = new Intl.NumberFormat("he-IL", {
-  style: "currency",
-  currency: "ILS",
-  minimumFractionDigits: 2,
-  maximumFractionDigits: 2,
-});
+// One cached formatter per BCP-47 tag. he-IL stays the default so every
+// existing caller (incl. the server-side tax PDF, which must remain Hebrew)
+// keeps its exact output; UI callers pass intlLocale(useLocale()).
+const ILS_FORMATTERS = new Map<string, Intl.NumberFormat>();
 
-/** 123456 (agorot) → "‏1,234.56 ₪" (he-IL). */
-export function formatAgorot(agorot: number): string {
-  return ILS_FORMATTER.format(agorot / 100);
+function ilsFormatter(localeTag: string): Intl.NumberFormat {
+  let fmt = ILS_FORMATTERS.get(localeTag);
+  if (!fmt) {
+    fmt = new Intl.NumberFormat(localeTag, {
+      style: "currency",
+      currency: "ILS",
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+    ILS_FORMATTERS.set(localeTag, fmt);
+  }
+  return fmt;
+}
+
+/** 123456 (agorot) → "‏1,234.56 ₪" (he-IL default) / "₪1,234.56" (en). */
+export function formatAgorot(agorot: number, localeTag = "he-IL"): string {
+  return ilsFormatter(localeTag).format(agorot / 100);
 }
 
 /** 123456 (agorot) → "1234.56" — plain value for <input> fields. */

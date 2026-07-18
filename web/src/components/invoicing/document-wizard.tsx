@@ -32,7 +32,9 @@ import {
   formatAgorot,
   parseSheqelToAgorot,
 } from "@/lib/money";
-import { DOC_TYPE_LABELS, PAYMENT_METHOD_LABELS } from "./labels";
+import { intlLocale } from "@/i18n/config";
+import { useLocale, useT } from "@/i18n/locale-provider";
+import type { MessageKey } from "@/i18n/messages-types";
 
 // אשף מסמך (DEV-026 R2) — create/edit a DRAFT, optionally issue immediately.
 // All ₪ inputs are kept as STRINGS and parsed with the string-safe money
@@ -77,6 +79,19 @@ const EMPTY_PAYMENT: PaymentRow = {
 const CREATABLE_TYPES = ["305", "320", "400", "330"] as const;
 type CreatableType = (typeof CREATABLE_TYPES)[number];
 
+// Payment-method codes per מבנה אחיד D120 field 1306 (labels: paymentMethod.*).
+const PAYMENT_METHOD_CODES = [
+  "1",
+  "2",
+  "3",
+  "4",
+  "5",
+  "6",
+  "7",
+  "8",
+  "9",
+] as const;
+
 function today(): string {
   return new Date().toISOString().slice(0, 10);
 }
@@ -101,13 +116,14 @@ export function DocumentWizard({
   /** When present the wizard edits this DRAFT instead of creating. */
   editDoc?: DocumentDTO;
 }) {
+  const t = useT();
   // The form mounts fresh on every open (and per edited doc) — state seeds in
   // the useState initializers below, no effects, no stale carry-over.
   return (
     <ResponsiveModal
       open={open}
       onOpenChange={onOpenChange}
-      title={editDoc ? "עריכת טיוטה" : "מסמך חדש"}
+      title={editDoc ? t("invoicing.wizard.editTitle") : t("invoicing.newDocument")}
     >
       {open && (
         <WizardForm
@@ -139,6 +155,8 @@ function WizardForm({
   onSaved: (docId: string, issued: boolean) => void;
   editDoc?: DocumentDTO;
 }) {
+  const t = useT();
+  const localeTag = intlLocale(useLocale());
   const isEdit = Boolean(editDoc);
   const [docType, setDocType] = useState<CreatableType>(() =>
     editDoc && (CREATABLE_TYPES as readonly string[]).includes(editDoc.docType)
@@ -227,7 +245,7 @@ function WizardForm({
   // ---- build + validate the payload ----
   function buildPayload(): CreateDocumentPayload | null {
     if (!clientId && !buyerName.trim()) {
-      toast.error("בחרו לקוח או הזינו שם לקוח");
+      toast.error(t("invoicing.wizard.buyerRequired"));
       return null;
     }
 
@@ -238,28 +256,28 @@ function WizardForm({
           !l.description.trim() && !l.unitPrice.trim() && l.quantity === "1";
         if (isEmpty && lines.length > 1) continue; // skip trailing blank rows
         if (!l.description.trim()) {
-          toast.error(`שורה ${i + 1}: חסר תיאור`);
+          toast.error(t("invoicing.wizard.lineMissingDescription", { line: i + 1 }));
           return null;
         }
         const qty = Number(l.quantity);
         if (!Number.isFinite(qty) || qty <= 0) {
-          toast.error(`שורה ${i + 1}: כמות לא תקינה`);
+          toast.error(t("invoicing.wizard.lineInvalidQuantity", { line: i + 1 }));
           return null;
         }
         const price = parseSheqelToAgorot(l.unitPrice);
         if (price === null) {
-          toast.error(`שורה ${i + 1}: מחיר לא תקין`);
+          toast.error(t("invoicing.wizard.lineInvalidPrice", { line: i + 1 }));
           return null;
         }
         const disc = l.lineDiscount.trim()
           ? parseSheqelToAgorot(l.lineDiscount)
           : 0;
         if (disc === null) {
-          toast.error(`שורה ${i + 1}: הנחה לא תקינה`);
+          toast.error(t("invoicing.wizard.lineInvalidDiscount", { line: i + 1 }));
           return null;
         }
         if (computeLineTotalAgorot(qty, price, disc) < 0) {
-          toast.error(`שורה ${i + 1}: ההנחה גדולה מסכום השורה`);
+          toast.error(t("invoicing.wizard.lineDiscountTooBig", { line: i + 1 }));
           return null;
         }
         parsedLines.push({
@@ -270,7 +288,7 @@ function WizardForm({
         });
       }
       if (parsedLines.length === 0) {
-        toast.error("נדרשת לפחות שורה אחת");
+        toast.error(t("invoicing.wizard.linesRequired"));
         return null;
       }
     }
@@ -282,12 +300,12 @@ function WizardForm({
         if (isEmpty && payments.length > 1) continue;
         const amount = parseSheqelToAgorot(p.amount);
         if (amount === null || amount === 0) {
-          toast.error(`תקבול ${i + 1}: סכום לא תקין`);
+          toast.error(t("invoicing.wizard.paymentInvalidAmount", { payment: i + 1 }));
           return null;
         }
         const method = Number(p.method);
         if (method === 2 && !(p.bankNo && p.branchNo && p.accountNo && p.chequeNo)) {
-          toast.error(`תקבול ${i + 1}: להמחאה נדרשים בנק, סניף, חשבון ומס׳ המחאה`);
+          toast.error(t("invoicing.wizard.paymentChequeFields", { payment: i + 1 }));
           return null;
         }
         parsedPayments.push({
@@ -304,7 +322,7 @@ function WizardForm({
         });
       }
       if (parsedPayments.length === 0) {
-        toast.error("נדרש לפחות תקבול אחד");
+        toast.error(t("invoicing.wizard.paymentsRequired"));
         return null;
       }
     }
@@ -313,7 +331,7 @@ function WizardForm({
     if (withholding.trim()) {
       const w = parseSheqelToAgorot(withholding);
       if (w === null) {
-        toast.error("ניכוי במקור לא תקין");
+        toast.error(t("invoicing.wizard.invalidWithholding"));
         return null;
       }
       withholdingAgorot = w;
@@ -340,7 +358,10 @@ function WizardForm({
 
     if (issueAfter && docType === "320" && paymentsTotal !== total) {
       toast.error(
-        `בחשבונית מס-קבלה סך התקבולים (${formatAgorot(paymentsTotal)}) חייב להיות שווה לסה״כ (${formatAgorot(total)})`,
+        t("invoicing.wizard.paymentsMismatch", {
+          payments: formatAgorot(paymentsTotal, localeTag),
+          total: formatAgorot(total, localeTag),
+        }),
       );
       return;
     }
@@ -375,13 +396,15 @@ function WizardForm({
         // The draft was saved but issuing failed (e.g. business profile
         // incomplete) — land the user on the draft with the real reason.
         toast.error(
-          err instanceof ApiError ? err.message : "שמירת הטיוטה הצליחה אך ההפקה נכשלה",
+          err instanceof ApiError
+            ? err.message
+            : t("invoicing.wizard.savedButIssueFailed"),
         );
         onSaved(docId, false);
       } else if (err instanceof ApiError) {
         toast.error(err.message);
       } else {
-        toast.error("שגיאה לא צפויה");
+        toast.error(t("common.unexpectedError"));
         console.error(err);
       }
     } finally {
@@ -394,35 +417,35 @@ function WizardForm({
         {/* Type */}
         {!isEdit ? (
           <div className="space-y-2">
-            <Label>סוג מסמך</Label>
+            <Label>{t("invoicing.wizard.docTypeLabel")}</Label>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-              {CREATABLE_TYPES.map((t) => (
+              {CREATABLE_TYPES.map((dt) => (
                 <button
-                  key={t}
+                  key={dt}
                   type="button"
-                  onClick={() => setDocType(t)}
+                  onClick={() => setDocType(dt)}
                   className={
                     "rounded-lg border px-2 py-2 text-sm transition-colors " +
-                    (docType === t
+                    (docType === dt
                       ? "border-primary bg-primary/10 text-primary font-medium"
                       : "border-border hover:bg-accent/40")
                   }
                 >
-                  {DOC_TYPE_LABELS[t]}
+                  {t(`docType.${dt}` as MessageKey)}
                 </button>
               ))}
             </div>
           </div>
         ) : (
           <p className="text-sm text-muted-foreground">
-            {DOC_TYPE_LABELS[editDoc!.docType]}
+            {t(`docType.${editDoc!.docType}` as MessageKey)}
           </p>
         )}
 
         {/* Buyer */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="space-y-2">
-            <Label>לקוח</Label>
+            <Label>{t("invoicing.wizard.clientLabel")}</Label>
             <Select
               value={clientId || "manual"}
               onValueChange={(v) => setClientId(v === "manual" ? "" : v)}
@@ -431,7 +454,9 @@ function WizardForm({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="manual">ללא לקוח — הזנה ידנית</SelectItem>
+                <SelectItem value="manual">
+                  {t("invoicing.wizard.manualClient")}
+                </SelectItem>
                 {clients.map((c) => (
                   <SelectItem key={c.id} value={c.id}>
                     {c.name}
@@ -442,7 +467,9 @@ function WizardForm({
           </div>
           {clientId === "" && (
             <div className="space-y-2">
-              <Label htmlFor="wizBuyerName">שם הלקוח *</Label>
+              <Label htmlFor="wizBuyerName">
+                {t("invoicing.wizard.buyerNameLabel")}
+              </Label>
               <Input
                 id="wizBuyerName"
                 value={buyerName}
@@ -452,7 +479,7 @@ function WizardForm({
             </div>
           )}
           <div className="space-y-2">
-            <Label htmlFor="wizDocDate">תאריך המסמך</Label>
+            <Label htmlFor="wizDocDate">{t("invoicing.wizard.docDateLabel")}</Label>
             <Input
               id="wizDocDate"
               type="date"
@@ -466,7 +493,7 @@ function WizardForm({
         {/* Lines */}
         {hasLines && (
           <div className="space-y-2">
-            <Label>שורות</Label>
+            <Label>{t("invoicing.wizard.linesLabel")}</Label>
             <div className="space-y-2">
               {lines.map((l, i) => (
                 <div
@@ -474,7 +501,7 @@ function WizardForm({
                   className="grid grid-cols-[1fr_70px_100px_100px_32px] gap-2 items-center"
                 >
                   <Input
-                    placeholder="תיאור"
+                    placeholder={t("invoicing.wizard.descriptionPlaceholder")}
                     value={l.description}
                     onChange={(e) =>
                       updateRow(setLines, i, { description: e.target.value })
@@ -482,7 +509,7 @@ function WizardForm({
                     maxLength={200}
                   />
                   <Input
-                    placeholder="כמות"
+                    placeholder={t("invoicing.wizard.quantityPlaceholder")}
                     value={l.quantity}
                     onChange={(e) =>
                       updateRow(setLines, i, { quantity: e.target.value })
@@ -491,7 +518,7 @@ function WizardForm({
                     inputMode="decimal"
                   />
                   <Input
-                    placeholder="מחיר ₪"
+                    placeholder={t("invoicing.wizard.pricePlaceholder")}
                     value={l.unitPrice}
                     onChange={(e) =>
                       updateRow(setLines, i, { unitPrice: e.target.value })
@@ -500,7 +527,7 @@ function WizardForm({
                     inputMode="decimal"
                   />
                   <Input
-                    placeholder="הנחה ₪"
+                    placeholder={t("invoicing.wizard.discountPlaceholder")}
                     value={l.lineDiscount}
                     onChange={(e) =>
                       updateRow(setLines, i, { lineDiscount: e.target.value })
@@ -517,7 +544,7 @@ function WizardForm({
                         rows.length > 1 ? rows.filter((_, j) => j !== i) : rows,
                       )
                     }
-                    aria-label="הסרת שורה"
+                    aria-label={t("invoicing.wizard.removeLineAria")}
                   >
                     <Trash2 className="size-4" />
                   </Button>
@@ -531,7 +558,7 @@ function WizardForm({
               onClick={() => setLines((rows) => [...rows, { ...EMPTY_LINE }])}
             >
               <Plus className="size-4" />
-              הוספת שורה
+              {t("invoicing.wizard.addLine")}
             </Button>
           </div>
         )}
@@ -539,7 +566,7 @@ function WizardForm({
         {/* Payments */}
         {hasPayments && (
           <div className="space-y-2">
-            <Label>תקבולים</Label>
+            <Label>{t("invoicing.wizard.paymentsLabel")}</Label>
             <div className="space-y-3">
               {payments.map((p, i) => (
                 <div key={i} className="rounded-lg border border-border p-3 space-y-2">
@@ -552,15 +579,15 @@ function WizardForm({
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        {Object.entries(PAYMENT_METHOD_LABELS).map(([k, label]) => (
+                        {PAYMENT_METHOD_CODES.map((k) => (
                           <SelectItem key={k} value={k}>
-                            {label}
+                            {t(`paymentMethod.${k}` as MessageKey)}
                           </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
                     <Input
-                      placeholder="סכום ₪"
+                      placeholder={t("invoicing.wizard.amountPlaceholder")}
                       value={p.amount}
                       onChange={(e) =>
                         updateRow(setPayments, i, { amount: e.target.value })
@@ -585,7 +612,7 @@ function WizardForm({
                           rows.length > 1 ? rows.filter((_, j) => j !== i) : rows,
                         )
                       }
-                      aria-label="הסרת תקבול"
+                      aria-label={t("invoicing.wizard.removePaymentAria")}
                     >
                       <Trash2 className="size-4" />
                     </Button>
@@ -593,7 +620,7 @@ function WizardForm({
                   {p.method === "2" && (
                     <div className="grid grid-cols-4 gap-2">
                       <Input
-                        placeholder="בנק"
+                        placeholder={t("invoicing.wizard.bankPlaceholder")}
                         value={p.bankNo}
                         onChange={(e) =>
                           updateRow(setPayments, i, { bankNo: e.target.value })
@@ -602,7 +629,7 @@ function WizardForm({
                         inputMode="numeric"
                       />
                       <Input
-                        placeholder="סניף"
+                        placeholder={t("invoicing.wizard.branchPlaceholder")}
                         value={p.branchNo}
                         onChange={(e) =>
                           updateRow(setPayments, i, { branchNo: e.target.value })
@@ -611,7 +638,7 @@ function WizardForm({
                         inputMode="numeric"
                       />
                       <Input
-                        placeholder="חשבון"
+                        placeholder={t("invoicing.wizard.accountPlaceholder")}
                         value={p.accountNo}
                         onChange={(e) =>
                           updateRow(setPayments, i, { accountNo: e.target.value })
@@ -620,7 +647,7 @@ function WizardForm({
                         inputMode="numeric"
                       />
                       <Input
-                        placeholder="מס׳ המחאה"
+                        placeholder={t("invoicing.wizard.chequeNoPlaceholder")}
                         value={p.chequeNo}
                         onChange={(e) =>
                           updateRow(setPayments, i, { chequeNo: e.target.value })
@@ -642,7 +669,7 @@ function WizardForm({
               }
             >
               <Plus className="size-4" />
-              הוספת תקבול
+              {t("invoicing.wizard.addPayment")}
             </Button>
           </div>
         )}
@@ -650,7 +677,9 @@ function WizardForm({
         {/* Withholding (receipts) */}
         {hasPayments && (
           <div className="space-y-2 max-w-[200px]">
-            <Label htmlFor="wizWithholding">ניכוי מס במקור ₪ (אם נוכה)</Label>
+            <Label htmlFor="wizWithholding">
+              {t("invoicing.wizard.withholdingLabel")}
+            </Label>
             <Input
               id="wizWithholding"
               value={withholding}
@@ -663,7 +692,7 @@ function WizardForm({
 
         {/* Notes */}
         <div className="space-y-2">
-          <Label htmlFor="wizNotes">הערות (יודפסו על המסמך)</Label>
+          <Label htmlFor="wizNotes">{t("invoicing.wizard.notesLabel")}</Label>
           <Input
             id="wizNotes"
             value={notes}
@@ -676,23 +705,39 @@ function WizardForm({
         <div className="rounded-lg border border-border bg-card p-4 text-sm space-y-1">
           {hasLines && (
             <>
-              <Row label='סה״כ לפני מע"מ' value={formatAgorot(net)} />
               <Row
-                label={`מע"מ ${vatRateBp / 100}%${ledger.businessType === "patur" ? " (עוסק פטור)" : ""}`}
-                value={formatAgorot(vat)}
+                label={t("invoicing.totals.beforeVat")}
+                value={formatAgorot(net, localeTag)}
+              />
+              <Row
+                label={
+                  t("invoicing.totals.vatWithRate", { rate: vatRateBp / 100 }) +
+                  (ledger.businessType === "patur"
+                    ? t("invoicing.totals.paturSuffix")
+                    : "")
+                }
+                value={formatAgorot(vat, localeTag)}
               />
             </>
           )}
           {hasPayments && !hasLines && (
-            <Row label='סה״כ תקבולים' value={formatAgorot(paymentsTotal)} />
+            <Row
+              label={t("invoicing.totals.paymentsTotal")}
+              value={formatAgorot(paymentsTotal, localeTag)}
+            />
           )}
           <div className="border-t border-border pt-1 mt-1">
-            <Row label='סה״כ' value={formatAgorot(total)} bold />
+            <Row
+              label={t("invoicing.totals.total")}
+              value={formatAgorot(total, localeTag)}
+              bold
+            />
           </div>
           {docType === "320" && paymentsTotal !== total && (
             <p className="text-xs text-status-received pt-1">
-              ⚠ סך התקבולים ({formatAgorot(paymentsTotal)}) שונה מהסה״כ — נדרש
-              שוויון לפני הפקה.
+              {t("invoicing.wizard.mismatchWarning", {
+                payments: formatAgorot(paymentsTotal, localeTag),
+              })}
             </p>
           )}
         </div>
@@ -706,7 +751,7 @@ function WizardForm({
             disabled={saving}
           >
             {saving && <Loader2 className="size-4 animate-spin" />}
-            שמירת טיוטה
+            {t("invoicing.wizard.saveDraft")}
           </Button>
           {canIssue && (
             <Button
@@ -714,11 +759,13 @@ function WizardForm({
               onClick={() => void save(true)}
               disabled={saving || !ledger.issueReady}
               title={
-                ledger.issueReady ? undefined : "השלימו את פרטי העסק לפני הפקה"
+                ledger.issueReady
+                  ? undefined
+                  : t("invoicing.completeBusinessFirst")
               }
             >
               {saving && <Loader2 className="size-4 animate-spin" />}
-              שמירה והפקה
+              {t("invoicing.wizard.saveAndIssue")}
             </Button>
           )}
       </div>

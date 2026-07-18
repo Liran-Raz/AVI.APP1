@@ -27,6 +27,9 @@ import {
 import { formatAgorot } from "@/lib/money";
 import { hasCapability, PERMISSIONS, type Capability } from "@/lib/capabilities";
 import { cn } from "@/lib/utils";
+import { intlLocale } from "@/i18n/config";
+import { useLocale, useT } from "@/i18n/locale-provider";
+import type { MessageKey } from "@/i18n/messages-types";
 
 // דוחות (DEV-026 R4) — doc-type summary (the §2.6 validation report), sales +
 // receipts books, monthly VAT summary, client balances, CSV downloads and the
@@ -35,12 +38,12 @@ import { cn } from "@/lib/utils";
 
 type TabKey = "summary" | "sales" | "receipts" | "vat" | "balance";
 
-const TABS: Array<{ key: TabKey; label: string }> = [
-  { key: "summary", label: "סיכום מסמכים" },
-  { key: "sales", label: "ספר מכירות" },
-  { key: "receipts", label: "ספר תקבולים" },
-  { key: "vat", label: 'סיכום מע״מ' },
-  { key: "balance", label: "מאזן לקוחות" },
+const TABS: Array<{ key: TabKey; labelKey: MessageKey }> = [
+  { key: "summary", labelKey: "reports.tabs.summary" },
+  { key: "sales", labelKey: "reports.tabs.sales" },
+  { key: "receipts", labelKey: "reports.tabs.receipts" },
+  { key: "vat", labelKey: "reports.tabs.vat" },
+  { key: "balance", labelKey: "reports.tabs.balance" },
 ];
 
 type ReportsData = {
@@ -76,13 +79,15 @@ function monthRange(now = new Date()): ReportRangeQuery {
   return { from: iso(from), to: iso(to) };
 }
 
-function formatDateHe(isoDate: string | null): string {
+// dd/mm/yyyy — locale-neutral digits-only display, kept identical in every
+// UI language.
+function formatDate(isoDate: string | null): string {
   if (!isoDate) return "—";
   const [y, m, d] = isoDate.split("-");
   return `${d}/${m}/${y}`;
 }
 
-function formatMonthHe(month: string): string {
+function formatMonth(month: string): string {
   const [y, m] = month.split("-");
   return `${m}/${y}`;
 }
@@ -96,6 +101,8 @@ export function ReportsPage({
   officeName: string;
   capabilities: Capability[];
 }) {
+  const t = useT();
+  const localeTag = intlLocale(useLocale());
   const canExportCsv = hasCapability(capabilities, PERMISSIONS.REPORTS_EXPORT);
   const canOpenFormat = hasCapability(capabilities, PERMISSIONS.INVOICES_EXPORT);
 
@@ -109,14 +116,14 @@ export function ReportsPage({
   const [result, setResult] = useState<{ key: string; data: ReportsData } | null>(
     null,
   );
-  const [failure, setFailure] = useState<{ key: string; message: string } | null>(
+  const [failure, setFailure] = useState<{ key: string; messageKey: MessageKey } | null>(
     null,
   );
 
   // ממשק פתוח dialog
   const [ofOpen, setOfOpen] = useState(false);
   const [ofSummary, setOfSummary] = useState<OpenFormatSummaryDTO | null>(null);
-  const [ofError, setOfError] = useState<string | null>(null);
+  const [ofErrorKey, setOfErrorKey] = useState<MessageKey | null>(null);
 
   const rangeValid = range.from <= range.to;
   const fetchKey = `${range.from}|${range.to}|${reloadKey}`;
@@ -148,10 +155,10 @@ export function ReportsPage({
         if (cancelled) return;
         setFailure({
           key: fetchKey,
-          message:
+          messageKey:
             e instanceof ApiError && e.code === "VALIDATION_ERROR"
-              ? "הטווח שנבחר גדול מדי — צמצם את טווח התאריכים."
-              : "טעינת הדוחות נכשלה. נסה שוב.",
+              ? "reports.errors.rangeTooLarge"
+              : "reports.errors.loadFailed",
         });
       });
     return () => {
@@ -162,7 +169,7 @@ export function ReportsPage({
   }, [fetchKey, rangeValid]);
 
   const data = result?.key === fetchKey ? result.data : null;
-  const error = failure?.key === fetchKey ? failure.message : null;
+  const error = failure?.key === fetchKey ? t(failure.messageKey) : null;
   const loading = rangeValid && !data && !error;
 
   // Preset detection for the chips.
@@ -193,7 +200,7 @@ export function ReportsPage({
   const openOfDialog = () => {
     setOfOpen(true);
     setOfSummary(null);
-    setOfError(null);
+    setOfErrorKey(null);
     apiClient.reports
       .openFormatSummary(range)
       .then(setOfSummary)
@@ -202,12 +209,12 @@ export function ReportsPage({
           e instanceof ApiError && typeof e.details === "object" && e.details
             ? (e.details as { reason?: string }).reason
             : undefined;
-        setOfError(
+        setOfErrorKey(
           reason === "business_id_missing"
-            ? "חסר מספר עוסק/ח.פ בפרופיל העסק — השלם אותו בהגדרות הנהלת החשבונות ונסה שוב."
+            ? "reports.openformat.errors.businessIdMissing"
             : e instanceof ApiError && e.code === "FORBIDDEN"
-              ? "ייצוא מבנה-אחיד זמין לבעל המשרד בלבד."
-              : "הכנת הייצוא נכשלה. נסה שוב.",
+              ? "reports.openformat.errors.forbidden"
+              : "reports.openformat.errors.prepareFailed",
         );
       });
   };
@@ -222,7 +229,8 @@ export function ReportsPage({
       </Button>
     ) : null;
 
-  const printedAt = useMemo(() => formatDateHe(iso(new Date())), []);
+  const printedAt = useMemo(() => formatDate(iso(new Date())), []);
+  const activeTab = TABS.find((tb) => tb.key === tab);
 
   return (
     <div className="container mx-auto px-4 md:px-6 py-6 md:py-8 max-w-6xl">
@@ -231,15 +239,15 @@ export function ReportsPage({
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2">
             <BarChart3 className="size-6 text-primary" />
-            דוחות
+            {t("reports.title")}
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            ספרי מכירות ותקבולים, סיכום מע״מ ומאזן לקוחות — לפי טווח תאריכים
+            {t("reports.subtitle")}
           </p>
         </div>
         <Button variant="outline" onClick={() => window.print()}>
           <Printer className="size-4" />
-          הדפסה
+          {t("reports.print.button")}
         </Button>
       </div>
 
@@ -247,9 +255,12 @@ export function ReportsPage({
       <div className="print-only mb-4">
         <div className="text-lg font-bold">{officeName}</div>
         <div className="text-sm">
-          {TABS.find((t) => t.key === tab)?.label} · טווח:{" "}
-          {formatDateHe(range.from)} – {formatDateHe(range.to)} · הודפס:{" "}
-          {printedAt}
+          {activeTab ? t(activeTab.labelKey) : null}
+          {t("reports.print.headerLine", {
+            from: formatDate(range.from),
+            to: formatDate(range.to),
+            printed: printedAt,
+          })}
         </div>
       </div>
 
@@ -258,9 +269,13 @@ export function ReportsPage({
         <div className="flex flex-wrap gap-1.5">
           {(
             [
-              ["year", `שנת המס ${new Date().getFullYear()}`, taxYearRange],
-              ["quarter", "רבעון נוכחי", quarterRange],
-              ["month", "החודש", monthRange],
+              [
+                "year",
+                t("reports.presets.taxYear", { year: new Date().getFullYear() }),
+                taxYearRange,
+              ],
+              ["quarter", t("reports.presets.quarter"), quarterRange],
+              ["month", t("reports.presets.month"), monthRange],
             ] as const
           ).map(([key, label, make]) => (
             <button
@@ -285,18 +300,18 @@ export function ReportsPage({
                 : "bg-card text-muted-foreground border-border",
             )}
           >
-            מותאם אישית
+            {t("reports.presets.custom")}
           </span>
         </div>
         <div className="flex items-center gap-2 ms-auto text-xs text-muted-foreground">
-          מ-
+          {t("reports.range.from")}
           <input
             type="date"
             value={range.from}
             onChange={(e) => setRange((r) => ({ ...r, from: e.target.value }))}
             className="h-9 rounded-md border border-input bg-card px-2.5 text-xs text-foreground"
           />
-          עד
+          {t("reports.range.to")}
           <input
             type="date"
             value={range.to}
@@ -308,7 +323,7 @@ export function ReportsPage({
 
       {!rangeValid && (
         <div className="mb-4 rounded-lg border border-destructive/40 bg-destructive/5 px-4 py-3 text-sm text-destructive print-hide">
-          תאריך ההתחלה מאוחר מתאריך הסיום — תקן את הטווח.
+          {t("reports.errors.invalidRange")}
         </div>
       )}
 
@@ -321,7 +336,7 @@ export function ReportsPage({
             onClick={() => setReloadKey((k) => k + 1)}
           >
             <RefreshCw className="size-4" />
-            נסה שוב
+            {t("reports.errors.retry")}
           </Button>
         </div>
       )}
@@ -335,33 +350,37 @@ export function ReportsPage({
         ) : (
           <>
             <KpiCard
-              title="מסמכים בטווח"
+              title={t("reports.kpi.docsInRange")}
               value={String(kpis.docCount)}
               sub={
                 kpis.cancelledCount > 0
-                  ? `מתוכם ${kpis.cancelledCount} מבוטלים`
-                  : "ללא ביטולים"
+                  ? t("reports.kpi.cancelledOfThem", {
+                      count: kpis.cancelledCount,
+                    })
+                  : t("reports.kpi.noCancellations")
               }
             />
             <KpiCard
-              title='מכירות (לפני מע״מ)'
-              value={formatAgorot(kpis.salesNet)}
-              sub="נטו אחרי זיכויים"
+              title={t("reports.kpi.salesNet")}
+              value={formatAgorot(kpis.salesNet, localeTag)}
+              sub={t("reports.kpi.netAfterCredits")}
               tone="primary"
             />
             <KpiCard
-              title='מע״מ עסקאות'
-              value={formatAgorot(kpis.salesVat)}
-              sub="לפי הדוחות בטווח"
+              title={t("reports.kpi.salesVat")}
+              value={formatAgorot(kpis.salesVat, localeTag)}
+              sub={t("reports.kpi.salesVatSub")}
               tone="primary"
             />
             <KpiCard
-              title="תקבולים"
-              value={formatAgorot(kpis.receipts)}
+              title={t("reports.kpi.receipts")}
+              value={formatAgorot(kpis.receipts, localeTag)}
               sub={
                 kpis.withholding > 0
-                  ? `+ ${formatAgorot(kpis.withholding)} ניכוי במקור`
-                  : "כולל כל אמצעי התשלום"
+                  ? t("reports.kpi.plusWithholding", {
+                      amount: formatAgorot(kpis.withholding, localeTag),
+                    })
+                  : t("reports.kpi.allMethods")
               }
               tone="success"
             />
@@ -377,38 +396,36 @@ export function ReportsPage({
           </div>
           <div className="min-w-[230px] flex-1">
             <div className="flex items-center gap-2 font-bold">
-              ממשק פתוח — ייצוא קבצים במבנה אחיד
+              {t("reports.openformat.cardTitle")}
               <span className="rounded-full bg-amber-500/15 px-2.5 py-0.5 text-[11px] font-bold text-amber-700">
-                בעלים בלבד
+                {t("reports.openformat.ownerOnlyBadge")}
               </span>
             </div>
             <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">
-              מפיק INI.TXT + BKMVDATA.TXT לפי הוראות מס הכנסה (גרסה 1.31) עבור
-              הטווח שנבחר — לביקורת, לרואה חשבון מבקר או לבדיקה בסימולטור של
-              רשות המסים.
+              {t("reports.openformat.cardDesc")}
             </p>
           </div>
           <Button onClick={openOfDialog} disabled={!rangeValid}>
-            יצוא קבצים
+            {t("reports.openformat.exportButton")}
           </Button>
         </div>
       )}
 
       {/* tabs */}
       <div className="mb-4 flex w-max max-w-full gap-1 overflow-x-auto rounded-xl border border-border bg-card/70 p-1 print-hide">
-        {TABS.map((t) => (
+        {TABS.map((tb) => (
           <button
-            key={t.key}
+            key={tb.key}
             type="button"
-            onClick={() => setTab(t.key)}
+            onClick={() => setTab(tb.key)}
             className={cn(
               "whitespace-nowrap rounded-lg px-4 py-1.5 text-sm font-semibold transition-colors",
-              tab === t.key
+              tab === tb.key
                 ? "bg-background text-primary shadow-sm"
                 : "text-muted-foreground hover:text-foreground",
             )}
           >
-            {t.label}
+            {t(tb.labelKey)}
           </button>
         ))}
       </div>
@@ -449,7 +466,7 @@ export function ReportsPage({
       <ResponsiveModal
         open={ofOpen}
         onOpenChange={(o) => setOfOpen(o)}
-        title="ממשק פתוח — סיכום הפקה"
+        title={t("reports.openformat.dialogTitle")}
         footer={
           <div className="flex flex-wrap gap-2">
             {ofSummary && (
@@ -460,7 +477,7 @@ export function ReportsPage({
                     download
                   >
                     <Download className="size-4" />
-                    הורדת קובץ הייצוא
+                    {t("reports.openformat.downloadFile")}
                   </a>
                 </Button>
                 <Button
@@ -469,17 +486,20 @@ export function ReportsPage({
                   className="print-hide"
                 >
                   <Printer className="size-4" />
-                  הדפסת הדוח
+                  {t("reports.openformat.printReport")}
                 </Button>
               </>
             )}
             <Button variant="outline" onClick={() => setOfOpen(false)}>
-              סגירה
+              {t("common.close")}
             </Button>
           </div>
         }
       >
-        <OpenFormatDialogBody summary={ofSummary} error={ofError} />
+        <OpenFormatDialogBody
+          summary={ofSummary}
+          error={ofErrorKey ? t(ofErrorKey) : null}
+        />
       </ResponsiveModal>
     </div>
   );
@@ -556,33 +576,38 @@ function ReportCard({
 }
 
 function StatusBadge({ status }: { status: "issued" | "cancelled" }) {
+  const t = useT();
   return status === "cancelled" ? (
     <span className="rounded-full bg-destructive/10 px-2 py-0.5 text-[10.5px] font-bold text-destructive">
-      מבוטל
+      {t("docStatus.cancelled")}
     </span>
   ) : (
     <span className="rounded-full bg-emerald-600/10 px-2 py-0.5 text-[10.5px] font-bold text-emerald-700">
-      הופק
+      {t("docStatus.issued")}
     </span>
   );
 }
 
 function EmptyRows({ colSpan }: { colSpan: number }) {
+  const t = useT();
   return (
     <tr>
       <td
         colSpan={colSpan}
         className="px-4 py-10 text-center text-sm text-muted-foreground"
       >
-        אין נתונים בטווח שנבחר
+        {t("reports.emptyRange")}
       </td>
     </tr>
   );
 }
 
-const TH = "px-3.5 py-2.5 text-right text-[11px] font-bold text-muted-foreground bg-primary/[0.04] border-b border-border whitespace-nowrap";
+const TH = "px-3.5 py-2.5 text-start text-[11px] font-bold text-muted-foreground bg-primary/[0.04] border-b border-border whitespace-nowrap";
 const TD = "px-3.5 py-2.5 border-b border-border/60 whitespace-nowrap text-[13px]";
-const NUM = "text-left tabular-nums [direction:ltr]";
+// The cell forces direction:ltr, so rtl:/ltr: variants (keyed off <html dir>)
+// pin the number to the visual END of the row in both UI directions — text-end
+// here would flip the Hebrew rendering.
+const NUM = "rtl:text-left ltr:text-right tabular-nums [direction:ltr]";
 const FOOT_TD = "px-3.5 py-2.5 bg-primary/[0.04] font-bold border-t-2 border-border text-[13px]";
 
 // ============================================================
@@ -596,13 +621,15 @@ function SummaryReport({
   rows: DocTypeSummaryRow[];
   csv: React.ReactNode;
 }) {
+  const t = useT();
+  const localeTag = intlLocale(useLocale());
   const [showAll, setShowAll] = useState(false);
   const managed = rows.filter((r) => r.managed);
   const visible = showAll ? rows : managed;
   return (
     <ReportCard
-      title="סיכום מסמכים לפי סוג"
-      subtitle="דוח האימות הנדרש לרישום (סעיף 2.6 להוראות) — כמות וסכום לכל סוג מסמך רשמי"
+      title={t("reports.summary.title")}
+      subtitle={t("reports.summary.subtitle")}
       actions={
         <div className="flex items-center gap-2">
           <button
@@ -610,23 +637,23 @@ function SummaryReport({
             onClick={() => setShowAll((v) => !v)}
             className="text-xs font-semibold text-primary hover:underline print-hide"
           >
-            {showAll ? "רק סוגים מנוהלים" : "כל 27 הסוגים"}
+            {showAll ? t("reports.summary.managedOnly") : t("reports.summary.all27")}
           </button>
           {csv}
         </div>
       }
-      foot="מסמכים מבוטלים נספרים בכמות אך אינם נכללים בסכום. סוגים שאינם מנוהלים בתוכנה מוצגים באפס — כנדרש בהוראות."
+      foot={t("reports.summary.foot")}
     >
       <div className="overflow-x-auto">
         <table className="w-full border-collapse">
           <thead>
             <tr>
-              <th className={TH}>קוד</th>
-              <th className={TH}>סוג המסמך</th>
-              <th className={TH}>סטטוס בתוכנה</th>
-              <th className={cn(TH, NUM)}>כמות</th>
-              <th className={cn(TH, NUM)}>מבוטלים</th>
-              <th className={cn(TH, NUM)}>סה״כ</th>
+              <th className={TH}>{t("reports.summary.code")}</th>
+              <th className={TH}>{t("reports.summary.docType")}</th>
+              <th className={TH}>{t("reports.summary.softwareStatus")}</th>
+              <th className={cn(TH, NUM)}>{t("reports.summary.count")}</th>
+              <th className={cn(TH, NUM)}>{t("reports.summary.cancelledCount")}</th>
+              <th className={cn(TH, NUM)}>{t("reports.table.total")}</th>
             </tr>
           </thead>
           <tbody>
@@ -636,21 +663,25 @@ function SummaryReport({
               visible.map((r) => (
                 <tr key={r.docType} className={cn(!r.managed && "opacity-60")}>
                   <td className={TD}>{r.docType}</td>
-                  <td className={TD}>{r.nameHe}</td>
+                  <td className={TD}>
+                    {t(`nispach1.${r.docType}` as MessageKey)}
+                  </td>
                   <td className={TD}>
                     {r.managed ? (
                       <span className="rounded-full bg-emerald-600/10 px-2 py-0.5 text-[10.5px] font-bold text-emerald-700">
-                        מנוהל
+                        {t("reports.summary.managedBadge")}
                       </span>
                     ) : (
                       <span className="rounded-full bg-muted px-2 py-0.5 text-[10.5px] font-bold text-muted-foreground">
-                        לא מנוהל
+                        {t("reports.summary.notManagedBadge")}
                       </span>
                     )}
                   </td>
                   <td className={cn(TD, NUM)}>{r.count}</td>
                   <td className={cn(TD, NUM)}>{r.cancelledCount}</td>
-                  <td className={cn(TD, NUM)}>{formatAgorot(r.totalAgorot)}</td>
+                  <td className={cn(TD, NUM)}>
+                    {formatAgorot(r.totalAgorot, localeTag)}
+                  </td>
                 </tr>
               ))
             )}
@@ -666,25 +697,27 @@ function SummaryReport({
 // ============================================================
 
 function SalesReport({ book, csv }: { book: SalesBookDTO; csv: React.ReactNode }) {
+  const t = useT();
+  const localeTag = intlLocale(useLocale());
   return (
     <ReportCard
-      title="ספר מכירות"
-      subtitle="חשבוניות מס, חשבוניות מס-קבלה וזיכויים — כרונולוגי"
+      title={t("reports.tabs.sales")}
+      subtitle={t("reports.salesBook.subtitle")}
       actions={csv}
-      foot="שורות מבוטלות נשארות בספר (מסומנות) אך אינן נסכמות; זיכויים מוצגים בשלילי ונגרעים מהסיכום."
+      foot={t("reports.salesBook.foot")}
     >
       {/* desktop table */}
       <div className="hidden overflow-x-auto md:block">
         <table className="w-full border-collapse">
           <thead>
             <tr>
-              <th className={TH}>תאריך</th>
-              <th className={TH}>מסמך</th>
-              <th className={TH}>לקוח</th>
-              <th className={TH}>סטטוס</th>
-              <th className={cn(TH, NUM)}>לפני מע״מ</th>
-              <th className={cn(TH, NUM)}>מע״מ</th>
-              <th className={cn(TH, NUM)}>סה״כ</th>
+              <th className={TH}>{t("reports.table.date")}</th>
+              <th className={TH}>{t("reports.table.document")}</th>
+              <th className={TH}>{t("reports.table.client")}</th>
+              <th className={TH}>{t("reports.table.status")}</th>
+              <th className={cn(TH, NUM)}>{t("reports.salesBook.beforeVat")}</th>
+              <th className={cn(TH, NUM)}>{t("reports.salesBook.vat")}</th>
+              <th className={cn(TH, NUM)}>{t("reports.table.total")}</th>
             </tr>
           </thead>
           <tbody>
@@ -695,22 +728,22 @@ function SalesReport({ book, csv }: { book: SalesBookDTO; csv: React.ReactNode }
                 const neg = r.docType === "330";
                 return (
                   <tr key={r.id}>
-                    <td className={TD}>{formatDateHe(r.docDate)}</td>
+                    <td className={TD}>{formatDate(r.docDate)}</td>
                     <td className={cn(TD, neg && "text-destructive")}>
-                      {r.docTypeLabel} #{r.number}
+                      {t(`docType.${r.docType}` as MessageKey)} #{r.number}
                     </td>
                     <td className={TD}>{r.buyerName ?? "—"}</td>
                     <td className={TD}>
                       <StatusBadge status={r.status} />
                     </td>
                     <td className={cn(TD, NUM, neg && "text-destructive")}>
-                      {formatAgorot(neg ? -r.netAgorot : r.netAgorot)}
+                      {formatAgorot(neg ? -r.netAgorot : r.netAgorot, localeTag)}
                     </td>
                     <td className={cn(TD, NUM, neg && "text-destructive")}>
-                      {formatAgorot(neg ? -r.vatAgorot : r.vatAgorot)}
+                      {formatAgorot(neg ? -r.vatAgorot : r.vatAgorot, localeTag)}
                     </td>
                     <td className={cn(TD, NUM, neg && "text-destructive")}>
-                      {formatAgorot(r.signedTotalAgorot)}
+                      {formatAgorot(r.signedTotalAgorot, localeTag)}
                     </td>
                   </tr>
                 );
@@ -721,16 +754,18 @@ function SalesReport({ book, csv }: { book: SalesBookDTO; csv: React.ReactNode }
             <tfoot>
               <tr>
                 <td className={FOOT_TD} colSpan={4}>
-                  סה״כ ({book.totals.documentCount} מסמכים, ללא מבוטלים)
+                  {t("reports.salesBook.totalWithCount", {
+                    count: book.totals.documentCount,
+                  })}
                 </td>
                 <td className={cn(FOOT_TD, NUM)}>
-                  {formatAgorot(book.totals.netAgorot)}
+                  {formatAgorot(book.totals.netAgorot, localeTag)}
                 </td>
                 <td className={cn(FOOT_TD, NUM)}>
-                  {formatAgorot(book.totals.vatAgorot)}
+                  {formatAgorot(book.totals.vatAgorot, localeTag)}
                 </td>
                 <td className={cn(FOOT_TD, NUM)}>
-                  {formatAgorot(book.totals.totalAgorot)}
+                  {formatAgorot(book.totals.totalAgorot, localeTag)}
                 </td>
               </tr>
             </tfoot>
@@ -741,7 +776,7 @@ function SalesReport({ book, csv }: { book: SalesBookDTO; csv: React.ReactNode }
       <div className="md:hidden">
         {book.rows.length === 0 ? (
           <div className="px-4 py-10 text-center text-sm text-muted-foreground">
-            אין נתונים בטווח שנבחר
+            {t("reports.emptyRange")}
           </div>
         ) : (
           <>
@@ -759,13 +794,13 @@ function SalesReport({ book, csv }: { book: SalesBookDTO; csv: React.ReactNode }
                         neg && "text-destructive",
                       )}
                     >
-                      {r.docTypeLabel} #{r.number}
+                      {t(`docType.${r.docType}` as MessageKey)} #{r.number}
                     </span>
                     <StatusBadge status={r.status} />
                   </div>
                   <div className="mt-1 flex items-center justify-between gap-2 text-xs text-muted-foreground">
                     <span>
-                      {formatDateHe(r.docDate)} · {r.buyerName ?? "—"}
+                      {formatDate(r.docDate)} · {r.buyerName ?? "—"}
                     </span>
                     <span
                       className={cn(
@@ -773,16 +808,20 @@ function SalesReport({ book, csv }: { book: SalesBookDTO; csv: React.ReactNode }
                         neg && "text-destructive",
                       )}
                     >
-                      {formatAgorot(r.signedTotalAgorot)}
+                      {formatAgorot(r.signedTotalAgorot, localeTag)}
                     </span>
                   </div>
                 </div>
               );
             })}
             <div className="flex items-center justify-between bg-primary/[0.04] px-4 py-3 text-sm font-bold">
-              <span>סה״כ ({book.totals.documentCount} מסמכים)</span>
+              <span>
+                {t("reports.salesBook.totalWithCountMobile", {
+                  count: book.totals.documentCount,
+                })}
+              </span>
               <span className="tabular-nums">
-                {formatAgorot(book.totals.totalAgorot)}
+                {formatAgorot(book.totals.totalAgorot, localeTag)}
               </span>
             </div>
           </>
@@ -803,34 +842,41 @@ function ReceiptsReport({
   book: ReceiptsBookDTO;
   csv: React.ReactNode;
 }) {
+  const t = useT();
+  const localeTag = intlLocale(useLocale());
   const methodsLine =
     book.totalsByMethod.length > 0
       ? book.totalsByMethod
-          .map((m) => `${m.methodLabel} ${formatAgorot(m.amountAgorot)}`)
+          .map(
+            (m) =>
+              `${t(`paymentMethod.${m.method}` as MessageKey)} ${formatAgorot(m.amountAgorot, localeTag)}`,
+          )
           .join(" · ")
       : "";
   return (
     <ReportCard
-      title="ספר תקבולים"
-      subtitle="שורת תקבול לכל אמצעי תשלום (קבלות וחשבוניות מס-קבלה)"
+      title={t("reports.tabs.receipts")}
+      subtitle={t("reports.receiptsBook.subtitle")}
       actions={csv}
       foot={
         book.withholdingAgorot > 0
-          ? `בנוסף נוכה במקור ${formatAgorot(book.withholdingAgorot)} (מתועד על גבי הקבלות).`
-          : "קבלה עם כמה תשלומים מציגה שורה לכל תשלום — בדיוק כמו בקובץ המבנה האחיד."
+          ? t("reports.receiptsBook.footWithholding", {
+              amount: formatAgorot(book.withholdingAgorot, localeTag),
+            })
+          : t("reports.receiptsBook.footMultiPayment")
       }
     >
       <div className="hidden overflow-x-auto md:block">
         <table className="w-full border-collapse">
           <thead>
             <tr>
-              <th className={TH}>תאריך</th>
-              <th className={TH}>מסמך</th>
-              <th className={TH}>משלם</th>
-              <th className={TH}>אמצעי</th>
-              <th className={TH}>ת. פירעון</th>
-              <th className={TH}>סטטוס</th>
-              <th className={cn(TH, NUM)}>סכום</th>
+              <th className={TH}>{t("reports.table.date")}</th>
+              <th className={TH}>{t("reports.table.document")}</th>
+              <th className={TH}>{t("reports.receiptsBook.payer")}</th>
+              <th className={TH}>{t("reports.receiptsBook.method")}</th>
+              <th className={TH}>{t("reports.receiptsBook.dueDate")}</th>
+              <th className={TH}>{t("reports.table.status")}</th>
+              <th className={cn(TH, NUM)}>{t("reports.table.amount")}</th>
             </tr>
           </thead>
           <tbody>
@@ -839,17 +885,21 @@ function ReceiptsReport({
             ) : (
               book.rows.map((r) => (
                 <tr key={`${r.documentId}-${r.paymentLineNo}`}>
-                  <td className={TD}>{formatDateHe(r.docDate)}</td>
+                  <td className={TD}>{formatDate(r.docDate)}</td>
                   <td className={TD}>
-                    {r.docTypeLabel} #{r.number}
+                    {t(`docType.${r.docType}` as MessageKey)} #{r.number}
                   </td>
                   <td className={TD}>{r.buyerName ?? "—"}</td>
-                  <td className={TD}>{r.methodLabel}</td>
-                  <td className={TD}>{formatDateHe(r.dueDate)}</td>
+                  <td className={TD}>
+                    {t(`paymentMethod.${r.method}` as MessageKey)}
+                  </td>
+                  <td className={TD}>{formatDate(r.dueDate)}</td>
                   <td className={TD}>
                     <StatusBadge status={r.status} />
                   </td>
-                  <td className={cn(TD, NUM)}>{formatAgorot(r.amountAgorot)}</td>
+                  <td className={cn(TD, NUM)}>
+                    {formatAgorot(r.amountAgorot, localeTag)}
+                  </td>
                 </tr>
               ))
             )}
@@ -858,10 +908,11 @@ function ReceiptsReport({
             <tfoot>
               <tr>
                 <td className={FOOT_TD} colSpan={6}>
-                  סה״כ תקבולים{methodsLine ? ` · ${methodsLine}` : ""}
+                  {t("reports.receiptsBook.total")}
+                  {methodsLine ? ` · ${methodsLine}` : ""}
                 </td>
                 <td className={cn(FOOT_TD, NUM)}>
-                  {formatAgorot(book.totalAgorot)}
+                  {formatAgorot(book.totalAgorot, localeTag)}
                 </td>
               </tr>
             </tfoot>
@@ -871,7 +922,7 @@ function ReceiptsReport({
       <div className="md:hidden">
         {book.rows.length === 0 ? (
           <div className="px-4 py-10 text-center text-sm text-muted-foreground">
-            אין נתונים בטווח שנבחר
+            {t("reports.emptyRange")}
           </div>
         ) : (
           <>
@@ -882,22 +933,28 @@ function ReceiptsReport({
               >
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-sm font-semibold">
-                    {r.docTypeLabel} #{r.number}
+                    {t(`docType.${r.docType}` as MessageKey)} #{r.number}
                   </span>
                   <span className="text-sm font-bold tabular-nums">
-                    {formatAgorot(r.amountAgorot)}
+                    {formatAgorot(r.amountAgorot, localeTag)}
                   </span>
                 </div>
                 <div className="mt-1 text-xs text-muted-foreground">
-                  {formatDateHe(r.docDate)} · {r.buyerName ?? "—"} ·{" "}
-                  {r.methodLabel}
-                  {r.dueDate ? ` · פירעון ${formatDateHe(r.dueDate)}` : ""}
+                  {formatDate(r.docDate)} · {r.buyerName ?? "—"} ·{" "}
+                  {t(`paymentMethod.${r.method}` as MessageKey)}
+                  {r.dueDate
+                    ? t("reports.receiptsBook.dueSuffix", {
+                        date: formatDate(r.dueDate),
+                      })
+                    : ""}
                 </div>
               </div>
             ))}
             <div className="flex items-center justify-between bg-primary/[0.04] px-4 py-3 text-sm font-bold">
-              <span>סה״כ תקבולים</span>
-              <span className="tabular-nums">{formatAgorot(book.totalAgorot)}</span>
+              <span>{t("reports.receiptsBook.total")}</span>
+              <span className="tabular-nums">
+                {formatAgorot(book.totalAgorot, localeTag)}
+              </span>
             </div>
           </>
         )}
@@ -911,24 +968,26 @@ function ReceiptsReport({
 // ============================================================
 
 function VatReport({ vat, csv }: { vat: VatSummaryDTO; csv: React.ReactNode }) {
+  const t = useT();
+  const localeTag = intlLocale(useLocale());
   return (
     <ReportCard
-      title='סיכום מע״מ עסקאות'
-      subtitle="ריכוז חודשי — עסקאות, זיכויים ונטו"
+      title={t("reports.vat.title")}
+      subtitle={t("reports.vat.subtitle")}
       actions={csv}
-      foot='אינפורמטיבי לצורך הדיווח התקופתי — אינו מחליף את דוח המע״מ הרשמי. עוסק פטור יראה כאן אפסי מע״מ.'
+      foot={t("reports.vat.foot")}
     >
       <div className="overflow-x-auto">
         <table className="w-full border-collapse">
           <thead>
             <tr>
-              <th className={TH}>חודש</th>
-              <th className={cn(TH, NUM)}>עסקאות (לפני מע״מ)</th>
-              <th className={cn(TH, NUM)}>מע״מ עסקאות</th>
-              <th className={cn(TH, NUM)}>זיכויים</th>
-              <th className={cn(TH, NUM)}>מע״מ זיכויים</th>
-              <th className={cn(TH, NUM)}>נטו</th>
-              <th className={cn(TH, NUM)}>מע״מ נטו</th>
+              <th className={TH}>{t("reports.vat.month")}</th>
+              <th className={cn(TH, NUM)}>{t("reports.vat.salesBeforeVat")}</th>
+              <th className={cn(TH, NUM)}>{t("reports.vat.salesVat")}</th>
+              <th className={cn(TH, NUM)}>{t("reports.vat.credits")}</th>
+              <th className={cn(TH, NUM)}>{t("reports.vat.creditsVat")}</th>
+              <th className={cn(TH, NUM)}>{t("reports.vat.net")}</th>
+              <th className={cn(TH, NUM)}>{t("reports.vat.netVat")}</th>
             </tr>
           </thead>
           <tbody>
@@ -937,20 +996,24 @@ function VatReport({ vat, csv }: { vat: VatSummaryDTO; csv: React.ReactNode }) {
             ) : (
               vat.rows.map((r) => (
                 <tr key={r.month}>
-                  <td className={TD}>{formatMonthHe(r.month)}</td>
-                  <td className={cn(TD, NUM)}>{formatAgorot(r.salesNetAgorot)}</td>
-                  <td className={cn(TD, NUM)}>{formatAgorot(r.salesVatAgorot)}</td>
+                  <td className={TD}>{formatMonth(r.month)}</td>
+                  <td className={cn(TD, NUM)}>
+                    {formatAgorot(r.salesNetAgorot, localeTag)}
+                  </td>
+                  <td className={cn(TD, NUM)}>
+                    {formatAgorot(r.salesVatAgorot, localeTag)}
+                  </td>
                   <td className={cn(TD, NUM, r.creditNetAgorot > 0 && "text-destructive")}>
-                    {formatAgorot(-r.creditNetAgorot)}
+                    {formatAgorot(-r.creditNetAgorot, localeTag)}
                   </td>
                   <td className={cn(TD, NUM, r.creditVatAgorot > 0 && "text-destructive")}>
-                    {formatAgorot(-r.creditVatAgorot)}
+                    {formatAgorot(-r.creditVatAgorot, localeTag)}
                   </td>
                   <td className={cn(TD, NUM, "font-semibold")}>
-                    {formatAgorot(r.netAgorot)}
+                    {formatAgorot(r.netAgorot, localeTag)}
                   </td>
                   <td className={cn(TD, NUM, "font-semibold")}>
-                    {formatAgorot(r.vatAgorot)}
+                    {formatAgorot(r.vatAgorot, localeTag)}
                   </td>
                 </tr>
               ))
@@ -959,24 +1022,24 @@ function VatReport({ vat, csv }: { vat: VatSummaryDTO; csv: React.ReactNode }) {
           {vat.rows.length > 0 && (
             <tfoot>
               <tr>
-                <td className={FOOT_TD}>סה״כ</td>
+                <td className={FOOT_TD}>{t("reports.table.total")}</td>
                 <td className={cn(FOOT_TD, NUM)}>
-                  {formatAgorot(vat.totals.salesNetAgorot)}
+                  {formatAgorot(vat.totals.salesNetAgorot, localeTag)}
                 </td>
                 <td className={cn(FOOT_TD, NUM)}>
-                  {formatAgorot(vat.totals.salesVatAgorot)}
+                  {formatAgorot(vat.totals.salesVatAgorot, localeTag)}
                 </td>
                 <td className={cn(FOOT_TD, NUM)}>
-                  {formatAgorot(-vat.totals.creditNetAgorot)}
+                  {formatAgorot(-vat.totals.creditNetAgorot, localeTag)}
                 </td>
                 <td className={cn(FOOT_TD, NUM)}>
-                  {formatAgorot(-vat.totals.creditVatAgorot)}
+                  {formatAgorot(-vat.totals.creditVatAgorot, localeTag)}
                 </td>
                 <td className={cn(FOOT_TD, NUM)}>
-                  {formatAgorot(vat.totals.netAgorot)}
+                  {formatAgorot(vat.totals.netAgorot, localeTag)}
                 </td>
                 <td className={cn(FOOT_TD, NUM)}>
-                  {formatAgorot(vat.totals.vatAgorot)}
+                  {formatAgorot(vat.totals.vatAgorot, localeTag)}
                 </td>
               </tr>
             </tfoot>
@@ -998,22 +1061,26 @@ function BalanceReport({
   rows: ClientBalanceRow[];
   csv: React.ReactNode;
 }) {
+  const t = useT();
+  const localeTag = intlLocale(useLocale());
   return (
     <ReportCard
-      title="מאזן לקוחות"
-      subtitle="חיובים מול תקבולים לכל לקוח בטווח — אינפורמטיבי"
+      title={t("reports.tabs.balance")}
+      subtitle={t("reports.balances.subtitle")}
       actions={csv}
-      foot="יתרה חיובית = הלקוח טרם שילם את מלוא החיובים בטווח. ממוין מהיתרה הגבוהה לנמוכה."
+      foot={t("reports.balances.foot")}
     >
       <div className="hidden overflow-x-auto md:block">
         <table className="w-full border-collapse">
           <thead>
             <tr>
-              <th className={TH}>לקוח</th>
-              <th className={cn(TH, NUM)}>חיובים</th>
-              <th className={cn(TH, NUM)}>תקבולים</th>
-              <th className={cn(TH, NUM)}>מזה ניכוי במקור</th>
-              <th className={cn(TH, NUM)}>יתרה</th>
+              <th className={TH}>{t("reports.table.client")}</th>
+              <th className={cn(TH, NUM)}>{t("reports.balances.charged")}</th>
+              <th className={cn(TH, NUM)}>{t("reports.balances.received")}</th>
+              <th className={cn(TH, NUM)}>
+                {t("reports.balances.ofWhichWithholding")}
+              </th>
+              <th className={cn(TH, NUM)}>{t("reports.balances.balance")}</th>
             </tr>
           </thead>
           <tbody>
@@ -1023,10 +1090,14 @@ function BalanceReport({
               rows.map((r) => (
                 <tr key={r.clientKey}>
                   <td className={cn(TD, "font-medium")}>{r.buyerName}</td>
-                  <td className={cn(TD, NUM)}>{formatAgorot(r.chargedAgorot)}</td>
-                  <td className={cn(TD, NUM)}>{formatAgorot(r.receivedAgorot)}</td>
                   <td className={cn(TD, NUM)}>
-                    {formatAgorot(r.withholdingAgorot)}
+                    {formatAgorot(r.chargedAgorot, localeTag)}
+                  </td>
+                  <td className={cn(TD, NUM)}>
+                    {formatAgorot(r.receivedAgorot, localeTag)}
+                  </td>
+                  <td className={cn(TD, NUM)}>
+                    {formatAgorot(r.withholdingAgorot, localeTag)}
                   </td>
                   <td
                     className={cn(
@@ -1036,7 +1107,7 @@ function BalanceReport({
                       r.balanceAgorot > 0 && "text-destructive",
                     )}
                   >
-                    {formatAgorot(r.balanceAgorot)}
+                    {formatAgorot(r.balanceAgorot, localeTag)}
                   </td>
                 </tr>
               ))
@@ -1047,7 +1118,7 @@ function BalanceReport({
       <div className="md:hidden">
         {rows.length === 0 ? (
           <div className="px-4 py-10 text-center text-sm text-muted-foreground">
-            אין נתונים בטווח שנבחר
+            {t("reports.emptyRange")}
           </div>
         ) : (
           rows.map((r) => (
@@ -1063,14 +1134,18 @@ function BalanceReport({
                     r.balanceAgorot > 0 && "text-destructive",
                   )}
                 >
-                  {formatAgorot(r.balanceAgorot)}
+                  {formatAgorot(r.balanceAgorot, localeTag)}
                 </span>
               </div>
               <div className="mt-1 text-xs text-muted-foreground">
-                חיובים {formatAgorot(r.chargedAgorot)} · תקבולים{" "}
-                {formatAgorot(r.receivedAgorot)}
+                {t("reports.balances.mobileLine", {
+                  charged: formatAgorot(r.chargedAgorot, localeTag),
+                  received: formatAgorot(r.receivedAgorot, localeTag),
+                })}
                 {r.withholdingAgorot > 0
-                  ? ` · ניכוי במקור ${formatAgorot(r.withholdingAgorot)}`
+                  ? t("reports.balances.mobileWithholdingSuffix", {
+                      amount: formatAgorot(r.withholdingAgorot, localeTag),
+                    })
                   : ""}
               </div>
             </div>
@@ -1092,6 +1167,7 @@ function OpenFormatDialogBody({
   summary: OpenFormatSummaryDTO | null;
   error: string | null;
 }) {
+  const t = useT();
   if (error) {
     return (
       <div className="rounded-lg border border-destructive/40 bg-destructive/5 px-4 py-3 text-sm text-destructive">
@@ -1103,43 +1179,58 @@ function OpenFormatDialogBody({
     return (
       <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
         <Loader2 className="size-4 animate-spin" />
-        מכין את סיכום ההפקה…
+        {t("reports.openformat.preparing")}
       </div>
     );
   }
-  const countRows: Array<[string, string, number]> = [
-    ["A100", "רשומת פתיחה", 1],
-    ["C100", "כותרת מסמך", summary.counts.C100],
-    ["D110", "פרטי מסמך (שורות)", summary.counts.D110],
-    ["D120", "פרטי קבלה (תקבולים)", summary.counts.D120],
-    ["Z900", "רשומת סיום", 1],
+  const countRows: Array<[string, MessageKey, number]> = [
+    ["A100", "reports.openformat.recordOpening", 1],
+    ["C100", "reports.openformat.recordDocHeader", summary.counts.C100],
+    ["D110", "reports.openformat.recordDocLines", summary.counts.D110],
+    ["D120", "reports.openformat.recordReceipt", summary.counts.D120],
+    ["Z900", "reports.openformat.recordClosing", 1],
   ];
   return (
     <div className="of-print-area flex flex-col gap-3 text-sm">
       <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-[13px]">
-        <dt className="text-muted-foreground">בית העסק</dt>
+        <dt className="text-muted-foreground">{t("reports.openformat.business")}</dt>
         <dd className="font-semibold">
-          {summary.business.name} · עוסק {summary.business.vatId}
+          {t("reports.openformat.businessLine", {
+            name: summary.business.name,
+            vatId: summary.business.vatId,
+          })}
         </dd>
         {/* the file's declared range (1024/1025) — the server clamps a future
             end date to the production day, per the spec */}
-        <dt className="text-muted-foreground">טווח נתונים</dt>
+        <dt className="text-muted-foreground">
+          {t("reports.openformat.dataRange")}
+        </dt>
         <dd className="font-semibold">
-          {formatDateHe(summary.range.from)} – {formatDateHe(summary.range.to)}
+          {formatDate(summary.range.from)} – {formatDate(summary.range.to)}
         </dd>
-        <dt className="text-muted-foreground">הופק בתאריך</dt>
+        <dt className="text-muted-foreground">
+          {t("reports.openformat.generatedAt")}
+        </dt>
         <dd className="font-semibold">
-          {formatDateHe(summary.generatedDate)} ·{" "}
+          {formatDate(summary.generatedDate)} ·{" "}
           {summary.generatedTime.slice(0, 2)}:{summary.generatedTime.slice(2)}
         </dd>
-        <dt className="text-muted-foreground">נתיב לחילוץ</dt>
+        <dt className="text-muted-foreground">
+          {t("reports.openformat.savedPath")}
+        </dt>
         <dd className="font-mono text-xs [direction:ltr] text-left">
           {summary.savedPath}
         </dd>
-        <dt className="text-muted-foreground">תוכנה</dt>
+        <dt className="text-muted-foreground">
+          {t("reports.openformat.software")}
+        </dt>
         <dd className="font-semibold">
-          {summary.software.name} {summary.software.version} · מס׳ רישום:{" "}
-          {summary.software.registrationNumber ?? "טרם נרשם"}
+          {summary.software.name} {summary.software.version}
+          {t("reports.openformat.registrationLine", {
+            number:
+              summary.software.registrationNumber ??
+              t("reports.openformat.notRegistered"),
+          })}
         </dd>
       </dl>
 
@@ -1147,22 +1238,24 @@ function OpenFormatDialogBody({
         <table className="w-full border-collapse text-[12.5px]">
           <thead>
             <tr>
-              <th className={TH}>קוד רשומה</th>
-              <th className={TH}>תיאור</th>
-              <th className={cn(TH, NUM)}>סך רשומות</th>
+              <th className={TH}>{t("reports.openformat.table.recordCode")}</th>
+              <th className={TH}>{t("reports.openformat.table.description")}</th>
+              <th className={cn(TH, NUM)}>
+                {t("reports.openformat.table.recordCount")}
+              </th>
             </tr>
           </thead>
           <tbody>
-            {countRows.map(([code, label, n]) => (
+            {countRows.map(([code, labelKey, n]) => (
               <tr key={code}>
                 <td className={TD}>{code}</td>
-                <td className={TD}>{label}</td>
+                <td className={TD}>{t(labelKey)}</td>
                 <td className={cn(TD, NUM)}>{n}</td>
               </tr>
             ))}
             <tr>
               <td className={FOOT_TD} colSpan={2}>
-                סה״כ רשומות בקובץ
+                {t("reports.openformat.totalRecords")}
               </td>
               <td className={cn(FOOT_TD, NUM)}>{summary.counts.total}</td>
             </tr>
@@ -1171,15 +1264,15 @@ function OpenFormatDialogBody({
       </div>
 
       <div className="rounded-lg border border-primary/20 bg-primary/5 px-3.5 py-2.5 text-xs leading-relaxed text-muted-foreground">
-        הקובץ יורד כ-ZIP אחד ובו עץ התיקיות הרשמי (INI.TXT + BKMVDATA.zip) + דף
-        הוראות חילוץ. את הדוח הזה ניתן להדפיס — זהו הפלט הנדרש בסיום כל הפקה
-        (נספח 4 להוראות). בטווח נכללו {summary.documentCount} מסמכים.
+        {t("reports.openformat.downloadNote", { count: summary.documentCount })}
       </div>
 
       {summary.warnings.length > 0 && (
         <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3.5 py-2.5 text-xs leading-relaxed text-amber-800">
-          <b>אזהרות נתונים (לא חוסם):</b>
+          <b>{t("reports.openformat.warningsTitle")}</b>
           <ul className="mt-1 list-inside list-disc">
+            {/* server-generated warnings render as-is (Hebrew, like the CSV —
+                documented product decision) */}
             {summary.warnings.map((w, i) => (
               <li key={i}>{w}</li>
             ))}
