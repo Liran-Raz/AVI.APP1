@@ -14,6 +14,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { FormError } from "@/components/ui/form-error";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -122,6 +123,7 @@ function ContactFormBody({
   const [error, setError] = useState<string | null>(null);
 
   function set<K extends keyof FormState>(key: K, value: FormState[K]) {
+    if (error) setError(null);
     setForm((f) => ({ ...f, [key]: value }));
   }
 
@@ -192,6 +194,9 @@ function ContactFormBody({
           maxLength={200}
           required
           autoFocus
+          autoComplete="name"
+          aria-invalid={error ? true : undefined}
+          aria-describedby={error ? "contact-error" : undefined}
         />
       </div>
 
@@ -203,6 +208,7 @@ function ContactFormBody({
           onChange={(e) => set("role", e.target.value)}
           maxLength={100}
           placeholder={t("clients.contact.rolePlaceholder")}
+          autoComplete="off"
         />
       </div>
 
@@ -215,6 +221,7 @@ function ContactFormBody({
           onChange={(e) => set("phone", e.target.value)}
           maxLength={50}
           dir="ltr"
+          autoComplete="tel"
         />
       </div>
 
@@ -227,6 +234,7 @@ function ContactFormBody({
           onChange={(e) => set("email", e.target.value)}
           maxLength={254}
           dir="ltr"
+          autoComplete="email"
         />
       </div>
 
@@ -244,9 +252,7 @@ function ContactFormBody({
         </Label>
       </div>
 
-      {error && (
-        <p className="text-sm text-destructive sm:col-span-2">{error}</p>
-      )}
+      <FormError id="contact-error" message={error} className="sm:col-span-2" />
 
       <DialogFooter className="sm:col-span-2">
         <Button

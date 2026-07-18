@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { FormError } from "@/components/ui/form-error";
 import {
   Select,
   SelectContent,
@@ -50,11 +51,13 @@ export function InviteDialog({
   const [role, setRole] = useState<AssignableRole>("employee");
   const [loading, setLoading] = useState(false);
   const [lastInvite, setLastInvite] = useState<InvitationDTO | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   function resetAndClose() {
     setEmail("");
     setRole("employee");
     setLastInvite(null);
+    setError(null);
     onOpenChange(false);
   }
 
@@ -62,6 +65,7 @@ export function InviteDialog({
     e.preventDefault();
     if (!email.trim()) return;
     setLoading(true);
+    setError(null);
     try {
       const result = await apiClient.team.invite({ email, role });
       setLastInvite(result);
@@ -74,8 +78,10 @@ export function InviteDialog({
       onInvited?.(result);
     } catch (err) {
       if (err instanceof ApiError) {
+        setError(err.message);
         toast.error(err.message);
       } else {
+        setError(t("common.unexpectedError"));
         toast.error(t("common.unexpectedError"));
         console.error(err);
       }
@@ -196,8 +202,14 @@ export function InviteDialog({
                 id="invite-email"
                 type="email"
                 value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                onChange={(e) => {
+                  if (error) setError(null);
+                  setEmail(e.target.value);
+                }}
                 placeholder="employee@example.com"
+                autoComplete="email"
+                aria-invalid={error ? true : undefined}
+                aria-describedby={error ? "invite-error" : undefined}
                 dir="ltr"
                 className="text-start"
                 required
@@ -226,6 +238,8 @@ export function InviteDialog({
                 </p>
               )}
             </div>
+
+            <FormError id="invite-error" message={error} />
 
             <DialogFooter className="gap-2">
               <Button

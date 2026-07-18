@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { Check, Copy, Loader2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { FormError } from "@/components/ui/form-error";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -61,6 +62,7 @@ export function OfficeForm({
   const [phone, setPhone] = useState(initial.phone ?? "");
   const [address, setAddress] = useState(initial.address ?? "");
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const dirty =
     name.trim() !== saved.name.trim() ||
@@ -76,6 +78,7 @@ export function OfficeForm({
     }
     if (!dirty) return;
     setSaving(true);
+    setError(null);
     try {
       const updated = await apiClient.organization.update({
         name: name.trim(),
@@ -99,8 +102,11 @@ export function OfficeForm({
       toast.success(t("settings.office.updated"));
       router.refresh();
     } catch (err) {
-      if (err instanceof ApiError) toast.error(err.message);
-      else {
+      if (err instanceof ApiError) {
+        setError(err.message);
+        toast.error(err.message);
+      } else {
+        setError(t("common.unexpectedError"));
         toast.error(t("common.unexpectedError"));
         console.error(err);
       }
@@ -136,9 +142,15 @@ export function OfficeForm({
         <Input
           id="officeName"
           value={name}
-          onChange={(e) => setName(e.target.value)}
+          onChange={(e) => {
+            if (error) setError(null);
+            setName(e.target.value);
+          }}
           maxLength={120}
           required
+          autoComplete="organization"
+          aria-invalid={error ? true : undefined}
+          aria-describedby={error ? "office-error" : undefined}
         />
       </div>
 
@@ -150,10 +162,16 @@ export function OfficeForm({
           id="officeEmail"
           type="email"
           value={email}
-          onChange={(e) => setEmail(e.target.value)}
+          onChange={(e) => {
+            if (error) setError(null);
+            setEmail(e.target.value);
+          }}
           maxLength={254}
           dir="ltr"
           placeholder="office@example.com"
+          autoComplete="email"
+          aria-invalid={error ? true : undefined}
+          aria-describedby={error ? "office-error" : undefined}
         />
       </div>
 
@@ -162,10 +180,14 @@ export function OfficeForm({
         <Input
           id="officePhone"
           value={phone}
-          onChange={(e) => setPhone(e.target.value)}
+          onChange={(e) => {
+            if (error) setError(null);
+            setPhone(e.target.value);
+          }}
           maxLength={50}
           dir="ltr"
           placeholder="03-0000000"
+          autoComplete="tel"
         />
       </div>
 
@@ -174,11 +196,17 @@ export function OfficeForm({
         <Textarea
           id="officeAddress"
           value={address}
-          onChange={(e) => setAddress(e.target.value)}
+          onChange={(e) => {
+            if (error) setError(null);
+            setAddress(e.target.value);
+          }}
           maxLength={500}
           rows={2}
+          autoComplete="street-address"
         />
       </div>
+
+      <FormError id="office-error" message={error} />
 
       <div className="flex justify-start pt-1">
         <Button type="submit" disabled={saving || !dirty}>

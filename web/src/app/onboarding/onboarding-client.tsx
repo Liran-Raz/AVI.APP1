@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { FormError } from "@/components/ui/form-error";
 import { ApiError, apiClient } from "@/lib/api-client";
 import { ORG_CODE_RE } from "@/server/validators/onboarding.schema";
 import { useT } from "@/i18n/locale-provider";
@@ -17,7 +18,7 @@ import { useT } from "@/i18n/locale-provider";
 // because this is the only producer/consumer pair and the key is private.
 const PENDING_ONBOARDING_KEY = "avi.pendingOnboarding";
 
-type FormError = { code?: string; message: string };
+type BootstrapError = { code?: string; message: string };
 
 export function OnboardingClient({
   email,
@@ -36,7 +37,7 @@ export function OnboardingClient({
   const [orgCode, setOrgCode] = useState(initialOrgCode);
   const [fullName, setFullName] = useState(initialFullName);
   const [submitting, setSubmitting] = useState(false);
-  const [lastError, setLastError] = useState<FormError | null>(null);
+  const [lastError, setLastError] = useState<BootstrapError | null>(null);
 
   // On first mount, recover any org details signup-form stashed for us.
   // We only fill empty fields — props from the server take precedence.
@@ -170,7 +171,13 @@ export function OnboardingClient({
                 <Input
                   id="fullName"
                   value={fullName}
-                  onChange={(e) => setFullName(e.target.value)}
+                  onChange={(e) => {
+                    if (lastError) setLastError(null);
+                    setFullName(e.target.value);
+                  }}
+                  autoComplete="name"
+                  aria-invalid={lastError ? true : undefined}
+                  aria-describedby={lastError ? "onboarding-error" : undefined}
                   required
                 />
               </div>
@@ -179,8 +186,14 @@ export function OnboardingClient({
                 <Input
                   id="orgName"
                   value={orgName}
-                  onChange={(e) => setOrgName(e.target.value)}
+                  onChange={(e) => {
+                    if (lastError) setLastError(null);
+                    setOrgName(e.target.value);
+                  }}
                   placeholder={t("onboarding.orgNamePlaceholder")}
+                  autoComplete="organization"
+                  aria-invalid={lastError ? true : undefined}
+                  aria-describedby={lastError ? "onboarding-error" : undefined}
                   required
                 />
               </div>
@@ -189,22 +202,24 @@ export function OnboardingClient({
                 <Input
                   id="orgCode"
                   value={orgCode}
-                  onChange={(e) => setOrgCode(e.target.value.toUpperCase())}
+                  onChange={(e) => {
+                    if (lastError) setLastError(null);
+                    setOrgCode(e.target.value.toUpperCase());
+                  }}
                   pattern="[A-Z0-9-]{3,20}"
+                  autoComplete="off"
+                  aria-invalid={lastError ? true : undefined}
+                  aria-describedby={lastError ? "onboarding-error" : undefined}
                   dir="ltr"
                   className="text-start uppercase font-mono"
                   required
                 />
               </div>
+              <FormError id="onboarding-error" message={lastError?.message} />
+
               <Button type="submit" className="w-full h-11" disabled={submitting}>
                 {submitting ? t("onboarding.submitting") : t("onboarding.submit")}
               </Button>
-
-              {lastError && (
-                <p className="text-xs text-destructive text-center">
-                  {lastError.message}
-                </p>
-              )}
             </form>
           </CardContent>
         </Card>
