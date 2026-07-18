@@ -7,15 +7,15 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ApiError, apiClient } from "@/lib/api-client";
-
-// Anti-leak by design: regardless of whether the email belongs to a real
-// user (or whether the provider call succeeded server-side), we show the
-// exact same generic message. The server is also coded to always return
-// success for the same reason.
-const GENERIC_SUCCESS_MESSAGE =
-  "אם קיים משתמש עם האימייל הזה, נשלח אליו קישור לאיפוס סיסמה.";
+import { useT } from "@/i18n/locale-provider";
 
 export function ForgotPasswordForm() {
+  const t = useT();
+  // Anti-leak by design: regardless of whether the email belongs to a real
+  // user (or whether the provider call succeeded server-side), we show the
+  // exact same generic message. The server is also coded to always return
+  // success for the same reason.
+  const genericSuccess = t("auth.forgot.genericSuccess");
   const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(false);
   const [submitted, setSubmitted] = useState(false);
@@ -25,7 +25,7 @@ export function ForgotPasswordForm() {
     setLoading(true);
     try {
       await apiClient.auth.requestPasswordReset({ email });
-      toast.success(GENERIC_SUCCESS_MESSAGE);
+      toast.success(genericSuccess);
       setSubmitted(true);
     } catch (err) {
       // The server is designed to swallow everything, so reaching this
@@ -34,7 +34,7 @@ export function ForgotPasswordForm() {
       if (err instanceof ApiError) {
         toast.error(err.message);
       } else {
-        toast.error("שגיאה לא צפויה. נסה שוב.");
+        toast.error(t("common.unexpectedErrorRetry"));
         console.error(err);
       }
     } finally {
@@ -46,10 +46,10 @@ export function ForgotPasswordForm() {
     return (
       <div className="space-y-3 text-sm text-center">
         <div className="rounded-md border border-primary/30 bg-primary/5 p-4">
-          📧 {GENERIC_SUCCESS_MESSAGE}
+          📧 {genericSuccess}
         </div>
         <p className="text-muted-foreground text-xs">
-          בדוק את תיבת הדואר שלך, כולל תיקיית הספאם.
+          {t("auth.forgot.checkSpam")}
         </p>
       </div>
     );
@@ -58,7 +58,7 @@ export function ForgotPasswordForm() {
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       <div className="space-y-2">
-        <Label htmlFor="email">אימייל</Label>
+        <Label htmlFor="email">{t("common.email")}</Label>
         <Input
           id="email"
           type="email"
@@ -71,7 +71,7 @@ export function ForgotPasswordForm() {
         />
       </div>
       <Button type="submit" className="w-full h-11" disabled={loading}>
-        {loading ? "שולח..." : "שלח קישור איפוס"}
+        {loading ? t("auth.sending") : t("auth.forgot.submit")}
       </Button>
     </form>
   );

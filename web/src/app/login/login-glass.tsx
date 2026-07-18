@@ -3,29 +3,31 @@
 import { Suspense } from "react";
 import Link from "next/link";
 
-import {
-  Aurora,
-  LangToggle,
-  MarketingLangProvider,
-  useMarketingLang,
-} from "@/components/marketing/marketing-lang";
+import { Aurora } from "@/components/marketing/marketing-lang";
+import { AuthLangToggle } from "@/components/i18n/language-switcher";
+import { dirFor } from "@/i18n/config";
+import { useLocale, useT } from "@/i18n/locale-provider";
 import { LoginForm } from "./login-form";
 
-// Glass chrome around the (unchanged) working <LoginForm>. The form's own
-// fields/labels stay Hebrew — only the surrounding page copy is bilingual.
-function LoginInner() {
-  const { t, dir, lang } = useMarketingLang();
+// Glass chrome around the working <LoginForm>. Both the chrome AND the form
+// now run on the central catalog (useT) driven by the avi-locale cookie —
+// the AuthLangToggle flips the cookie + refreshes so the whole page (and the
+// app after login) switch together. dir/lang on the `.mkt` wrapper come from
+// the active locale.
+export function LoginGlass() {
+  const t = useT();
+  const locale = useLocale();
   return (
-    <div className="mkt auth-wrap" dir={dir} lang={lang}>
+    <div className="mkt auth-wrap" dir={dirFor(locale)} lang={locale}>
       <Aurora />
       <div className="auth-topbar">
         <Link className="brand" href="/"><span className="logo-mark">א</span> AVI.APP</Link>
-        <LangToggle />
+        <AuthLangToggle />
       </div>
       <div className="auth-main">
         <div className="glass auth-card">
-          <h1>{t("כניסה למערכת", "Log in")}</h1>
-          <span className="auth-sub">{t("הזן את פרטי ההתחברות שלך", "Enter your login details")}</span>
+          <h1>{t("auth.login.title")}</h1>
+          <span className="auth-sub">{t("auth.login.subtitle")}</span>
           <div className="auth-form">
             {/* LoginForm reads useSearchParams(); Suspense lets the chrome
                 render immediately and stream the form in. */}
@@ -34,19 +36,11 @@ function LoginInner() {
             </Suspense>
           </div>
           <p className="auth-alt">
-            {t("עדיין לא רשום?", "No account yet?")}{" "}
-            <Link href="/signup">{t("פתחו משרד חדש", "Open a new office")}</Link>
+            {t("auth.login.noAccount")}{" "}
+            <Link href="/signup">{t("auth.login.openOffice")}</Link>
           </p>
         </div>
       </div>
     </div>
-  );
-}
-
-export function LoginGlass() {
-  return (
-    <MarketingLangProvider>
-      <LoginInner />
-    </MarketingLangProvider>
   );
 }

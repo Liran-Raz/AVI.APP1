@@ -10,6 +10,8 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { getServerT } from "@/i18n/server";
+import { readLocale } from "@/server/i18n/locale-cookie";
 
 // Public page — middleware does NOT protect /reset-password. The
 // actual gate is server-side: POST /api/auth/reset-password calls
@@ -24,6 +26,7 @@ import {
 export default async function ResetPasswordPage() {
   const session = await getCurrentSession();
   if (session?.mfaPending) redirect("/mfa?next=/reset-password");
+  const t = await getServerT(await readLocale());
   return (
     <div className="flex flex-1 items-center justify-center px-4 py-12 bg-muted/30">
       <div className="w-full max-w-md space-y-6">
@@ -38,8 +41,8 @@ export default async function ResetPasswordPage() {
 
         <Card>
           <CardHeader className="text-center">
-            <CardTitle className="text-2xl">הגדרת סיסמה חדשה</CardTitle>
-            <CardDescription>הזן סיסמה חדשה לחשבון שלך.</CardDescription>
+            <CardTitle className="text-2xl">{t("auth.reset.title")}</CardTitle>
+            <CardDescription>{t("auth.reset.subtitle")}</CardDescription>
           </CardHeader>
           <CardContent>
             <ResetPasswordForm />

@@ -6,6 +6,13 @@
 // to `document` — so an English/LTR marketing view can never leak into the
 // authenticated Hebrew app. Persisted to localStorage so the choice survives
 // navigation between marketing pages.
+//
+// COOKIE BRIDGE (DEV-010 PR-12): the choice is ALSO mirrored to the app's
+// `avi-locale` cookie so the landing and the auth pages (now on the central
+// useT catalog) stay in sync — flipping the language here carries into
+// /login etc., which read the cookie on their full-page load. The provider
+// likewise INITIALIZES from that cookie so a returning user whose app locale
+// is English sees the landing in English too.
 
 import {
   createContext,
@@ -16,7 +23,19 @@ import {
   type ReactNode,
 } from "react";
 
+import { apiClient } from "@/lib/api-client";
+import { isSupportedLocale, LOCALE_COOKIE } from "@/i18n/config";
+
 export type MktLang = "he" | "en";
+
+// Read the app locale cookie from the browser (non-httpOnly by design).
+function readLocaleCookie(): MktLang | null {
+  const hit = document.cookie
+    .split("; ")
+    .find((row) => row.startsWith(`${LOCALE_COOKIE}=`));
+  const value = hit?.slice(LOCALE_COOKIE.length + 1);
+  return isSupportedLocale(value) ? (value as MktLang) : null;
+}
 
 type MktLangValue = {
   lang: MktLang;
@@ -34,11 +53,18 @@ export function MarketingLangProvider({ children }: { children: ReactNode }) {
   const [lang, setLang] = useState<MktLang>("he");
 
   useEffect(() => {
+    // One-time SSR-safe hydration: server + first client render default to
+    // Hebrew (no mismatch), then adopt the persisted choice after mount. The
+    // app `avi-locale` cookie wins over localStorage so the landing matches
+    // the language the user picked inside the app.
+    const fromCookie = readLocaleCookie();
+    if (fromCookie) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setLang(fromCookie);
+      return;
+    }
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
-      // One-time SSR-safe hydration: server + first client render default to
-      // Hebrew (no mismatch), then adopt the persisted choice after mount.
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       if (saved === "en" || saved === "he") setLang(saved);
     } catch {
       /* localStorage unavailable — stay Hebrew */
@@ -53,6 +79,13 @@ export function MarketingLangProvider({ children }: { children: ReactNode }) {
       } catch {
         /* ignore */
       }
+      // Mirror to the app cookie (proper attributes set server-side) so the
+      // choice carries into the auth pages + the app after login. Fire and
+      // forget — the marketing copy has already flipped via context; the
+      // cookie just needs to exist before the next full-page nav to /login.
+      void apiClient.locale.set({ locale: next }).catch(() => {
+        /* presentation-only; a failed write just means no cross-page sync */
+      });
       return next;
     });
   }, []);

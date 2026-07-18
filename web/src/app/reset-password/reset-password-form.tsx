@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ApiError, apiClient } from "@/lib/api-client";
+import { useT } from "@/i18n/locale-provider";
 
 // The server (Supabase) is the only party that knows the current password,
 // so "you chose the same password" can only be detected AFTER submit. The
@@ -22,6 +23,7 @@ function isSamePasswordError(err: ApiError): boolean {
 }
 
 export function ResetPasswordForm() {
+  const t = useT();
   const router = useRouter();
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -39,14 +41,14 @@ export function ResetPasswordForm() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (mismatch) {
-      toast.error("הסיסמאות לא תואמות");
+      toast.error(t("auth.reset.mismatch"));
       return;
     }
     setLoading(true);
     setSameAsCurrent(false);
     try {
       await apiClient.auth.resetPassword({ password, confirmPassword });
-      toast.success("הסיסמה עודכנה.");
+      toast.success(t("auth.reset.updatedToast"));
       router.push("/login?reset=success");
       router.refresh();
     } catch (err) {
@@ -55,16 +57,16 @@ export function ResetPasswordForm() {
         // too late / opened in a different browser). Send the user back
         // to ask for a fresh link.
         if (err.code === "UNAUTHORIZED") {
-          toast.error("הקישור לאיפוס לא תקף או פג תוקף. בקש קישור חדש.");
+          toast.error(t("auth.reset.linkExpired"));
         } else if (isSamePasswordError(err)) {
           // Persistent inline indicator + toast so the reason is obvious.
           setSameAsCurrent(true);
-          toast.error("הסיסמה החדשה חייבת להיות שונה מהסיסמה הנוכחית");
+          toast.error(t("auth.reset.sameAsCurrent"));
         } else {
           toast.error(err.message);
         }
       } else {
-        toast.error("שגיאה לא צפויה. נסה שוב.");
+        toast.error(t("common.unexpectedErrorRetry"));
         console.error(err);
       }
     } finally {
@@ -75,7 +77,7 @@ export function ResetPasswordForm() {
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       <div className="space-y-2">
-        <Label htmlFor="password">סיסמה חדשה</Label>
+        <Label htmlFor="password">{t("auth.reset.newPassword")}</Label>
         <Input
           id="password"
           type="password"
@@ -92,14 +94,14 @@ export function ResetPasswordForm() {
         />
         {sameAsCurrent ? (
           <p className="text-xs text-destructive">
-            הסיסמה החדשה חייבת להיות שונה מהסיסמה הנוכחית
+            {t("auth.reset.sameAsCurrent")}
           </p>
         ) : (
-          <p className="text-xs text-muted-foreground">לפחות 8 תווים</p>
+          <p className="text-xs text-muted-foreground">{t("auth.passwordHint")}</p>
         )}
       </div>
       <div className="space-y-2">
-        <Label htmlFor="confirmPassword">אישור סיסמה</Label>
+        <Label htmlFor="confirmPassword">{t("auth.reset.confirmPassword")}</Label>
         <Input
           id="confirmPassword"
           type="password"
@@ -110,7 +112,7 @@ export function ResetPasswordForm() {
           aria-invalid={mismatch || undefined}
         />
         {mismatch && (
-          <p className="text-xs text-destructive">הסיסמאות לא תואמות</p>
+          <p className="text-xs text-destructive">{t("auth.reset.mismatch")}</p>
         )}
       </div>
       <Button
@@ -118,7 +120,7 @@ export function ResetPasswordForm() {
         className="w-full h-11"
         disabled={loading || mismatch}
       >
-        {loading ? "מעדכן..." : "עדכן סיסמה"}
+        {loading ? t("auth.reset.submitting") : t("auth.reset.submit")}
       </Button>
     </form>
   );

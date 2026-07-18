@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ApiError, apiClient } from "@/lib/api-client";
+import { useT } from "@/i18n/locale-provider";
 
 // Key for stashing the org-info portion of signup so /onboarding can
 // pre-fill it. The new /api/auth/signup endpoint only accepts identity
@@ -17,6 +18,7 @@ import { ApiError, apiClient } from "@/lib/api-client";
 const PENDING_ONBOARDING_KEY = "avi.pendingOnboarding";
 
 export function SignupForm() {
+  const t = useT();
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [form, setForm] = useState({
@@ -57,10 +59,10 @@ export function SignupForm() {
       }
 
       if (result.needsEmailConfirmation) {
-        toast.success("שלחנו לך אימייל לאישור. לחץ על הלינק כדי להתחיל.");
+        toast.success(t("auth.signup.confirmToast"));
         router.push(`/login?pending=${encodeURIComponent(form.email)}`);
       } else {
-        toast.success("חשבון נפתח! מקים את המשרד...");
+        toast.success(t("auth.signup.createdToast"));
         router.push("/onboarding");
         router.refresh();
       }
@@ -68,7 +70,7 @@ export function SignupForm() {
       if (err instanceof ApiError) {
         toast.error(err.message);
       } else {
-        toast.error("שגיאה לא צפויה. נסה שוב.");
+        toast.error(t("common.unexpectedErrorRetry"));
         console.error(err);
       }
     } finally {
@@ -80,17 +82,17 @@ export function SignupForm() {
     <form onSubmit={handleSubmit} className="space-y-4">
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-2">
-          <Label htmlFor="orgName">שם המשרד</Label>
+          <Label htmlFor="orgName">{t("auth.signup.orgName")}</Label>
           <Input
             id="orgName"
             value={form.orgName}
             onChange={(e) => update("orgName", e.target.value)}
-            placeholder="ראיית חשבון אבי"
+            placeholder={t("auth.signup.orgNamePlaceholder")}
             required
           />
         </div>
         <div className="space-y-2">
-          <Label htmlFor="orgCode">קוד משרד</Label>
+          <Label htmlFor="orgCode">{t("auth.signup.orgCode")}</Label>
           <Input
             id="orgCode"
             value={form.orgCode}
@@ -105,18 +107,18 @@ export function SignupForm() {
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="fullName">שמך המלא</Label>
+        <Label htmlFor="fullName">{t("common.fullName")}</Label>
         <Input
           id="fullName"
           value={form.fullName}
           onChange={(e) => update("fullName", e.target.value)}
-          placeholder="אבי כהן"
+          placeholder={t("auth.signup.fullNamePlaceholder")}
           required
         />
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="email">אימייל</Label>
+        <Label htmlFor="email">{t("common.email")}</Label>
         <Input
           id="email"
           type="email"
@@ -130,7 +132,7 @@ export function SignupForm() {
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="password">סיסמה</Label>
+        <Label htmlFor="password">{t("auth.password")}</Label>
         <Input
           id="password"
           type="password"
@@ -139,11 +141,11 @@ export function SignupForm() {
           minLength={8}
           required
         />
-        <p className="text-xs text-muted-foreground">לפחות 8 תווים</p>
+        <p className="text-xs text-muted-foreground">{t("auth.passwordHint")}</p>
       </div>
 
       <Button type="submit" className="w-full h-11" disabled={loading}>
-        {loading ? "פותח משרד..." : "פתיחת משרד"}
+        {loading ? t("auth.signup.submitting") : t("auth.signup.submit")}
       </Button>
     </form>
   );
