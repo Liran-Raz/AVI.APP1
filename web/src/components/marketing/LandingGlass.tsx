@@ -622,6 +622,7 @@ function LandingInner() {
             <a href={FORGOT_URL}>{t("שחזור סיסמה", "Reset password")}</a>
             <a href="/privacy">{t("פרטיות", "Privacy")}</a>
             <a href="/terms">{t("תנאי שימוש", "Terms")}</a>
+            <a href="/accessibility">{t("הצהרת נגישות", "Accessibility")}</a>
           </nav>
         </div>
       </footer>
