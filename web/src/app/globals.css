@@ -379,3 +379,113 @@
     background: #fff;
   }
 }
+
+/* ============================================================
+   Accessibility widget adjustments (DEV-028).
+   Driven by <html data-a11y-*> set by AccessibilityWidget +
+   the no-flash init script. Site-wide — the contrast/font rules
+   override BOTH the app :root tokens and the marketing .mkt tokens
+   (marketing re-declares its own copies).
+   ============================================================ */
+
+/* Text size — scales rem globally. */
+html[data-a11y-text="lg"] {
+  font-size: 112.5%;
+}
+html[data-a11y-text="xl"] {
+  font-size: 125%;
+}
+html[data-a11y-text="xxl"] {
+  font-size: 140%;
+}
+
+/* High contrast — black-on-white, strong borders, blue links. */
+html[data-a11y-contrast] {
+  --background: #ffffff;
+  --foreground: #000000;
+  --card: #ffffff;
+  --card-foreground: #000000;
+  --popover: #ffffff;
+  --popover-foreground: #000000;
+  --secondary: #ffffff;
+  --secondary-foreground: #000000;
+  --muted: #ffffff;
+  --muted-foreground: #000000;
+  --accent: #ffffff;
+  --accent-foreground: #000000;
+  --primary: #0000ee;
+  --primary-foreground: #ffffff;
+  --border: #000000;
+  --input: #000000;
+  --ring: #0000ee;
+}
+html[data-a11y-contrast] body {
+  background-image: none !important;
+  background-color: #ffffff !important;
+}
+html[data-a11y-contrast] .mkt {
+  --ink: #000000;
+  --ink-soft: #000000;
+  --ink-faint: #000000;
+  --surface: #ffffff;
+  --line: #000000;
+  --accent: #0000ee;
+  --accent-dark: #0000ee;
+}
+html[data-a11y-contrast] a {
+  text-decoration: underline;
+}
+
+/* Highlight links / headings. */
+html[data-a11y-links] a {
+  text-decoration: underline !important;
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+}
+html[data-a11y-headings] :is(h1, h2, h3, h4, h5, h6) {
+  outline: 2px dashed #2563eb;
+  outline-offset: 3px;
+}
+
+/* Readable font — override the app + marketing font vars and force family. */
+html[data-a11y-font] {
+  --font-sans: Arial, "Helvetica Neue", "Segoe UI", sans-serif;
+}
+html[data-a11y-font] .mkt {
+  --ff: Arial, "Helvetica Neue", "Segoe UI", sans-serif;
+}
+html[data-a11y-font] body,
+html[data-a11y-font] .mkt {
+  font-family: Arial, "Helvetica Neue", "Segoe UI", sans-serif !important;
+}
+
+/* Line & letter spacing (WCAG 1.4.12 — reading text). */
+html[data-a11y-spacing] :is(p, li, h1, h2, h3, h4, h5, h6, blockquote, dd, dt) {
+  line-height: 2 !important;
+  letter-spacing: 0.04em;
+  word-spacing: 0.1em;
+}
+
+/* Stop animations — site-wide (beats the .mkt-only prefers-reduced-motion block). */
+html[data-a11y-motion] *,
+html[data-a11y-motion] *::before,
+html[data-a11y-motion] *::after {
+  animation: none !important;
+  transition: none !important;
+  scroll-behavior: auto !important;
+}
+
+/* Enlarged / black cursor (SVG data-URIs — no asset fetch). */
+html[data-a11y-cursor="big"],
+html[data-a11y-cursor="big"] * {
+  cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='48' height='48' viewBox='0 0 48 48'%3E%3Cpath d='M6 4 L6 40 L16 30 L22 44 L28 41 L22 28 L36 28 Z' fill='white' stroke='black' stroke-width='2' stroke-linejoin='round'/%3E%3C/svg%3E")
+      4 4,
+    auto !important;
+}
+html[data-a11y-cursor="black"],
+html[data-a11y-cursor="black"] * {
+  cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='40' viewBox='0 0 40 40'%3E%3Cpath d='M6 4 L6 34 L14 26 L19 38 L24 36 L19 25 L30 25 Z' fill='black' stroke='white' stroke-width='1.5' stroke-linejoin='round'/%3E%3C/svg%3E")
+      4 4,
+    auto !important;
+}
+
