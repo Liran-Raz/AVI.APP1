@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
+import { FormError } from "@/components/ui/form-error";
 import { ApiError, apiClient } from "@/lib/api-client";
 import { isNativeApp } from "@/lib/native";
 import { useT } from "@/i18n/locale-provider";
@@ -26,10 +27,14 @@ export function LoginForm() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
+  // Field-tied, screen-reader-announced error (alongside the toast). Cleared
+  // when the user edits either credential so a stale message never lingers.
+  const [error, setError] = useState<string | null>(null);
 
   async function handleEmailLogin(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
+    setError(null);
     try {
       const result = await apiClient.auth.signIn({ email, password });
       if (result.needsMfa) {
@@ -42,8 +47,10 @@ export function LoginForm() {
       router.refresh();
     } catch (err) {
       if (err instanceof ApiError) {
+        setError(err.message);
         toast.error(err.message);
       } else {
+        setError(t("common.unexpectedError"));
         toast.error(t("common.unexpectedError"));
         console.error(err);
       }
@@ -75,8 +82,10 @@ export function LoginForm() {
       }
     } catch (err) {
       if (err instanceof ApiError) {
+        setError(err.message);
         toast.error(err.message);
       } else {
+        setError(t("auth.login.googleFailed"));
         toast.error(t("auth.login.googleFailed"));
       }
       setLoading(false);
@@ -127,10 +136,16 @@ export function LoginForm() {
             id="email"
             type="email"
             value={email}
-            onChange={(e) => setEmail(e.target.value)}
+            onChange={(e) => {
+              setEmail(e.target.value);
+              if (error) setError(null);
+            }}
             placeholder="name@example.com"
             dir="ltr"
             className="text-start"
+            autoComplete="email"
+            aria-invalid={error ? true : undefined}
+            aria-describedby={error ? "login-error" : undefined}
             required
           />
         </div>
@@ -140,7 +155,13 @@ export function LoginForm() {
             id="password"
             type="password"
             value={password}
-            onChange={(e) => setPassword(e.target.value)}
+            onChange={(e) => {
+              setPassword(e.target.value);
+              if (error) setError(null);
+            }}
+            autoComplete="current-password"
+            aria-invalid={error ? true : undefined}
+            aria-describedby={error ? "login-error" : undefined}
             required
           />
           <div className="flex">
@@ -152,6 +173,7 @@ export function LoginForm() {
             </Link>
           </div>
         </div>
+        <FormError id="login-error" message={error} />
         <Button type="submit" className="w-full h-11" disabled={loading}>
           {loading ? t("auth.login.submitting") : t("auth.login.submit")}
         </Button>

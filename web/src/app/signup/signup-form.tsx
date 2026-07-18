@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { FormError } from "@/components/ui/form-error";
 import { ApiError, apiClient } from "@/lib/api-client";
 import { useT } from "@/i18n/locale-provider";
 
@@ -21,6 +22,8 @@ export function SignupForm() {
   const t = useT();
   const router = useRouter();
   const [loading, setLoading] = useState(false);
+  // Field-tied, screen-reader-announced error (alongside the toast).
+  const [error, setError] = useState<string | null>(null);
   const [form, setForm] = useState({
     orgName: "",
     orgCode: "",
@@ -31,11 +34,13 @@ export function SignupForm() {
 
   function update<K extends keyof typeof form>(key: K, value: string) {
     setForm((f) => ({ ...f, [key]: value }));
+    if (error) setError(null);
   }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
+    setError(null);
     try {
       const result = await apiClient.auth.signUp({
         email: form.email,
@@ -68,8 +73,10 @@ export function SignupForm() {
       }
     } catch (err) {
       if (err instanceof ApiError) {
+        setError(err.message);
         toast.error(err.message);
       } else {
+        setError(t("common.unexpectedErrorRetry"));
         toast.error(t("common.unexpectedErrorRetry"));
         console.error(err);
       }
@@ -88,6 +95,7 @@ export function SignupForm() {
             value={form.orgName}
             onChange={(e) => update("orgName", e.target.value)}
             placeholder={t("auth.signup.orgNamePlaceholder")}
+            autoComplete="organization"
             required
           />
         </div>
@@ -101,6 +109,7 @@ export function SignupForm() {
             pattern="[A-Z0-9-]{3,20}"
             dir="ltr"
             className="text-start uppercase"
+            autoComplete="off"
             required
           />
         </div>
@@ -113,6 +122,7 @@ export function SignupForm() {
           value={form.fullName}
           onChange={(e) => update("fullName", e.target.value)}
           placeholder={t("auth.signup.fullNamePlaceholder")}
+          autoComplete="name"
           required
         />
       </div>
@@ -127,6 +137,9 @@ export function SignupForm() {
           placeholder="avi@example.com"
           dir="ltr"
           className="text-start"
+          autoComplete="email"
+          aria-invalid={error ? true : undefined}
+          aria-describedby={error ? "signup-error" : undefined}
           required
         />
       </div>
@@ -139,11 +152,19 @@ export function SignupForm() {
           value={form.password}
           onChange={(e) => update("password", e.target.value)}
           minLength={8}
+          autoComplete="new-password"
+          aria-invalid={error ? true : undefined}
+          aria-describedby={
+            error ? "signup-password-hint signup-error" : "signup-password-hint"
+          }
           required
         />
-        <p className="text-xs text-muted-foreground">{t("auth.passwordHint")}</p>
+        <p id="signup-password-hint" className="text-xs text-muted-foreground">
+          {t("auth.passwordHint")}
+        </p>
       </div>
 
+      <FormError id="signup-error" message={error} />
       <Button type="submit" className="w-full h-11" disabled={loading}>
         {loading ? t("auth.signup.submitting") : t("auth.signup.submit")}
       </Button>

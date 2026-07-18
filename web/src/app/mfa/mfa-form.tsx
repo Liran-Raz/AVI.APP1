@@ -89,9 +89,12 @@ export function MfaForm({ next }: { next: string }) {
           autoFocus
           required
           aria-invalid={invalid || undefined}
+          aria-describedby={invalid ? "mfa-invalid" : undefined}
         />
         {invalid && (
-          <p className="text-xs text-destructive">{t("auth.mfa.invalidHint")}</p>
+          <p id="mfa-invalid" role="alert" className="text-xs text-destructive">
+            {t("auth.mfa.invalidHint")}
+          </p>
         )}
       </div>
       <Button

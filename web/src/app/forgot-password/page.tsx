@@ -16,7 +16,7 @@ import { readLocale } from "@/server/i18n/locale-cookie";
 export default async function ForgotPasswordPage() {
   const t = await getServerT(await readLocale());
   return (
-    <div className="flex flex-1 items-center justify-center px-4 py-12 bg-muted/30">
+    <main className="flex flex-1 items-center justify-center px-4 py-12 bg-muted/30">
       <div className="w-full max-w-md space-y-6">
         <div className="text-center space-y-2">
           <Link href="/" className="inline-flex items-center gap-2">
@@ -46,6 +46,6 @@ export default async function ForgotPasswordPage() {
           </Link>
         </p>
       </div>
-    </div>
+    </main>
   );
 }

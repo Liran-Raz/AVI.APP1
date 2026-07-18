@@ -15,6 +15,7 @@
   "common.email": "Email",
   "common.phone": "Phone",
   "common.fullName": "Your full name",
+  "common.skipToContent": "Skip to content",
 
   "language.title": "Language",
   "language.subtitle": "Choose the interface language. Your choice is saved and applied on this device.",
