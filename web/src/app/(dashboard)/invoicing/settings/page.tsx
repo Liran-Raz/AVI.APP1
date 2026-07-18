@@ -1,5 +1,4 @@
 import { notFound } from "next/navigation";
-import Link from "next/link";
 
 import { LedgerSettings } from "@/components/invoicing/ledger-settings";
 import { isInvoicingUiEnabled } from "@/server/auth/invoicing.flags";
@@ -11,7 +10,8 @@ import * as ledgersService from "@/server/services/ledgers.service";
 // פרטי העסק (DEV-026) — the ledger business-profile settings, under the
 // invoicing area (/invoicing/settings). Same gates as the documents screen:
 // the INVOICING_UI flag (404 when off) + invoices.view; edits re-checked
-// server-side by ledgers.manage (owner-only).
+// server-side by ledgers.manage (owner-only). The rendered header lives in
+// the client component (LedgerSettings) so its strings go through useT.
 export default async function InvoicingSettingsPage() {
   if (!isInvoicingUiEnabled()) notFound();
 
@@ -23,19 +23,6 @@ export default async function InvoicingSettingsPage() {
 
   return (
     <div className="p-4 md:p-6 space-y-6 max-w-3xl">
-      <div>
-        <Link
-          href="/invoicing"
-          className="text-sm text-primary hover:underline"
-        >
-          → חזרה למסמכים
-        </Link>
-        <h1 className="text-xl font-bold mt-2">פרטי העסק</h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          הזהות המשפטית שתודפס על מסמכי המס (חשבוניות, קבלות וזיכויים).
-        </p>
-      </div>
-
       <LedgerSettings initial={ledger} canManage={canManage} />
     </div>
   );
