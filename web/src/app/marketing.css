@@ -11,7 +11,11 @@
   /* ----- tokens (scoped; do NOT move to :root) ----- */
   --accent:#2563eb; --accent-dark:#1741b8; --accent-darker:#132f7f;
   --accent-light:#e5edfe; --accent-soft:#dbe8fe;
-  --ink:#0f1729; --ink-soft:#4b5670; --ink-faint:#67718a;
+  /* --ink-faint darkened #67718a→#5e6880 for WCAG 2.0 AA (was 4.26:1 on the
+     #eaf0fb page bg — below 4.5; now 4.87:1). Still the faintest tier, clearly
+     lighter than --ink-soft. The a11y widget's high-contrast override (globals
+     .css → #000) is separate and unaffected. */
+  --ink:#0f1729; --ink-soft:#4b5670; --ink-faint:#5e6880;
   --line:#e3e7ee; --surface:#ffffff;
   --ok:#0f8a4d; --ok-soft:#e2f6ec; --warn:#b45309; --warn-soft:#fdf1e0;
   --danger:#c2333b; --danger-soft:#fdeaea;
