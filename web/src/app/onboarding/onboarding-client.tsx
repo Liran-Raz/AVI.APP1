@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ApiError, apiClient } from "@/lib/api-client";
 import { ORG_CODE_RE } from "@/server/validators/onboarding.schema";
+import { useT } from "@/i18n/locale-provider";
 
 // Must match the constant in signup-form.tsx — kept inline (not exported)
 // because this is the only producer/consumer pair and the key is private.
@@ -29,6 +30,7 @@ export function OnboardingClient({
   initialOrgCode: string;
   initialFullName: string;
 }) {
+  const t = useT();
   const router = useRouter();
   const [orgName, setOrgName] = useState(initialOrgName);
   const [orgCode, setOrgCode] = useState(initialOrgCode);
@@ -88,16 +90,16 @@ export function OnboardingClient({
       } catch {
         /* noop */
       }
-      toast.success("המשרד הוקם — מעביר אותך לתור המשימות");
+      toast.success(t("onboarding.createdToast"));
       router.push("/tasks");
       router.refresh();
     } catch (err) {
       if (err instanceof ApiError) {
         setLastError({ code: err.code, message: err.message });
-        if (!silent) toast.error(`שגיאה: ${err.message}`);
+        if (!silent) toast.error(t("onboarding.errorWithMessage", { message: err.message }));
       } else {
-        setLastError({ message: "שגיאה לא צפויה" });
-        if (!silent) toast.error("שגיאה לא צפויה");
+        setLastError({ message: t("common.unexpectedError") });
+        if (!silent) toast.error(t("common.unexpectedError"));
         console.error(err);
       }
     } finally {
@@ -125,7 +127,7 @@ export function OnboardingClient({
       <div className="flex flex-1 items-center justify-center px-4 py-12 bg-muted/30">
         <div className="text-center space-y-3">
           <Loader2 className="size-8 mx-auto animate-spin text-primary" />
-          <p className="text-sm text-muted-foreground">מקים את המשרד שלך...</p>
+          <p className="text-sm text-muted-foreground">{t("onboarding.bootstrapping")}</p>
         </div>
       </div>
     );
@@ -145,10 +147,8 @@ export function OnboardingClient({
 
         <Card>
           <CardHeader>
-            <CardTitle className="text-2xl">בואו נסיים את ההקמה</CardTitle>
-            <CardDescription>
-              חסר לנו עוד פרט אחד או שניים על המשרד שלך, ואנחנו בפנים.
-            </CardDescription>
+            <CardTitle className="text-2xl">{t("onboarding.title")}</CardTitle>
+            <CardDescription>{t("onboarding.subtitle")}</CardDescription>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-4">
@@ -162,11 +162,11 @@ export function OnboardingClient({
                   className="inline-flex items-center gap-1 text-primary hover:underline"
                 >
                   <LogOut className="size-3" />
-                  התחבר כמשתמש אחר
+                  {t("onboarding.loginAsOther")}
                 </button>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="fullName">שמך המלא</Label>
+                <Label htmlFor="fullName">{t("common.fullName")}</Label>
                 <Input
                   id="fullName"
                   value={fullName}
@@ -175,17 +175,17 @@ export function OnboardingClient({
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="orgName">שם המשרד</Label>
+                <Label htmlFor="orgName">{t("onboarding.orgNameLabel")}</Label>
                 <Input
                   id="orgName"
                   value={orgName}
                   onChange={(e) => setOrgName(e.target.value)}
-                  placeholder="ראיית חשבון..."
+                  placeholder={t("onboarding.orgNamePlaceholder")}
                   required
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="orgCode">קוד משרד (אנגלית, אותיות גדולות)</Label>
+                <Label htmlFor="orgCode">{t("onboarding.orgCodeLabel")}</Label>
                 <Input
                   id="orgCode"
                   value={orgCode}
@@ -197,7 +197,7 @@ export function OnboardingClient({
                 />
               </div>
               <Button type="submit" className="w-full h-11" disabled={submitting}>
-                {submitting ? "מקים..." : "סיים והכנס למשרד"}
+                {submitting ? t("onboarding.submitting") : t("onboarding.submit")}
               </Button>
 
               {lastError && (

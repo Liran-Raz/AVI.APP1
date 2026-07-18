@@ -13,6 +13,9 @@ import { getCurrentSession } from "@/server/auth/session";
 import { AppError } from "@/server/errors/app-error";
 import * as teamService from "@/server/services/team.service";
 import { checkRateLimit, clientIp } from "@/server/security/rate-limit";
+import { getServerT } from "@/i18n/server";
+import { readLocale } from "@/server/i18n/locale-cookie";
+import type { MessageKey } from "@/i18n/messages-types";
 
 // Public page — middleware does NOT include /invite/accept in
 // PROTECTED_PREFIXES. The actual gate is application-level:
@@ -34,13 +37,15 @@ export default async function InviteAcceptPage({
   searchParams: SearchParams;
 }) {
   const { token } = await searchParams;
+  const t = await getServerT(await readLocale());
 
   if (!token) {
     return (
       <InvitationShell>
         <ErrorState
-          title="קישור לא תקין"
-          message="חסר token בכתובת ההזמנה. ודא שהעתקת את כל הקישור מהמייל."
+          title={t("invite.errInvalidLinkTitle")}
+          message={t("invite.acceptErrInvalidLinkMsg")}
+          backLabel={t("invite.backToLogin")}
         />
       </InvitationShell>
     );
@@ -58,7 +63,11 @@ export default async function InviteAcceptPage({
   if (!previewLimit.allowed) {
     return (
       <InvitationShell>
-        <ErrorState title="יותר מדי בקשות" message="נסה שוב בעוד כמה דקות." />
+        <ErrorState
+          title={t("invite.errTooManyRequestsTitle")}
+          message={t("invite.errTooManyRequestsMsg")}
+          backLabel={t("invite.backToLogin")}
+        />
       </InvitationShell>
     );
   }
@@ -72,8 +81,9 @@ export default async function InviteAcceptPage({
       return (
         <InvitationShell>
           <ErrorState
-            title="הזמנה לא נמצאה"
-            message="הקישור שגוי או שההזמנה כבר נמחקה. בקש מהמנהל לשלוח לך הזמנה חדשה."
+            title={t("invite.errNotFoundTitle")}
+            message={t("invite.acceptErrNotFoundMsg")}
+            backLabel={t("invite.backToLogin")}
           />
         </InvitationShell>
       );
@@ -82,16 +92,17 @@ export default async function InviteAcceptPage({
   }
 
   if (preview.status !== "pending") {
-    const messages: Record<string, string> = {
-      accepted: "ההזמנה כבר אושרה. נסה להתחבר עם החשבון שלך.",
-      expired: "ההזמנה פגה. בקש מהמנהל לשלוח לך הזמנה חדשה.",
-      revoked: "ההזמנה בוטלה ע״י המנהל.",
+    const statusKey: Record<string, MessageKey> = {
+      accepted: "invite.statusAccepted",
+      expired: "invite.statusExpired",
+      revoked: "invite.statusRevoked",
     };
     return (
       <InvitationShell>
         <ErrorState
-          title="הזמנה לא פעילה"
-          message={messages[preview.status] ?? "ההזמנה לא פעילה."}
+          title={t("invite.errInactiveTitle")}
+          message={t(statusKey[preview.status] ?? "invite.statusInactiveFallback")}
+          backLabel={t("invite.backToLogin")}
         />
       </InvitationShell>
     );
@@ -102,18 +113,18 @@ export default async function InviteAcceptPage({
     return (
       <InvitationShell>
         <ErrorState
-          title="ההזמנה פגה"
-          message="בקש מהמנהל לשלוח לך הזמנה חדשה."
+          title={t("invite.errExpiredTitle")}
+          message={t("invite.errExpiredMsg")}
+          backLabel={t("invite.backToLogin")}
         />
       </InvitationShell>
     );
   }
 
-  const ROLE_LABEL: Record<"admin" | "employee", string> = {
-    admin: "מנהל",
-    employee: "עובד",
-  };
-  const roleHe = ROLE_LABEL[preview.role as "admin" | "employee"] ?? preview.role;
+  const roleLabel =
+    preview.role === "admin" || preview.role === "employee"
+      ? t(`role.${preview.role}` as MessageKey)
+      : preview.role;
 
   // Are they already logged in?
   const session = await getCurrentSession();
@@ -127,9 +138,11 @@ export default async function InviteAcceptPage({
       <InvitationShell>
         <Card>
           <CardHeader className="text-center space-y-2">
-            <CardTitle className="text-2xl">הוזמנת ל-{preview.orgName}</CardTitle>
+            <CardTitle className="text-2xl">
+              {t("invite.invitedToOrg", { orgName: preview.orgName })}
+            </CardTitle>
             <CardDescription>
-              הוזמנת להצטרף כ-{roleHe} עם האימייל{" "}
+              {t("invite.invitedAsRoleWithEmail", { role: roleLabel })}
               <span dir="ltr" className="font-mono">
                 {preview.email}
               </span>
@@ -138,16 +151,16 @@ export default async function InviteAcceptPage({
           </CardHeader>
           <CardContent className="space-y-3">
             <p className="text-sm text-muted-foreground">
-              כדי לאשר את ההזמנה, היכנס עם החשבון שלך — או צור חשבון חדש.
+              {t("invite.loginOrSignupPrompt")}
             </p>
             <Link href={signupHref} className="block">
               <span className="inline-flex items-center justify-center w-full h-11 rounded-md bg-primary text-primary-foreground font-medium hover:bg-primary/90">
-                צור חשבון חדש
+                {t("invite.createAccount")}
               </span>
             </Link>
             <Link href={loginHref} className="block">
               <span className="inline-flex items-center justify-center w-full h-11 rounded-md border border-border bg-background font-medium hover:bg-muted/50">
-                כבר יש לי חשבון — התחבר
+                {t("invite.alreadyHaveAccount")}
               </span>
             </Link>
           </CardContent>
@@ -163,9 +176,11 @@ export default async function InviteAcceptPage({
     <InvitationShell>
       <Card>
         <CardHeader className="text-center space-y-2">
-          <CardTitle className="text-2xl">הוזמנת ל-{preview.orgName}</CardTitle>
+          <CardTitle className="text-2xl">
+            {t("invite.invitedToOrg", { orgName: preview.orgName })}
+          </CardTitle>
           <CardDescription>
-            הוזמנת להצטרף כ-{roleHe}. לחץ &quot;אשר הזמנה&quot; כדי להצטרף עכשיו.
+            {t("invite.invitedAsRolePrompt", { role: roleLabel })}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -199,7 +214,15 @@ function InvitationShell({ children }: { children: React.ReactNode }) {
   );
 }
 
-function ErrorState({ title, message }: { title: string; message: string }) {
+function ErrorState({
+  title,
+  message,
+  backLabel,
+}: {
+  title: string;
+  message: string;
+  backLabel: string;
+}) {
   return (
     <Card>
       <CardHeader className="text-center space-y-2">
@@ -211,7 +234,7 @@ function ErrorState({ title, message }: { title: string; message: string }) {
           href="/login"
           className="inline-flex items-center justify-center w-full h-11 rounded-md border border-border bg-background font-medium hover:bg-muted/50"
         >
-          חזרה להתחברות
+          {backLabel}
         </Link>
       </CardContent>
     </Card>
