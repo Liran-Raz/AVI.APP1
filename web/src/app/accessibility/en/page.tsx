@@ -37,8 +37,8 @@ export default function AccessibilityEnPage() {
           <p className="rounded-lg border border-border bg-card p-4 text-foreground">
             This Accessibility Statement describes AVI.APP&rsquo;s (the &ldquo;<strong>Service</strong>,&rdquo;
             &ldquo;<strong>we</strong>,&rdquo; &ldquo;<strong>us</strong>&rdquo;) commitment to making the
-            Service accessible to people with disabilities, and the accessibility status of the website and
-            mobile application as of the date above. We treat accessibility as a value and an ongoing process,
+            Service accessible to people with disabilities, and the accessibility status of the website as of
+            the date above. We treat accessibility as a value and an ongoing process,
             and work to improve it continuously. This English version is a translation provided for
             convenience; the{" "}
             <Link href="/accessibility" className="text-primary hover:underline">Hebrew version</Link>{" "}
@@ -49,8 +49,10 @@ export default function AccessibilityEnPage() {
             <h2>1. Our accessibility commitment</h2>
             <p>
               We are committed to enabling all users, including people with disabilities, to use the Service
-              independently, with dignity, and with ease. We invest resources in making the Service accessible
-              and in improving it continuously, in the belief that every person deserves an equal right to
+              independently, with dignity, and with ease. In accordance with the{" "}
+              <strong>Equal Rights for Persons with Disabilities Law, 5758-1998</strong> and the regulations
+              enacted under it, we invest resources in making the required accessibility accommodations and
+              in improving them continuously, in the belief that every person deserves an equal right to
               receive service. The Service is operated by{" "}
               <strong>Liran Raz, licensed dealer (עוסק מורשה) no. 314954835</strong>.
             </p>
@@ -73,11 +75,19 @@ export default function AccessibilityEnPage() {
             <p>Among the accessibility measures currently in place in the Service:</p>
             <ul>
               <li>semantic page structure with landmarks and a single main heading per page;</li>
-              <li>full keyboard operation, with a visible focus indicator on every interactive element;</li>
+              <li>
+                full keyboard operation (Tab, arrow keys, Enter, and Esc to exit dialogs and menus), with a
+                visible focus indicator on every interactive element;
+              </li>
               <li>a &ldquo;skip to content&rdquo; link at the top of the home page;</li>
+              <li>
+                a built-in accessibility tool — a display-adjustment menu: larger text, contrast, readable
+                font, line spacing, stop animations, enlarged cursor, and link/heading highlighting;
+              </li>
               <li>respect for the user&rsquo;s reduced-motion preference (prefers-reduced-motion);</li>
               <li>labels associated with form fields;</li>
-              <li>declared language (Hebrew) and right-to-left (RTL) writing direction;</li>
+              <li>declared language and right-to-left (RTL) writing direction;</li>
+              <li>adaptation to common browsers and to mobile-phone use;</li>
               <li>a bilingual Hebrew/English interface.</li>
             </ul>
           </section>
@@ -87,7 +97,7 @@ export default function AccessibilityEnPage() {
             <p>
               We continue our efforts to improve the Service&rsquo;s accessibility, as part of our commitment
               to enable all users — including people with disabilities — to receive an accessible service.
-              Some parts of the website or app may not yet be fully accessible. If you encounter any problem
+              Some parts of the website may not yet be fully accessible. If you encounter any problem
               or accessibility barrier, we would be glad to hear from you (see &ldquo;How to reach us&rdquo;
               below), and we will make every effort to find a suitable solution and address it as soon as
               possible.
@@ -125,8 +135,7 @@ export default function AccessibilityEnPage() {
             <h2>6. Digital service only</h2>
             <p>
               The Service is provided online only and has no physical branch or service center open to the
-              public; accordingly, our accessibility arrangements focus on making the website and application
-              accessible.
+              public; accordingly, our accessibility arrangements focus on making the website accessible.
             </p>
           </section>
 
