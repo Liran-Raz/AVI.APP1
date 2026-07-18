@@ -13,6 +13,8 @@ import {
   type MemberDTO,
   type TaskDTO,
 } from "@/lib/api-client";
+import { intlLocale } from "@/i18n/config";
+import { useLocale, useT } from "@/i18n/locale-provider";
 
 import {
   endOfWeek,
@@ -40,6 +42,8 @@ export function CalendarPage({
   currentUserId,
   initialWeekStartIso,
 }: Props) {
+  const t = useT();
+  const localeTag = intlLocale(useLocale());
   const [items, setItems] = useState<TaskDTO[]>(initialItems);
   const [clients] = useState<ClientDTO[]>(initialClients);
   const [members] = useState<MemberDTO[]>(initialMembers);
@@ -74,16 +78,16 @@ export function CalendarPage({
         setItems(result.items);
       } catch (err) {
         if (err instanceof ApiError) {
-          toast.error(`שגיאה בטעינת משימות: ${err.message}`);
+          toast.error(t("calendar.loadError", { message: err.message }));
         } else {
-          toast.error("שגיאה לא צפויה");
+          toast.error(t("common.unexpectedError"));
           console.error(err);
         }
       } finally {
         setLoading(false);
       }
     },
-    [],
+    [t],
   );
 
   // Refetch whenever the visible week changes. Skip the very first
@@ -138,42 +142,56 @@ export function CalendarPage({
       <div className="flex items-center justify-between mb-6 gap-4 flex-wrap">
         <div>
           <h1 className="text-2xl md:text-3xl font-bold tracking-tight">
-            לוח שנה שבועי
+            {t("calendar.title")}
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            כל המשימות הפעילות לפי תאריך יעד
+            {t("calendar.subtitle")}
           </p>
         </div>
         <Button onClick={handleCreateClick}>
           <Plus className="size-4" />
-          משימה חדשה
+          {t("tasks.newTask")}
         </Button>
       </div>
 
       <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={goPrev} aria-label="שבוע קודם">
-            <ChevronRight className="size-4" />
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={goPrev}
+            aria-label={t("calendar.prevWeek")}
+          >
+            {/* Written LTR-first; rtl:rotate-180 keeps the Hebrew arrows
+                pointing exactly as before (prev = toward the week start). */}
+            <ChevronLeft className="size-4 rtl:rotate-180" />
           </Button>
           <Button variant="outline" size="sm" onClick={goToday}>
-            היום
+            {t("calendar.today")}
           </Button>
-          <Button variant="outline" size="sm" onClick={goNext} aria-label="שבוע הבא">
-            <ChevronLeft className="size-4" />
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={goNext}
+            aria-label={t("calendar.nextWeek")}
+          >
+            <ChevronRight className="size-4 rtl:rotate-180" />
           </Button>
         </div>
 
-        <h2 className="text-lg font-semibold">{formatWeekRange(weekStart)}</h2>
+        <h2 className="text-lg font-semibold">
+          {formatWeekRange(weekStart, localeTag)}
+        </h2>
 
-        <div className="flex items-center gap-3 mr-auto">
+        <div className="flex items-center gap-3 ms-auto">
           {loading && (
             <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
               <Loader2 className="size-3 animate-spin" />
-              טוען...
+              {t("common.loading")}
             </span>
           )}
           <span className="text-xs text-muted-foreground">
-            {items.length} משימות בשבוע
+            {t("calendar.tasksInWeek", { count: items.length })}
           </span>
         </div>
       </div>

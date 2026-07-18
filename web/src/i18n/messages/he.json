@@ -203,6 +203,16 @@
   "businessType.amuta": "עמותה",
   "businessType.agudat_shitufit": "אגודה שיתופית",
 
+  "calendar.title": "לוח שנה שבועי",
+  "calendar.subtitle": "כל המשימות הפעילות לפי תאריך יעד",
+  "calendar.loadError": "שגיאה בטעינת משימות: {message}",
+  "calendar.prevWeek": "שבוע קודם",
+  "calendar.nextWeek": "שבוע הבא",
+  "calendar.today": "היום",
+  "calendar.tasksInWeek": "{count} משימות בשבוע",
+  "calendar.taskAria": "משימה: {title}",
+  "calendar.outsideWindow": "משימות מחוץ לטווח השעות המוצג בשבוע הזה.",
+
   "clients.title": "לקוחות",
   "clients.subtitle": "ניהול הלקוחות של המשרד",
   "clients.newClient": "לקוח חדש",
