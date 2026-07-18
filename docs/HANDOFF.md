@@ -14,19 +14,26 @@ continue" brief. **Load the `avi-app-architecture` skill before touching code.**
 (Hebrew + English) is in progress and going screen-by-screen, one small PR each.**
 Full detail + conventions: memory `feature_dev010_i18n.md`.
 
-**DONE + LIVE in prod (main `fef0a82`):** infra (self-hosted catalog, cookie-based
+**DONE + LIVE in prod (main `1a0ec89`):** infra (self-hosted catalog, cookie-based
 locale, NO next-intl, NO `[locale]` routing) + a language switcher with flags +
-**7 screens** translated he/en with correct LTR mirroring — settings (shell+forms),
-tasks, clients, team+roles, dashboard, messages+notifications, plus the app-shell
-chrome. English is AVAILABLE in prod; Hebrew is the default so existing users see
-zero change. Catalog ~470 keys; every PR: tsc/lint clean, 560 tests, no migration,
-no deps, Vercel green, QA'd + merged on Liran's word.
+**9 screens** translated he/en with correct LTR mirroring — settings (shell+forms),
+tasks, clients, team+roles, dashboard, messages+notifications, **invoicing,
+reports**, plus the app-shell chrome. English is AVAILABLE in prod; Hebrew is the
+default so existing users see zero change. Catalog **753 keys**; every PR:
+tsc/lint clean, 560 tests, no migration, no deps, Vercel green, QA'd + merged on
+Liran's word. **PR-8 (#92, invoicing+reports, +283 keys) decisions:** tax PDF /
+CSV / openformat server-warnings stay Hebrew; `formatAgorot(agorot, localeTag?)`
+defaults he-IL (server byte-identical, UI passes `intlLocale`); reports UI
+translates from raw DTO codes (ignores server-Hebrew label fields);
+`nispach1.*` = the 27 official doc-type names byte-exact vs the server table
+(differs from `docType.*` on 320/330 — intentional); numeric columns with forced
+`[direction:ltr]` use `rtl:text-left ltr:text-right` (never `text-end` — flips
+Hebrew); `business-types.ts` deleted (last label-map remnant).
 
-**NEXT (fresh session, in order):** **invoicing + reports** (biggest — `components/
-invoicing/*` + `components/reports/reports-page.tsx`; the tax **PDF stays Hebrew** —
-do NOT touch `server/pdf`) → **calendar** (+ `calendar-utils` dates via `intlLocale`)
-→ **onboarding + invite** → **auth pages / landing** (still on the OLD marketing
-`t(he,en)` provider — decide: migrate or leave) → **final English QA pass**
+**NEXT (fresh session, in order):** **calendar** (`components/calendar/*` +
+`calendar-utils` dates via `intlLocale`) → **onboarding + invite** →
+**auth pages / landing** (still on the OLD marketing `t(he,en)` provider —
+decide: migrate or leave) → **final English QA pass**
 (`rg [֐-׿] web/src --glob '*.tsx'` for stragglers). **Then R2** = the other 6
 languages (ru/de/fr/ja/it/ar) — mostly translation JSON + fonts + Arabic RTL.
 
