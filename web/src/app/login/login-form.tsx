@@ -11,12 +11,14 @@ import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { ApiError, apiClient } from "@/lib/api-client";
 import { isNativeApp } from "@/lib/native";
+import { useT } from "@/i18n/locale-provider";
 
 // NOTE: this client component no longer imports anything from
 // @supabase/* or @/lib/supabase/*. All auth flows — including Google
 // OAuth start — go through /api/* and the AuthAdapter on the server.
 
 export function LoginForm() {
+  const t = useT();
   const router = useRouter();
   const searchParams = useSearchParams();
   const redirect = searchParams.get("redirect") || "/tasks";
@@ -42,7 +44,7 @@ export function LoginForm() {
       if (err instanceof ApiError) {
         toast.error(err.message);
       } else {
-        toast.error("שגיאה לא צפויה");
+        toast.error(t("common.unexpectedError"));
         console.error(err);
       }
     } finally {
@@ -75,7 +77,7 @@ export function LoginForm() {
       if (err instanceof ApiError) {
         toast.error(err.message);
       } else {
-        toast.error("התחברות עם Google נכשלה");
+        toast.error(t("auth.login.googleFailed"));
       }
       setLoading(false);
     }
@@ -88,15 +90,15 @@ export function LoginForm() {
     <div className="space-y-4">
       {resetSuccess && (
         <div className="rounded-md border border-green-600/40 bg-green-600/5 p-3 text-sm">
-          ✓ הסיסמה עודכנה בהצלחה. התחבר עם הסיסמה החדשה.
+          ✓ {t("auth.login.resetSuccess")}
         </div>
       )}
 
       {pendingEmail && (
         <div className="rounded-md border border-primary/30 bg-primary/5 p-3 text-sm">
-          📧 שלחנו אימייל אישור ל-<span dir="ltr" className="font-mono">{pendingEmail}</span>.
+          📧 {t("auth.login.pendingPrefix")}<span dir="ltr" className="font-mono">{pendingEmail}</span>.
           <br />
-          לחץ על הלינק במייל ואז תוכל להתחבר.
+          {t("auth.login.pendingSuffix")}
         </div>
       )}
 
@@ -108,19 +110,19 @@ export function LoginForm() {
         type="button"
       >
         <GoogleIcon />
-        המשך עם Google
+        {t("auth.login.google")}
       </Button>
 
       <div className="relative">
         <Separator />
         <span className="absolute inset-x-0 -top-2.5 mx-auto w-fit bg-card px-2 text-xs text-muted-foreground">
-          או
+          {t("auth.login.or")}
         </span>
       </div>
 
       <form onSubmit={handleEmailLogin} className="space-y-4">
         <div className="space-y-2">
-          <Label htmlFor="email">אימייל</Label>
+          <Label htmlFor="email">{t("common.email")}</Label>
           <Input
             id="email"
             type="email"
@@ -133,7 +135,7 @@ export function LoginForm() {
           />
         </div>
         <div className="space-y-2">
-          <Label htmlFor="password">סיסמה</Label>
+          <Label htmlFor="password">{t("auth.password")}</Label>
           <Input
             id="password"
             type="password"
@@ -146,12 +148,12 @@ export function LoginForm() {
               href="/forgot-password"
               className="text-xs text-primary hover:underline"
             >
-              שכחת סיסמה?
+              {t("auth.login.forgot")}
             </Link>
           </div>
         </div>
         <Button type="submit" className="w-full h-11" disabled={loading}>
-          {loading ? "מתחבר..." : "התחבר"}
+          {loading ? t("auth.login.submitting") : t("auth.login.submit")}
         </Button>
       </form>
     </div>

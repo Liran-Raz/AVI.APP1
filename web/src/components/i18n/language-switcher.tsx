@@ -56,6 +56,44 @@ function useSetLocale() {
   return { saving, setLocale };
 }
 
+// Marketing-styled pill (the `.mkt` `lang-btn` visual) backed by the CENTRAL
+// locale system — for the auth pages (login/signup/mfa). Clicking it flips
+// he↔en via the cookie + router.refresh, so the auth CHROME + FORMS (both on
+// useT) switch together, and the choice persists into the app after login.
+// Same glyph/labels as the marketing LangToggle so the two feel identical.
+export function AuthLangToggle() {
+  const locale = useLocale();
+  const { saving, setLocale } = useSetLocale();
+  const next: Locale = locale === "he" ? "en" : "he";
+
+  return (
+    <button
+      type="button"
+      className="lang-btn"
+      onClick={() => setLocale(next)}
+      disabled={saving}
+      aria-label={locale === "he" ? "Switch to English" : "החלף לעברית"}
+    >
+      <svg
+        width="16"
+        height="16"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden="true"
+      >
+        <circle cx="12" cy="12" r="10" />
+        <path d="M2 12h20" />
+        <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+      </svg>
+      <span>{locale === "he" ? "EN" : "עברית"}</span>
+    </button>
+  );
+}
+
 // Dropdown-select variant — for the Settings header and the mobile drawer.
 export function LanguageSelect({ className }: { className?: string }) {
   const t = useT();

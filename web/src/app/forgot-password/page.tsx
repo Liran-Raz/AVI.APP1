@@ -8,10 +8,13 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { getServerT } from "@/i18n/server";
+import { readLocale } from "@/server/i18n/locale-cookie";
 
 // Public page — middleware does NOT include /forgot-password in
 // PROTECTED_PREFIXES, so it is reachable without a session.
-export default function ForgotPasswordPage() {
+export default async function ForgotPasswordPage() {
+  const t = await getServerT(await readLocale());
   return (
     <div className="flex flex-1 items-center justify-center px-4 py-12 bg-muted/30">
       <div className="w-full max-w-md space-y-6">
@@ -26,10 +29,8 @@ export default function ForgotPasswordPage() {
 
         <Card>
           <CardHeader className="text-center">
-            <CardTitle className="text-2xl">שחזור סיסמה</CardTitle>
-            <CardDescription>
-              הזן את האימייל שלך ונשלח לך קישור לאיפוס.
-            </CardDescription>
+            <CardTitle className="text-2xl">{t("auth.forgot.title")}</CardTitle>
+            <CardDescription>{t("auth.forgot.subtitle")}</CardDescription>
           </CardHeader>
           <CardContent>
             <ForgotPasswordForm />
@@ -41,7 +42,7 @@ export default function ForgotPasswordPage() {
             href="/login"
             className="text-primary hover:underline font-medium"
           >
-            חזרה להתחברות
+            {t("invite.backToLogin")}
           </Link>
         </p>
       </div>

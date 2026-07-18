@@ -2,48 +2,34 @@
 
 import Link from "next/link";
 
-import {
-  Aurora,
-  LangToggle,
-  MarketingLangProvider,
-  useMarketingLang,
-} from "@/components/marketing/marketing-lang";
+import { Aurora } from "@/components/marketing/marketing-lang";
+import { AuthLangToggle } from "@/components/i18n/language-switcher";
+import { dirFor } from "@/i18n/config";
+import { useLocale, useT } from "@/i18n/locale-provider";
 import { MfaForm } from "./mfa-form";
 
-// Glass chrome around the MFA challenge form — same shell as the login
-// page so the two-step sign-in feels like one continuous flow. The form's
-// own labels stay Hebrew; only the page chrome is bilingual.
-function MfaInner({ next }: { next: string }) {
-  const { t, dir, lang } = useMarketingLang();
+// Glass chrome around the MFA challenge form — same shell as login so the
+// two-step sign-in feels like one flow. Chrome + form both on the central
+// catalog (useT), driven by the avi-locale cookie.
+export function MfaGlass({ next }: { next: string }) {
+  const t = useT();
+  const locale = useLocale();
   return (
-    <div className="mkt auth-wrap" dir={dir} lang={lang}>
+    <div className="mkt auth-wrap" dir={dirFor(locale)} lang={locale}>
       <Aurora />
       <div className="auth-topbar">
         <Link className="brand" href="/"><span className="logo-mark">א</span> AVI.APP</Link>
-        <LangToggle />
+        <AuthLangToggle />
       </div>
       <div className="auth-main">
         <div className="glass auth-card">
-          <h1>{t("אימות דו-שלבי", "Two-factor authentication")}</h1>
-          <span className="auth-sub">
-            {t(
-              "הזן את הקוד בן 6 הספרות מאפליקציית האימות שלך",
-              "Enter the 6-digit code from your authenticator app",
-            )}
-          </span>
+          <h1>{t("auth.mfa.title")}</h1>
+          <span className="auth-sub">{t("auth.mfa.subtitle")}</span>
           <div className="auth-form">
             <MfaForm next={next} />
           </div>
         </div>
       </div>
     </div>
-  );
-}
-
-export function MfaGlass({ next }: { next: string }) {
-  return (
-    <MarketingLangProvider>
-      <MfaInner next={next} />
-    </MarketingLangProvider>
   );
 }

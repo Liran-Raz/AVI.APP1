@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ApiError, apiClient } from "@/lib/api-client";
+import { useT } from "@/i18n/locale-provider";
 
 function errorReason(err: ApiError): string | null {
   if (err.details && typeof err.details === "object" && "reason" in err.details) {
@@ -21,6 +22,7 @@ function errorReason(err: ApiError): string | null {
 // The TOTP challenge form. `next` arrives already sanitized by the server
 // page; the startsWith guard below is belt-and-suspenders only.
 export function MfaForm({ next }: { next: string }) {
+  const t = useT();
   const router = useRouter();
   const [code, setCode] = useState("");
   const [loading, setLoading] = useState(false);
@@ -41,14 +43,14 @@ export function MfaForm({ next }: { next: string }) {
       if (err instanceof ApiError) {
         if (errorReason(err) === "invalid_code") {
           setInvalid(true);
-          toast.error("הקוד שגוי או שפג תוקפו — נסה שוב");
+          toast.error(t("auth.mfa.invalidToast"));
         } else if (err.code === "RATE_LIMITED") {
-          toast.error("יותר מדי ניסיונות. המתן מספר דקות ונסה שוב.");
+          toast.error(t("auth.mfa.rateLimited"));
         } else {
           toast.error(err.message);
         }
       } else {
-        toast.error("שגיאה לא צפויה");
+        toast.error(t("common.unexpectedError"));
         console.error(err);
       }
       setLoading(false);
@@ -70,7 +72,7 @@ export function MfaForm({ next }: { next: string }) {
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       <div className="space-y-2">
-        <Label htmlFor="mfa-code">קוד אימות</Label>
+        <Label htmlFor="mfa-code">{t("auth.mfa.codeLabel")}</Label>
         <Input
           id="mfa-code"
           value={code}
@@ -89,9 +91,7 @@ export function MfaForm({ next }: { next: string }) {
           aria-invalid={invalid || undefined}
         />
         {invalid && (
-          <p className="text-xs text-destructive">
-            הקוד שגוי או שפג תוקפו. הקודים מתחלפים כל 30 שניות — נסה את הקוד הנוכחי.
-          </p>
+          <p className="text-xs text-destructive">{t("auth.mfa.invalidHint")}</p>
         )}
       </div>
       <Button
@@ -100,7 +100,7 @@ export function MfaForm({ next }: { next: string }) {
         disabled={loading || code.length !== 6}
       >
         {loading ? <Loader2 className="size-4 animate-spin" /> : null}
-        {loading ? "מאמת..." : "אימות"}
+        {loading ? t("auth.mfa.submitting") : t("auth.mfa.submit")}
       </Button>
       <div className="flex justify-center">
         <button
@@ -109,7 +109,7 @@ export function MfaForm({ next }: { next: string }) {
           disabled={loading}
           className="text-xs text-muted-foreground hover:text-foreground hover:underline"
         >
-          התנתק וחזור למסך הכניסה
+          {t("auth.mfa.signOut")}
         </button>
       </div>
     </form>
