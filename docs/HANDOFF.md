@@ -8,34 +8,47 @@ continue" brief. **Load the `avi-app-architecture` skill before touching code.**
 
 ---
 
-## 🟢 ACTIVE WORK — DEV-010 i18n (multi-language) — READ FIRST
+## 🟢🟢 DEV-010 i18n — ROUND 1 (Hebrew + English) COMPLETE — READ FIRST
 
 **What it is:** full app-UI internationalization, 8 languages planned. **Round 1
-(Hebrew + English) is in progress and going screen-by-screen, one small PR each.**
+(Hebrew + English) is DONE — the WHOLE app UI is bilingual and live in prod.**
 Full detail + conventions: memory `feature_dev010_i18n.md`.
 
-**DONE + LIVE in prod (main `1a0ec89`):** infra (self-hosted catalog, cookie-based
+**DONE + LIVE in prod (main `ba207477`):** infra (self-hosted catalog, cookie-based
 locale, NO next-intl, NO `[locale]` routing) + a language switcher with flags +
-**9 screens** translated he/en with correct LTR mirroring — settings (shell+forms),
-tasks, clients, team+roles, dashboard, messages+notifications, **invoicing,
-reports**, plus the app-shell chrome. English is AVAILABLE in prod; Hebrew is the
-default so existing users see zero change. Catalog **753 keys**; every PR:
-tsc/lint clean, 560 tests, no migration, no deps, Vercel green, QA'd + merged on
-Liran's word. **PR-8 (#92, invoicing+reports, +283 keys) decisions:** tax PDF /
-CSV / openformat server-warnings stay Hebrew; `formatAgorot(agorot, localeTag?)`
-defaults he-IL (server byte-identical, UI passes `intlLocale`); reports UI
-translates from raw DTO codes (ignores server-Hebrew label fields);
-`nispach1.*` = the 27 official doc-type names byte-exact vs the server table
-(differs from `docType.*` on 320/330 — intentional); numeric columns with forced
-`[direction:ltr]` use `rtl:text-left ltr:text-right` (never `text-end` — flips
-Hebrew); `business-types.ts` deleted (last label-map remnant).
+**every screen** translated he/en with correct LTR mirroring — settings, tasks,
+clients, team+roles, dashboard, messages+notifications, invoicing, reports,
+calendar, onboarding+invitations, the app-shell chrome, the in-app chrome
+stragglers (topbar clock/connectivity, office-switcher, 2FA gate, bug-report),
+AND the auth pages (login/signup/mfa/forgot/reset — unified onto the central
+catalog, see PR-12). English is AVAILABLE in prod; Hebrew is the default so
+existing users see zero change. Catalog **893 keys**; every PR: tsc/lint clean,
+560 tests, no migration, no deps, Vercel green, QA'd + merged on Liran's word.
+**Final `rg [֐-׿] web/src --glob '*.tsx'` sweep = CLEAN** (only deliberate Hebrew:
+tax PDF `server/pdf`, legal `privacy`/`terms`+`/en`, marketing `LandingGlass`+
+`marketing-lang` own i18n; plus code comments + the "א" brand glyph + intentional
+language-name labels). NO accidental UI stragglers.
 
-**NEXT (fresh session, in order):** **calendar** (`components/calendar/*` +
-`calendar-utils` dates via `intlLocale`) → **onboarding + invite** →
-**auth pages / landing** (still on the OLD marketing `t(he,en)` provider —
-decide: migrate or leave) → **final English QA pass**
-(`rg [֐-׿] web/src --glob '*.tsx'` for stragglers). **Then R2** = the other 6
-languages (ru/de/fr/ja/it/ar) — mostly translation JSON + fonts + Arabic RTL.
+**KEY DECISIONS captured (for R2 + future work):** tax PDF / CSV / openformat
+server-warnings / emails / DB-trigger notifications STAY Hebrew (guard-rail);
+`formatAgorot(agorot, localeTag?)` defaults he-IL (server byte-identical);
+reports UI translates from raw DTO codes; `nispach1.*` = 27 official doc-type
+names byte-exact vs the server table; numeric `[direction:ltr]` columns use
+`rtl:text-left ltr:text-right` (never `text-end`); server components (invite +
+forgot/reset pages) translate via `getServerT(await readLocale())`; **auth
+unification (PR-12): forms on the central `useT`, a new `AuthLangToggle` does
+`apiClient.locale.set + router.refresh`, and the marketing-lang provider bridges
+to the `avi-locale` cookie (inits from it + mirrors the toggle) so the landing
+and auth stay in sync — landing→login is a full `<a>` nav so the fresh cookie is
+read on load.**
+
+**NEXT — R2 (the other 6 languages: ru/de/fr/ja/it/ar):** add
+`messages/{ru,de,fr,ja,it,ar}.json` (the key set already exists — pure
+translation) + extend `SUPPORTED_LOCALES` / `dirFor` (ar→rtl) /
+`LOCALE_NATIVE_NAME` / `intlLocale` / `flag.tsx` + per-locale FONTS (Heebo covers
+he+en; ru=Cyrillic, ja=CJK, ar=Arabic need Noto Sans/JP/Kufi) + native-speaker
+review + Arabic RTL pass. Minor leftover cleanup: the PR-7 message read-by
+chevron note. **R2 timing is Liran's call** (may pause here for DEV-026 R5).
 
 **Conventions (critical):** each screen → its own branch/PR; delegate the string
 extraction to a subagent with the established prompt BUT always self-verify after
