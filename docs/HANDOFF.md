@@ -1,10 +1,40 @@
-# AVI.APP — Session Handoff (2026-07-18)
+# AVI.APP — Session Handoff (2026-07-19)
 
 **You are continuing AVI.APP from a fresh chat.** Read this top-to-bottom first.
 Deep detail lives in the auto-loaded memory (`project_avi_app.md`,
-`feature_dev010_i18n.md`, `feature_dev013_2fa.md`) and in the git-tracked
-backlog (`docs/DEV_TRACKING.md`) — this file is the fast "where we are + how to
-continue" brief. **Load the `avi-app-architecture` skill before touching code.**
+`feature_dev010_i18n.md`, `feature_dev013_2fa.md`, `feature_accessibility.md`)
+and in the git-tracked backlog (`docs/DEV_TRACKING.md`) — this file is the fast
+"where we are + how to continue" brief. **Load the `avi-app-architecture` skill
+before touching code.** main is `e8720df`, clean, no open PR of ours (a stale
+docs PR #78 from 2026-07-14 is unrelated — review/close at will).
+
+## ⏳ MOST TIME-SENSITIVE — DEV-026 R5 email (check FIRST)
+The ITA sandbox-portal approval email (for חשבוניות-ישראל R5) was expected
+**~2026-07-19/20** — i.e. **now**. Liran registered at liran995@gmail.com
+(check spam; IBM API Connect). **Ask Liran whether it arrived**; if yes, R5 is
+the next build (see the DEV-026 R5 section below). If not, escalate to
+ITAOpenApiSupport@taxes.gov.il after 1–2 business days.
+
+## 🟢 TODAY (2026-07-18/19) — Accessibility (DEV-027 + DEV-028) — DONE + LIVE
+Triggered by Liran asking to security-review a 3rd-party a11y skill (→ **safe**)
++ wanting an accessibility button. All live in prod (main `e8720df`). Detail:
+memory `feature_accessibility.md`.
+- **DEV-027 accessibility statement** — `/accessibility` (he binding) + `/en`,
+  footer link. **Re-worded to the standard Israeli template** (rail.co.il model
+  Liran supplied): positive conformance + a GENERAL reservation, **NO specific
+  gap list** (that was legally exposing) and **no false "fully compliant"**
+  claim. Coordinator = Liran Raz / liran995@gmail.com / 050-8880981; operator
+  עוסק מורשה 314954835.
+- **DEV-028 accessibility widget** — floating navy button with a 9-adjustment
+  menu (text-size/contrast/links/headings/font/spacing/stop-motion/cursor),
+  real CSS via `<html data-a11y-*>`, no-flash `/public/a11y-init.js`. **Floating
+  FAB on PUBLIC pages only; in-app it's Settings → נגישות tab** (Liran's call).
+- **OPEN (Liran deferred): the REAL a11y code-fixes** = the strongest legal
+  protection. Forms: add `autocomplete` + tie errors to fields
+  (`aria-invalid`/live-region, not just toasts); fix borderline contrast
+  (`#67718a` muted, white-on-`#2563eb`); `aria-hidden` the landing's fake demo
+  mockups (AT-exposed). Also consider a professional a11y audit. Statement +
+  privacy/terms all merit an Israeli-counsel glance (non-blocking).
 
 ---
 
@@ -48,7 +78,8 @@ translation) + extend `SUPPORTED_LOCALES` / `dirFor` (ar→rtl) /
 `LOCALE_NATIVE_NAME` / `intlLocale` / `flag.tsx` + per-locale FONTS (Heebo covers
 he+en; ru=Cyrillic, ja=CJK, ar=Arabic need Noto Sans/JP/Kufi) + native-speaker
 review + Arabic RTL pass. Minor leftover cleanup: the PR-7 message read-by
-chevron note. **R2 timing is Liran's call** (may pause here for DEV-026 R5).
+chevron note. **R2 is PAUSED by Liran (2026-07-18) — staying on he+en for now**;
+resume is his call.
 
 **Conventions (critical):** each screen → its own branch/PR; delegate the string
 extraction to a subagent with the established prompt BUT always self-verify after
