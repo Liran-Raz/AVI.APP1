@@ -119,7 +119,7 @@ function HeroDemo() {
   }, []);
 
   return (
-    <div className="hero-demo-wrap reveal" style={d(".15s")}>
+    <div className="hero-demo-wrap reveal" style={d(".15s")} aria-hidden="true">
       <div className="glass-strong app-window">
         <div className="app-chrome">
           <span className="dot d1" /><span className="dot d2" /><span className="dot d3" />
@@ -342,7 +342,7 @@ function LandingInner() {
                   <li><Check /> {t("חיפוש וסינון לפי לקוח או עדיפות", "Search and filter by client or priority")}</li>
                 </ul>
               </div>
-              <div className="screen-stage">
+              <div className="screen-stage" aria-hidden="true">
                 <span className="stage-glow" aria-hidden="true" />
                 <span className="stage-floor" aria-hidden="true" />
                 <span className="scene-chip glass" style={{ top: "-4px", insetInlineStart: "3%" }}><span aria-hidden="true">🔔</span> <span>{t("3 משימות להיום", "3 tasks due today")}</span></span>
@@ -402,7 +402,7 @@ function LandingInner() {
                   <li><Check /> {t("היום הנוכחי מודגש תמיד", "Today is always highlighted")}</li>
                 </ul>
               </div>
-              <div className="screen-stage">
+              <div className="screen-stage" aria-hidden="true">
                 <span className="stage-glow" aria-hidden="true" />
                 <span className="stage-floor" aria-hidden="true" />
                 <div className="glass-strong app-frame">
@@ -444,7 +444,7 @@ function LandingInner() {
                   <li><Check /> {t("המשימות הפתוחות של הלקוח, במקום אחד", "The client's open tasks, in one place")}</li>
                 </ul>
               </div>
-              <div className="screen-stage">
+              <div className="screen-stage" aria-hidden="true">
                 <span className="stage-glow" aria-hidden="true" />
                 <span className="stage-floor" aria-hidden="true" />
                 <span className="scene-chip glass" style={{ top: "-8px", insetInlineEnd: "4%" }}><span aria-hidden="true">📅</span> <span>{t("בעוד 15 דק׳: פגישה עם דנה כהן", "In 15 min: meeting with Dana Cohen")}</span></span>
@@ -483,7 +483,7 @@ function LandingInner() {
                   <li><Check /> {t("אותם נתונים, מסונכרנים תמיד", "The same data, always in sync")}</li>
                 </ul>
               </div>
-              <div className="screen-stage">
+              <div className="screen-stage" aria-hidden="true">
                 <span className="stage-glow" aria-hidden="true" />
                 <span className="stage-floor" aria-hidden="true" />
                 <span className="scene-chip glass" style={{ bottom: "30px", insetInlineStart: "6%" }}><span aria-hidden="true">⚡</span> <span>{t("כל המשרד, בכף היד", "Your whole firm, in your pocket")}</span></span>
@@ -516,7 +516,7 @@ function LandingInner() {
                   <li><Check /> {t("עובדים שהוזמנו במייל נכנסים ישירות מכאן", "Invited employees log in right here")}</li>
                 </ul>
               </div>
-              <div className="screen-stage">
+              <div className="screen-stage" aria-hidden="true">
                 <span className="stage-glow" aria-hidden="true" />
                 <span className="stage-floor" aria-hidden="true" />
                 <div className="glass-strong app-frame">
