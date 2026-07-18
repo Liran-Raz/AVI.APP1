@@ -13,17 +13,13 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
+import { useT } from "@/i18n/locale-provider";
+import type { MessageKey } from "@/i18n/messages-types";
 
 export type SwitcherOffice = {
   orgId: string;
   name: string;
   role: "owner" | "admin" | "employee";
-};
-
-const ROLE_LABEL: Record<SwitcherOffice["role"], string> = {
-  owner: "בעלים",
-  admin: "מנהל",
-  employee: "עובד",
 };
 
 // Office switcher shown in the app shell ONLY when the user belongs to
@@ -37,6 +33,7 @@ export function OfficeSwitcher({
   offices: SwitcherOffice[];
   activeOrgId: string;
 }) {
+  const t = useT();
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
 
@@ -75,7 +72,7 @@ export function OfficeSwitcher({
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-60">
-        <DropdownMenuLabel>המשרדים שלי</DropdownMenuLabel>
+        <DropdownMenuLabel>{t("officeSwitcher.myOffices")}</DropdownMenuLabel>
         <DropdownMenuSeparator />
         {offices.map((o) => (
           <DropdownMenuItem
@@ -87,7 +84,7 @@ export function OfficeSwitcher({
             <div className="flex flex-col flex-1 min-w-0">
               <span className="truncate">{o.name}</span>
               <span className="text-[10px] text-muted-foreground">
-                {ROLE_LABEL[o.role]}
+                {t(`role.${o.role}` as MessageKey)}
               </span>
             </div>
             {o.orgId === activeOrgId && (
