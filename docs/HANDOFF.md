@@ -6,7 +6,7 @@ Deep detail lives in the auto-loaded memory (`project_avi_app.md`,
 `project_security_audit.md`) and in the git-tracked backlog
 (`docs/DEV_TRACKING.md`) — this file is the fast "where we are + how to continue"
 brief. **Load the `avi-app-architecture` skill before touching code.** main is
-`73f741e` ([PR #106](https://github.com/Liran-Raz/AVI.APP1/pull/106) security R3
+`c75d0be` ([PR #106](https://github.com/Liran-Raz/AVI.APP1/pull/106) security R3
 squash-merged 2026-07-21 on Liran's word + docs closure; prod deploy verified
 live). **Migration `0030` APPLIED + VERIFIED in Production the same evening**
 (operator Liran; postflight returned the exact FK definition) — **DEV-029 is
@@ -268,8 +268,14 @@ zero Claude/Anthropic trace in the repo. Reply to Liran in Hebrew.
   shadcn/ui · Supabase (Postgres + Auth + Realtime + RLS) · Vercel.
 - **Production:** **https://www.aviapp1.com** (Cloudflare→Vercel; old
   `avi-app-1.vercel.app` still alive). Auto-deploys on push to `main`.
-- **`main` at `f32a87a`** (2026-07-17). Newest: **DEV-026 invoicing R1–R4 merged +
-  deployed, live-but-dormant** (flag off; see ACTIVE WORK above). Earlier shipped:
+- **`main` at `c75d0be`** (2026-07-21). Newest: **DEV-029 security audit FULLY
+  CLOSED — 9/9 findings + info items live** (R1 `0029` + R2 app-layer + R3
+  PR #106: fail-closed limiter / enforced CSP / .strict() / org-pin `0030`
+  applied+verified; migrations in Prod now through **0030**, `0031` reserved
+  for attachments; nonce-CSP logged as DEV-030 P3). Before that: **DEV-026
+  invoicing R1–R4 merged + deployed, live-but-dormant** (flag off; R5 waits on
+  the ITA sandbox approval — escalation email drafted, see the time-sensitive
+  section). Earlier shipped:
   **Stage 12 (DEV-019)** + **Stage 13
   (DEV-020)** — clients-UX + task-flow bell notifications (mig `0021`), owner analytics
   **dashboard** + owner-granted **per-member dashboard access** (`0022`) + a new bilingual
