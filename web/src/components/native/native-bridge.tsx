@@ -4,6 +4,7 @@ import { useEffect } from "react";
 
 import { isNativeApp } from "@/lib/native";
 import { NATIVE_OAUTH_CALLBACK } from "@/lib/native-auth";
+import { sanitizeNextPath } from "@/lib/safe-path";
 
 /**
  * Deep-link bridge for the Capacitor native shell. Mounted app-wide (root
@@ -58,7 +59,10 @@ async function handleUrl(url: string): Promise<void> {
   try {
     const parsed = new URL(url);
     code = parsed.searchParams.get("code");
-    next = parsed.searchParams.get("next") || next;
+    // Defense-in-depth: sanitize here too, even though the server-built deep
+    // link is already vetted and /auth/callback re-sanitizes at the sink — so
+    // "every client-side redirect goes through sanitizeNextPath" holds uniformly.
+    next = sanitizeNextPath(parsed.searchParams.get("next"), "/tasks");
   } catch {
     // Malformed deep link — fall through to the error redirect below.
   }

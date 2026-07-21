@@ -298,6 +298,33 @@ describe("helpers", () => {
     expect(csv).toContain('"עם ""מרכאות"""');
     expect(csv.endsWith("\r\n")).toBe(true);
   });
+
+  it("toCsv neutralizes formula-injection but keeps formatted amounts numeric", () => {
+    const csv = toCsv(
+      ["name", "amount"],
+      [
+        ['=HYPERLINK("http://evil",A1)', 0], // classic formula → neutralize
+        ["@SUM(A1:A9)", 0], // @ trigger → neutralize
+        ["-2+cmd|'/C calc'!A0", 0], // signed but NOT a number (DDE) → neutralize
+        ["רגיל", 7], // ordinary text → untouched
+        ["-12.34", 0], // formatted NEGATIVE AMOUNT (string) → must stay numeric
+        ["-1234.00", -5], // ditto + a real negative number
+      ],
+    );
+    // dangerous formula strings get a leading apostrophe:
+    expect(csv).toContain(`"'=HYPERLINK`);
+    expect(csv).toContain(`"'@SUM(A1:A9)"`);
+    expect(csv).toContain(`"'-2+cmd`);
+    // ordinary text untouched:
+    expect(csv).toContain('"רגיל"');
+    // formatted negative AMOUNTS (agorotToSheqelString output) stay real numbers,
+    // NEVER text-prefixed — this is the regression guard for financial exports:
+    expect(csv).toContain('"-12.34"');
+    expect(csv).not.toContain(`"'-12.34"`);
+    expect(csv).toContain('"-1234.00"');
+    expect(csv).not.toContain(`"'-1234.00"`);
+    expect(csv).not.toContain(`"'-5"`); // real negative number, untouched
+  });
 });
 
 // ============================================================
