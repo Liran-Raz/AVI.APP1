@@ -6,10 +6,11 @@ Deep detail lives in the auto-loaded memory (`project_avi_app.md`,
 `project_security_audit.md`) and in the git-tracked backlog
 (`docs/DEV_TRACKING.md`) — this file is the fast "where we are + how to continue"
 brief. **Load the `avi-app-architecture` skill before touching code.** main is
-`b654287`; **[PR #106](https://github.com/Liran-Raz/AVI.APP1/pull/106) (security
-R3, branch `security/r3-ratelimit-csp-strict`) is OPEN awaiting Liran's merge +
-the manual apply of migration `0030`** (operator package in the PR body). The
-stale docs PR #78 was closed 2026-07-21 (branch kept).
+`1097aa6` ([PR #106](https://github.com/Liran-Raz/AVI.APP1/pull/106) security R3
+squash-merged 2026-07-21 on Liran's word, prod deploy verified live). **ONE
+operator action pending: apply migration `0030` in the Supabase SQL Editor**
+(package in the PR #106 body) — then DEV-029 is 9/9 closed. The stale docs
+PR #78 was closed 2026-07-21 (branch kept).
 
 ## 🛡️ MOST RECENT — DEV-029 security audit 2 + write-hardening (R1+R2 LIVE, R3 remains)
 Prompted by Liran's "Supabase vs Google — which is safer?" fear. An **LLM council
@@ -34,8 +35,11 @@ the Next service layer while tables kept permissive RLS + write grants to
   (#7), and swaps 12 deprecated-helper policies (#2). A **new permanent CI job
   `validate-write-hardening`** proves behaviorally on real Postgres that every
   direct-PostgREST attack is BLOCKED and legit owner/member writes PASS.
-- **🟡 R3 SHIPPED TO [PR #106](https://github.com/Liran-Raz/AVI.APP1/pull/106)
-  (2026-07-21, awaiting merge + operator apply of `0030`):** #8 rate-limiter
+- **🟢 R3 MERGED + LIVE ([PR #106](https://github.com/Liran-Raz/AVI.APP1/pull/106)
+  → main `1097aa6`, 2026-07-21; prod smoke green incl. LIVE proofs: enforced
+  CSP header serving in its production variant, unknown-key body ⇒ 400
+  "Unrecognized key", signin ⇒ 401 clean [not 503 ⇒ Upstash configured].
+  Remaining: operator apply of `0030` — then 9/9):** #8 rate-limiter
   fail-CLOSED in production (missing `UPSTASH_*` ⇒ typed 503; Preview stays
   fail-open by design; transient Redis errors stay fail-open — availability),
   #9 CSP Report-Only→**ENFORCED pragmatic** (connect-src blocks exfiltration +
