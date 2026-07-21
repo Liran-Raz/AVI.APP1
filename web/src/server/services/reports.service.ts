@@ -490,7 +490,24 @@ export async function getClientBalances(
 
 /** Excel-friendly CSV: UTF-8 BOM (\uFEFF), CRLF, quoted cells. */
 export function toCsv(headers: string[], rows: Array<Array<string | number>>): string {
-  const quote = (v: string | number) => `"${String(v).replace(/"/g, '""')}"`;
+  // RFC-4180 quote + CSV/Excel formula-injection neutralization. A string cell
+  // beginning with = + - @ (or a leading tab/CR) is prefixed with a ' so
+  // spreadsheet apps treat it as literal text, not a formula \u2014 e.g. a client
+  // named `=HYPERLINK("http://evil",A1)`. BUT a plain (optionally signed) number
+  // like "-12.34" is a legitimate formatted amount (agorotToSheqelString) and
+  // MUST stay numeric in Excel, so numeric-looking strings are left untouched.
+  // Real numbers (typeof number) are our own values \u2192 never prefixed.
+  const quote = (v: string | number) => {
+    let s = String(v);
+    if (
+      typeof v === "string" &&
+      /^[=+\-@\t\r]/.test(s) &&
+      !/^[-+]?\d[\d.,]*$/.test(s)
+    ) {
+      s = "'" + s;
+    }
+    return `"${s.replace(/"/g, '""')}"`;
+  };
   const lines = [headers.map(quote).join(","), ...rows.map((r) => r.map(quote).join(","))];
   return "\uFEFF" + lines.join("\r\n") + "\r\n";
 }

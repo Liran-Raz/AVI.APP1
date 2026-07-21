@@ -12,6 +12,7 @@ import { Separator } from "@/components/ui/separator";
 import { FormError } from "@/components/ui/form-error";
 import { ApiError, apiClient } from "@/lib/api-client";
 import { isNativeApp } from "@/lib/native";
+import { sanitizeNextPath } from "@/lib/safe-path";
 import { useT } from "@/i18n/locale-provider";
 
 // NOTE: this client component no longer imports anything from
@@ -22,7 +23,10 @@ export function LoginForm() {
   const t = useT();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const redirect = searchParams.get("redirect") || "/tasks";
+  // Sanitize the post-login redirect: an unsanitized `?redirect=//evil.com`
+  // (or `/\evil.com`) would bounce a freshly-authenticated user off-site
+  // (open-redirect / phishing amplification from the trusted login page).
+  const redirect = sanitizeNextPath(searchParams.get("redirect"), "/tasks");
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
