@@ -24,13 +24,13 @@ const passwordSignupField = z
 export const signinSchema = z.object({
   email: emailField,
   password: passwordSigninField,
-});
+}).strict();
 
 export const signupSchema = z.object({
   email: emailField,
   password: passwordSignupField,
   fullName: fullNameField,
-});
+}).strict();
 
 export type SigninPayload = z.infer<typeof signinSchema>;
 export type SignupPayload = z.infer<typeof signupSchema>;
@@ -40,7 +40,7 @@ export type SignupPayload = z.infer<typeof signupSchema>;
 // real user, so this schema has nothing else to validate.
 export const forgotPasswordSchema = z.object({
   email: emailField,
-});
+}).strict();
 
 export type ForgotPasswordPayload = z.infer<typeof forgotPasswordSchema>;
 
@@ -53,6 +53,7 @@ export const resetPasswordSchema = z
     password: passwordSignupField,
     confirmPassword: z.string(),
   })
+  .strict()
   .refine((v) => v.password === v.confirmPassword, {
     message: "Passwords do not match",
     path: ["confirmPassword"],
@@ -71,6 +72,7 @@ export const changePasswordSchema = z
     newPassword: passwordSignupField,
     confirmPassword: z.string(),
   })
+  .strict()
   .refine((v) => v.newPassword === v.confirmPassword, {
     message: "Passwords do not match",
     path: ["confirmPassword"],
@@ -98,13 +100,13 @@ export const mfaCodeField = z
 export const mfaConfirmSchema = z.object({
   factorId: z.string().uuid("Invalid factor id"),
   code: mfaCodeField,
-});
+}).strict();
 
 // Login-time challenge: only the code — the server locates the user's
 // verified factor itself (the client never chooses the factor).
 export const mfaVerifySchema = z.object({
   code: mfaCodeField,
-});
+}).strict();
 
 export type MfaConfirmPayload = z.infer<typeof mfaConfirmSchema>;
 export type MfaVerifyPayload = z.infer<typeof mfaVerifySchema>;

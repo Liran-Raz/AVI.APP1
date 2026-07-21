@@ -7,6 +7,6 @@ import { z } from "zod";
 
 export const setActiveOrgSchema = z.object({
   orgId: z.string().uuid("orgId must be a valid UUID"),
-});
+}).strict();
 
 export type SetActiveOrgPayload = z.infer<typeof setActiveOrgSchema>;

@@ -32,6 +32,7 @@ export const updateOrganizationSchema = z
     // without 2FA get a persistent setup prompt).
     requireMfa: z.boolean().optional(),
   })
+  .strict()
   .refine((obj) => Object.keys(obj).length > 0, {
     message: "At least one field is required for update",
   });

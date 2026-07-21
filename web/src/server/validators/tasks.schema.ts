@@ -57,6 +57,8 @@ function optionalNullable<T extends z.ZodTypeAny>(schema: T) {
 // Create / Update payloads (JSON body)
 // ============================================================
 
+// NOT .strict(): a stale pre-Round-B client may still send `status` on create;
+// the contract (pinned in tasks.schema.test.ts) is strip-and-force-'new', not 400.
 export const createTaskSchema = z.object({
   title: titleField,
   description: optionalNullable(descriptionField),
@@ -81,6 +83,7 @@ export const updateTaskSchema = z
     assignedTo: optionalNullable(uuidNullableField),
     clientId: optionalNullable(uuidNullableField),
   })
+  .strict()
   .refine((obj) => Object.keys(obj).length > 0, {
     message: "At least one field is required for update",
   });
@@ -89,7 +92,7 @@ export const updateTaskSchema = z
 // vs a generic PATCH and makes the audit trail readable.
 export const statusTransitionSchema = z.object({
   status: taskStatusSchema,
-});
+}).strict();
 
 // ============================================================
 // List query string
@@ -143,6 +146,8 @@ const isoDateField = z
   })
   .optional();
 
+// NOT .strict(): the route parses Object.fromEntries(searchParams), so an
+// unrelated query param (e.g. utm_source) must strip, not 400.
 export const listTasksQuerySchema = z.object({
   search: searchField,
   status: statusListField,

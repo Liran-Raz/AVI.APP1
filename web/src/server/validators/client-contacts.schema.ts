@@ -35,7 +35,7 @@ export const createContactSchema = z.object({
   phone: optionalNullable(phoneField),
   email: optionalNullable(emailField),
   isPrimary: z.boolean().optional(), // DB default is false
-});
+}).strict();
 
 export const updateContactSchema = z
   .object({
@@ -45,6 +45,7 @@ export const updateContactSchema = z
     email: optionalNullable(emailField),
     isPrimary: z.boolean().optional(),
   })
+  .strict()
   .refine((obj) => Object.keys(obj).length > 0, {
     message: "At least one field is required for update",
   });

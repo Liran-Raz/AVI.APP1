@@ -13,6 +13,8 @@ const limitField = z.preprocess(
   z.number().int().min(1).max(100).default(20),
 );
 
+// NOT .strict(): the route parses Object.fromEntries(searchParams), so an
+// unrelated query param (e.g. utm_source) must strip, not 400.
 export const listNotificationsQuerySchema = z.object({
   unreadOnly: booleanQueryField,
   limit: limitField,

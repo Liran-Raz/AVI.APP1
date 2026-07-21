@@ -33,6 +33,7 @@ export const sendMessageSchema = z
     // A custom GROUP conversation id — mutually exclusive with recipientId.
     conversationId: z.string().uuid("Invalid conversation").optional(),
   })
+  .strict()
   .refine((v) => !(v.recipientId && v.conversationId), {
     message: "Provide a DM recipient or a group, not both",
     path: ["conversationId"],
@@ -63,12 +64,12 @@ export const listMessagesQuerySchema = z.object({
   // delta poll 400s (breaking live delivery). Same rule as roles.schema.ts.
   after: z.string().datetime({ offset: true }).optional(),
   limit: z.coerce.number().int().min(1).max(100).default(50),
-});
+}).strict(); // safe: the route builds { with, after, limit } explicitly, not fromEntries
 
 export type ListMessagesQuery = z.infer<typeof listMessagesQuerySchema>;
 
 // POST /api/messages/read — mark a conversation read (Stage 14 / R3). Reuses `with`.
-export const markReadSchema = z.object({ with: conversationWith });
+export const markReadSchema = z.object({ with: conversationWith }).strict();
 export type MarkReadPayload = z.infer<typeof markReadSchema>;
 
 // PATCH /api/messages/[id] — edit a message body (R4; sender + ≤10 min, DB-enforced).
@@ -78,7 +79,7 @@ export const editMessageSchema = z.object({
     .trim()
     .min(1, "Message is empty")
     .max(MESSAGE_MAX_LEN, "Message is too long"),
-});
+}).strict();
 export type EditMessagePayload = z.infer<typeof editMessageSchema>;
 
 // Route param for edit / delete.

@@ -20,7 +20,7 @@ export type AssignableRole = z.infer<typeof assignableRoleSchema>;
 export const inviteSchema = z.object({
   email: emailField,
   role: assignableRoleSchema,
-});
+}).strict();
 
 export type InvitePayload = z.infer<typeof inviteSchema>;
 
@@ -30,7 +30,7 @@ export type InvitePayload = z.infer<typeof inviteSchema>;
 
 export const changeRoleSchema = z.object({
   role: assignableRoleSchema,
-});
+}).strict();
 
 export type ChangeRolePayload = z.infer<typeof changeRoleSchema>;
 
@@ -41,7 +41,7 @@ export type ChangeRolePayload = z.infer<typeof changeRoleSchema>;
 
 export const setDashboardAccessSchema = z.object({
   enabled: z.boolean(),
-});
+}).strict();
 
 export type SetDashboardAccessPayload = z.infer<typeof setDashboardAccessSchema>;
 
@@ -60,7 +60,7 @@ const tokenField = z
 
 export const acceptInvitationSchema = z.object({
   token: tokenField,
-});
+}).strict();
 
 export type AcceptInvitationPayload = z.infer<typeof acceptInvitationSchema>;
 
@@ -88,6 +88,6 @@ export const inviteSignupSchema = z.object({
   token: tokenField,
   password: passwordSignupField,
   fullName: fullNameField,
-});
+}).strict();
 
 export type InviteSignupPayload = z.infer<typeof inviteSignupSchema>;
