@@ -94,11 +94,16 @@ exception when insufficient_privilege then null; end; end $$;
 -- ============================================================
 select set_config('request.jwt.claim.sub', '11111111-0000-0000-0000-000000000003', false);
 
--- #5: employee hard-deletes a client contact -> BLOCKED (policy split)
-do $$ begin begin
+-- #5: employee hard-deletes a client contact -> BLOCKED. The new RLS DELETE
+-- policy (admin/owner only) FILTERS the row out rather than raising, so the
+-- DELETE affects 0 rows and the contact survives — assert on row_count.
+do $$ declare cnt integer; begin
   delete from public.client_contacts where id='dddddddd-0000-0000-0000-0000000000d1';
-  raise exception 'FAIL #5: employee deleted a client contact';
-exception when insufficient_privilege then null; end; end $$;
+  get diagnostics cnt = row_count;
+  if cnt <> 0 then
+    raise exception 'FAIL #5: employee deleted % client contact(s) via direct PostgREST', cnt;
+  end if;
+end $$;
 
 -- #7: employee archives a client (is_active flip) -> BLOCKED
 do $$ begin begin
