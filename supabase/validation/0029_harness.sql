@@ -16,6 +16,10 @@ grant usage on schema public to authenticated, anon;
 
 -- ---- auth.uid() resolved from the request JWT 'sub' GUC (faithful to Supabase) ----
 create schema if not exists auth;
+-- Real Supabase grants authenticated/anon USAGE on the auth schema; without it a
+-- SECURITY INVOKER caller (our guard triggers) cannot even reference auth.uid()
+-- and would fail with 'permission denied for schema auth' (also SQLSTATE 42501).
+grant usage on schema auth to authenticated, anon;
 create or replace function auth.uid()
 returns uuid language sql stable
 as $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;
