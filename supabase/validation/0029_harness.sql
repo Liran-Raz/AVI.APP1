@@ -8,9 +8,10 @@
 --   * base RLS + grants so a direct "authenticated" write reaches the guards.
 -- 0029 itself is applied by the CI job AFTER this harness.
 
--- ---- Supabase roles (throwaway) ----
+-- ---- Supabase roles (throwaway; real Supabase ships all three) ----
 do $$ begin create role authenticated nologin; exception when duplicate_object then null; end $$;
 do $$ begin create role anon nologin;          exception when duplicate_object then null; end $$;
+do $$ begin create role service_role nologin;  exception when duplicate_object then null; end $$;
 grant usage on schema public to authenticated, anon;
 
 -- ---- auth.uid() resolved from the request JWT 'sub' GUC (faithful to Supabase) ----
