@@ -31,6 +31,6 @@ export const bootstrapOrgSchema = z.object({
   orgName: orgNameField,
   orgCode: orgCodeField,
   fullName: fullNameField,
-});
+}).strict();
 
 export type BootstrapOrgPayload = z.infer<typeof bootstrapOrgSchema>;

@@ -7,6 +7,8 @@ const dateField = z
   .regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be YYYY-MM-DD");
 
 /** Inclusive doc_date range. ISO date strings compare lexicographically. */
+// NOT .strict(): both report routes parse Object.fromEntries(searchParams),
+// where `format` / `mode` legitimately ride alongside from/to.
 export const reportRangeQuerySchema = z
   .object({
     from: dateField,

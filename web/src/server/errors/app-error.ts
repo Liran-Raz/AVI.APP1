@@ -74,6 +74,18 @@ export class MfaRequiredError extends AppError {
   }
 }
 
+// 503, thrown by the rate limiter when a PRODUCTION deployment is missing
+// its Upstash configuration (fail-closed, R3/#8): the guarded auth
+// endpoints refuse to run unprotected. The client message is deliberately
+// generic — it must not reveal that rate limiting is the broken piece;
+// the actionable detail goes to the server log only.
+export class RateLimitConfigError extends AppError {
+  constructor() {
+    super("INTERNAL_ERROR", "Service temporarily unavailable", 503);
+    this.name = "RateLimitConfigError";
+  }
+}
+
 // 429. Message is intentionally generic and uniform — it must never reveal
 // the key, the limit internals, or whether an email/account exists. The
 // retry hint travels in a Retry-After header (set by withErrorHandler),

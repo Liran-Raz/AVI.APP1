@@ -1484,3 +1484,37 @@ jobs:
 
       - name: Behavioral closure-proof (attacks blocked, legit writes pass)
         run: psql -v ON_ERROR_STOP=1 -f supabase/validation/0029_negative.sql
+
+      # ---- 0030 (clients handler org-pin, R3) — same throwaway DB, after 0029 ----
+      - name: Extend harness for 0030 (clients.handling_user_id column)
+        run: psql -v ON_ERROR_STOP=1 -f supabase/validation/0030_harness.sql
+
+      - name: 0030 refuses a non-postgres role
+        run: |
+          if psql -v ON_ERROR_STOP=1 -c "set role authenticated;" -f supabase/migrations/0030_clients_handler_org_pin.sql >/dev/null 2>&1; then
+            echo "FAIL: 0030 applied as a non-postgres role"; exit 1
+          fi
+          echo "PASS: 0030 refused a non-postgres role"
+
+      - name: 0030 preflight aborts on a violating handler row (dirty data)
+        run: |
+          psql -v ON_ERROR_STOP=1 -c "insert into public.organizations (id, org_code, name) values ('ee300000-0000-0000-0000-00000000dd0a','EE30D','dirty org');"
+          psql -v ON_ERROR_STOP=1 -c "insert into public.clients (id, org_id, name, handling_user_id) values ('ee300000-0000-0000-0000-00000000dd0c','ee300000-0000-0000-0000-00000000dd0a','dirty client','ee300000-0000-0000-0000-00000000dddd');"
+          if psql -v ON_ERROR_STOP=1 -f supabase/migrations/0030_clients_handler_org_pin.sql >/dev/null 2>&1; then
+            echo "FAIL: 0030 applied despite a violating handler row"; exit 1
+          fi
+          echo "PASS: 0030 preflight aborted on dirty data"
+          psql -v ON_ERROR_STOP=1 -c "delete from public.organizations where id = 'ee300000-0000-0000-0000-00000000dd0a';"
+
+      - name: Apply migration 0030 (clients handler org-pin)
+        run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/0030_clients_handler_org_pin.sql
+
+      - name: Reject duplicate 0030 (single-apply guard must fail)
+        run: |
+          if psql -v ON_ERROR_STOP=1 -f supabase/migrations/0030_clients_handler_org_pin.sql >/dev/null 2>&1; then
+            echo "FAIL: re-applying 0030 did not error on the existing constraint"; exit 1
+          fi
+          echo "PASS: duplicate 0030 cleanly rejected"
+
+      - name: 0030 behavioral closure-proof (cross-org pin blocked, cascade intact)
+        run: psql -v ON_ERROR_STOP=1 -f supabase/validation/0030_negative.sql

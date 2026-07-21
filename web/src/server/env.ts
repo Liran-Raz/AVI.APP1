@@ -17,8 +17,15 @@ const serverEnvSchema = z.object({
     .url("NEXT_PUBLIC_SITE_URL must be a valid URL")
     .default("http://localhost:3000"),
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
-  // Rate limiting (F2) — server-only, OPTIONAL. When absent the limiter
-  // fails open (dev: in-memory; preview/prod: disabled with a loud log).
+  // Set by Vercel on every deployment ("production" / "preview" /
+  // "development"); absent outside Vercel. Used to tell a real production
+  // deployment apart from a preview (preview intentionally has no Upstash
+  // env and must not fail closed — see rate-limit.ts).
+  VERCEL_ENV: z.enum(["production", "preview", "development"]).optional(),
+  // Rate limiting (F2) — server-only. OPTIONAL in the schema, but a missing
+  // config is only tolerated outside production: dev uses the in-memory
+  // limiter, preview fails open with a loud log, and PRODUCTION FAILS
+  // CLOSED (auth endpoints refuse to run unprotected — see rate-limit.ts).
   // Never prefix with NEXT_PUBLIC_ — these are secrets.
   UPSTASH_REDIS_REST_URL: z
     .string()

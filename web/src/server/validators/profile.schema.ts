@@ -22,6 +22,7 @@ export const updateProfileSchema = z
     fullName: fullNameField.optional(),
     phone: optionalNullable(phoneField),
   })
+  .strict()
   .refine((obj) => Object.keys(obj).length > 0, {
     message: "At least one field is required for update",
   });
@@ -36,6 +37,7 @@ export const updateNotificationPrefsSchema = z
     emailOnTaskAssignment: z.boolean().optional(),
     bellOnTaskAssignment: z.boolean().optional(),
   })
+  .strict()
   .refine((obj) => Object.keys(obj).length > 0, {
     message: "At least one preference is required",
   });

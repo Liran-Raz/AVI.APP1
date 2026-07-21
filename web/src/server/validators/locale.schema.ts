@@ -6,6 +6,6 @@ import { SUPPORTED_LOCALES } from "@/i18n/config";
 // supported set (adding a locale in i18n/config.ts widens this automatically).
 export const setLocaleSchema = z.object({
   locale: z.enum(SUPPORTED_LOCALES),
-});
+}).strict();
 
 export type SetLocalePayload = z.infer<typeof setLocaleSchema>;

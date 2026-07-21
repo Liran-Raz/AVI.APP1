@@ -44,6 +44,7 @@ const grantSchema = z
     permissionKey: z.string(),
     recordScope: z.string().nullish(),
   })
+  .strict()
   .superRefine((g, ctx) => {
     if (g.permissionKey === PROTECTED_ACTIONS.OWNERSHIP_TRANSFER) {
       ctx.addIssue({
@@ -106,7 +107,7 @@ export const createRoleSchema = z.object({
   name: nameField,
   description: descriptionField,
   permissions: permissionsField,
-});
+}).strict();
 
 export const updateRoleSchema = z.object({
   name: nameField,
@@ -117,11 +118,11 @@ export const updateRoleSchema = z.object({
   expectedUpdatedAt: z
     .string()
     .datetime({ offset: true, message: "expectedUpdatedAt must be an ISO timestamp" }),
-});
+}).strict();
 
 export const duplicateRoleSchema = z.object({
   name: nameField,
-});
+}).strict();
 
 export const roleIdParamSchema = z.object({ id: z.string().uuid() });
 

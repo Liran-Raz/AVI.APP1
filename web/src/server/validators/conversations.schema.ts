@@ -24,17 +24,17 @@ export const createGroupSchema = z.object({
     .array(z.string().uuid("Invalid member id"))
     .max(GROUP_MEMBERS_MAX, "Too many members")
     .default([]),
-});
+}).strict();
 export type CreateGroupPayload = z.infer<typeof createGroupSchema>;
 
 // PATCH /api/conversations/[conversationId] — rename (admin only, enforced in DB).
-export const renameGroupSchema = z.object({ title: groupTitle });
+export const renameGroupSchema = z.object({ title: groupTitle }).strict();
 export type RenameGroupPayload = z.infer<typeof renameGroupSchema>;
 
 // POST /api/conversations/[conversationId]/members — add a member (admin only).
 export const addGroupMemberSchema = z.object({
   userId: z.string().uuid("Invalid member id"),
-});
+}).strict();
 export type AddGroupMemberPayload = z.infer<typeof addGroupMemberSchema>;
 
 // Route params.

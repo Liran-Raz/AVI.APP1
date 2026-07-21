@@ -40,7 +40,7 @@ export const documentLineSchema = z.object({
     }),
   unitPrice: agorotField, // agorot, ex-VAT
   lineDiscount: agorotField.optional().default(0),
-});
+}).strict();
 
 export const documentPaymentSchema = z
   .object({
@@ -55,6 +55,7 @@ export const documentPaymentSchema = z
     cardTxType: optionalNullable(z.number().int().min(1).max(5)),
     reference: optionalNullable(z.string().trim().max(50)),
   })
+  .strict()
   .refine(
     (p) =>
       p.method !== 2 ||
@@ -85,6 +86,7 @@ export const createDocumentSchema = z
     lines: z.array(documentLineSchema).max(100).default([]),
     payments: z.array(documentPaymentSchema).max(50).default([]),
   })
+  .strict()
   .refine((d) => d.clientId || d.buyerName, {
     message: "Either a client or a buyer name is required",
   });
@@ -101,6 +103,7 @@ export const updateDocumentSchema = z
     lines: z.array(documentLineSchema).max(100).optional(), // replace-all
     payments: z.array(documentPaymentSchema).max(50).optional(), // replace-all
   })
+  .strict()
   .refine((obj) => Object.keys(obj).length > 0, {
     message: "At least one field is required for update",
   });
@@ -111,7 +114,7 @@ export const updateDocumentSchema = z
 
 export const cancelDocumentSchema = z.object({
   reason: z.string().trim().min(1, "Cancel reason is required").max(300),
-});
+}).strict();
 
 const searchField = z.preprocess(
   (v) => {
@@ -132,6 +135,8 @@ const offsetField = z.preprocess(
   z.number().int().min(0).default(0),
 );
 
+// NOT .strict(): the route parses Object.fromEntries(searchParams), so an
+// unrelated query param (e.g. utm_source) must strip, not 400.
 export const listDocumentsQuerySchema = z.object({
   docType: docTypeSchema.optional(),
   status: z.enum(["draft", "issued", "cancelled", "all"]).default("all"),

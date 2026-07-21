@@ -35,19 +35,19 @@ const timestampField = z.string().max(40);
 const consoleErrorEntrySchema = z.object({
   message: z.string().max(500),
   timestamp: timestampField,
-});
+}).strict();
 
 const failedRequestEntrySchema = z.object({
   url: z.string().max(300),
   method: z.string().max(10),
   status: z.number().int().optional(),
   timestamp: timestampField,
-});
+}).strict();
 
 const actionEntrySchema = z.object({
   label: z.string().max(200),
   timestamp: timestampField,
-});
+}).strict();
 
 // Caps mirror the ring-buffer sizes in lib/bug-report-tracker.ts — kept in
 // sync manually (both are small, stable constants).
@@ -57,6 +57,7 @@ const clientLogsSchema = z
     failedRequests: z.array(failedRequestEntrySchema).max(20).default([]),
     actionTrail: z.array(actionEntrySchema).max(30).default([]),
   })
+  .strict()
   .default({ consoleErrors: [], failedRequests: [], actionTrail: [] });
 
 export const createBugReportSchema = z.object({
@@ -65,7 +66,7 @@ export const createBugReportSchema = z.object({
   pageUrl: z.string().trim().min(1, "pageUrl is required").max(500),
   userAgent: z.string().trim().max(500).nullish(),
   clientLogs: clientLogsSchema,
-});
+}).strict();
 
 export type CreateBugReportPayload = z.infer<typeof createBugReportSchema>;
 export type ClientLogsPayload = z.infer<typeof clientLogsSchema>;

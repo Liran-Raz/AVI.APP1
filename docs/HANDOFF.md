@@ -1,4 +1,4 @@
-# AVI.APP — Session Handoff (2026-07-21)
+# AVI.APP — Session Handoff (2026-07-21, evening)
 
 **You are continuing AVI.APP from a fresh chat.** Read this top-to-bottom first.
 Deep detail lives in the auto-loaded memory (`project_avi_app.md`,
@@ -6,8 +6,10 @@ Deep detail lives in the auto-loaded memory (`project_avi_app.md`,
 `project_security_audit.md`) and in the git-tracked backlog
 (`docs/DEV_TRACKING.md`) — this file is the fast "where we are + how to continue"
 brief. **Load the `avi-app-architecture` skill before touching code.** main is
-`a342083`, clean, no open PR of ours (a stale docs PR #78 from 2026-07-14 is
-unrelated — review/close at will).
+`b654287`; **[PR #106](https://github.com/Liran-Raz/AVI.APP1/pull/106) (security
+R3, branch `security/r3-ratelimit-csp-strict`) is OPEN awaiting Liran's merge +
+the manual apply of migration `0030`** (operator package in the PR body). The
+stale docs PR #78 was closed 2026-07-21 (branch kept).
 
 ## 🛡️ MOST RECENT — DEV-029 security audit 2 + write-hardening (R1+R2 LIVE, R3 remains)
 Prompted by Liran's "Supabase vs Google — which is safer?" fear. An **LLM council
@@ -32,19 +34,35 @@ the Next service layer while tables kept permissive RLS + write grants to
   (#7), and swaps 12 deprecated-helper policies (#2). A **new permanent CI job
   `validate-write-hardening`** proves behaviorally on real Postgres that every
   direct-PostgREST attack is BLOCKED and legit owner/member writes PASS.
-- **⏳ R3 (P2, NOT started):** #8 rate-limiter fail-open (assert `UPSTASH_*` in
-  prod), #9 CSP Report-Only→enforced, + info (`.strict()` zod, org-pin
-  `clients.handling_user_id` FK). **7/9 findings closed + live; R3 remains.**
-- **Numbering:** security took `0029`; the deferred attachments feature moves to
-  `0030`. Full detail: memory `project_security_audit.md` (top section) +
-  DEV_TRACKING DEV-029.
+- **🟡 R3 SHIPPED TO [PR #106](https://github.com/Liran-Raz/AVI.APP1/pull/106)
+  (2026-07-21, awaiting merge + operator apply of `0030`):** #8 rate-limiter
+  fail-CLOSED in production (missing `UPSTASH_*` ⇒ typed 503; Preview stays
+  fail-open by design; transient Redis errors stay fail-open — availability),
+  #9 CSP Report-Only→**ENFORCED pragmatic** (connect-src blocks exfiltration +
+  frame-ancestors/form-action/object-src/base-uri; script/style keep
+  'unsafe-inline' — full nonce lockdown logged as **DEV-030**, P3; dev/preview
+  branches for HMR/vercel.live never reach prod; live-verified 0 violations on
+  all public pages incl. form-submit + lang toggle + a11y widget), `.strict()`
+  on **46 input schemas** (unknown key ⇒ 400; deliberate exclusions with
+  in-code comments: createTaskSchema legacy strip-contract, 5 fromEntries query
+  schemas, path params; zero client↔schema mismatches), and **migration
+  `0030_clients_handler_org_pin.sql`** (composite FK pins the client handler to
+  a same-org membership; validated on real local PG17 8/8 + CI steps added to
+  `validate-write-hardening`; NOT applied — Liran runs it, package in the PR).
+  Gate: tsc 0 · lint 0 · **622 tests** (+55) · probes green. **After merge +
+  apply: 9/9 findings + both info items closed — the audit is fully exhausted.**
+- **Numbering:** security took `0029` + `0030`; the deferred attachments
+  feature moves to `0031`. Full detail: memory `project_security_audit.md`
+  (top section) + DEV_TRACKING DEV-029 + DEV-030.
 
 ## ⏳ MOST TIME-SENSITIVE — DEV-026 R5 email (check FIRST)
-The ITA sandbox-portal approval email (for חשבוניות-ישראל R5) was expected
-**~2026-07-19/20** — i.e. **now**. Liran registered at liran995@gmail.com
-(check spam; IBM API Connect). **Ask Liran whether it arrived**; if yes, R5 is
-the next build (see the DEV-026 R5 section below). If not, escalate to
-ITAOpenApiSupport@taxes.gov.il after 1–2 business days.
+The ITA sandbox-portal approval email (for חשבוניות-ישראל R5): **as of the
+2026-07-21 evening session it had NOT arrived** (Liran checked, incl. spam) —
+past the expected 1–2 business days. **An escalation email to
+ITAOpenApiSupport@taxes.gov.il (CC OpenAPI@taxes.gov.il) was drafted and handed
+to Liran to send** from liran995@gmail.com. Next session: ask whether the
+approval (or a support reply) arrived; when it lands, R5 is the next build
+(see the DEV-026 R5 section below).
 
 ## 🟢 Accessibility (DEV-027 + DEV-028) — DONE + LIVE (statement + widget + ALL code-fixes)
 Statement (PR #97/#99) + widget (PR #98) + the REAL code-fixes in **4 rounds

@@ -58,7 +58,7 @@ export const createClientSchema = z.object({
   // "Gorem metapel" (handling staff member, Stage 12/DEV-019 R2): optional +
   // editable. The service validates same-org active membership before write.
   handlingUserId: optionalNullable(handlingUserIdField),
-});
+}).strict();
 
 export const updateClientSchema = z
   .object({
@@ -71,6 +71,7 @@ export const updateClientSchema = z
     notes: optionalNullable(notesField),
     handlingUserId: optionalNullable(handlingUserIdField),
   })
+  .strict()
   .refine((obj) => Object.keys(obj).length > 0, {
     message: "At least one field is required for update",
   });
@@ -112,6 +113,8 @@ const offsetField = z.preprocess(
   z.number().int().min(0).default(0),
 );
 
+// NOT .strict(): the route parses Object.fromEntries(searchParams), so an
+// unrelated query param (e.g. utm_source) must strip, not 400.
 export const listClientsQuerySchema = z.object({
   search: searchField,
   businessType: businessTypeSchema.optional(),
