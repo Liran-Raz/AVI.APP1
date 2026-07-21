@@ -6,11 +6,12 @@ Deep detail lives in the auto-loaded memory (`project_avi_app.md`,
 `project_security_audit.md`) and in the git-tracked backlog
 (`docs/DEV_TRACKING.md`) — this file is the fast "where we are + how to continue"
 brief. **Load the `avi-app-architecture` skill before touching code.** main is
-`1097aa6` ([PR #106](https://github.com/Liran-Raz/AVI.APP1/pull/106) security R3
-squash-merged 2026-07-21 on Liran's word, prod deploy verified live). **ONE
-operator action pending: apply migration `0030` in the Supabase SQL Editor**
-(package in the PR #106 body) — then DEV-029 is 9/9 closed. The stale docs
-PR #78 was closed 2026-07-21 (branch kept).
+`73f741e` ([PR #106](https://github.com/Liran-Raz/AVI.APP1/pull/106) security R3
+squash-merged 2026-07-21 on Liran's word + docs closure; prod deploy verified
+live). **Migration `0030` APPLIED + VERIFIED in Production the same evening**
+(operator Liran; postflight returned the exact FK definition) — **DEV-029 is
+FULLY CLOSED: 9/9 findings + both info items live.** The stale docs PR #78 was
+closed 2026-07-21 (branch kept).
 
 ## 🛡️ MOST RECENT — DEV-029 security audit 2 + write-hardening (R1+R2 LIVE, R3 remains)
 Prompted by Liran's "Supabase vs Google — which is safer?" fear. An **LLM council
@@ -39,7 +40,8 @@ the Next service layer while tables kept permissive RLS + write grants to
   → main `1097aa6`, 2026-07-21; prod smoke green incl. LIVE proofs: enforced
   CSP header serving in its production variant, unknown-key body ⇒ 400
   "Unrecognized key", signin ⇒ 401 clean [not 503 ⇒ Upstash configured].
-  Remaining: operator apply of `0030` — then 9/9):** #8 rate-limiter
+  **`0030` APPLIED + VERIFIED in prod the same evening — 9/9 + info DONE, the
+  audit is fully exhausted**):** #8 rate-limiter
   fail-CLOSED in production (missing `UPSTASH_*` ⇒ typed 503; Preview stays
   fail-open by design; transient Redis errors stay fail-open — availability),
   #9 CSP Report-Only→**ENFORCED pragmatic** (connect-src blocks exfiltration +
@@ -531,7 +533,7 @@ Critical do-nots:
 | GitHub repo | https://github.com/Liran-Raz/AVI.APP1 |
 | Supabase project ref | `xsuvwihfcxinorzutbve` (region Central EU / Frankfurt) |
 | Domain / mail | `aviapp1.com` at Cloudflare; Resend Verified (sends via `send.aviapp1.com`); Supabase Auth Custom SMTP → Resend. All mail from `AVI.APP <noreply@aviapp1.com>` |
-| Migrations applied in Prod | through **0026** (manual apply; `0024` conversation model · `0025` group-management RPCs · `0026` read-receipts + edit-policy hardening) |
+| Migrations applied in Prod | through **0030** (manual apply; `0027` invoicing foundation · `0028` org MFA policy · `0029` security write-hardening · `0030` clients-handler org-pin). Next free number: **0031** (reserved for the attachments feature) |
 | Vercel env (Production scope only) | `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `NEXT_PUBLIC_SITE_URL=https://www.aviapp1.com`, `MAIL_FROM`, `RESEND_API_KEY`, `BUG_REPORT_NOTIFY_EMAIL`. **No service role key.** |
 | Google OAuth | **enabled in Production** (DEV-017, 2026-07-11) — `/api/auth/oauth/google` PKCE; live-tested with an existing user |
 | Service role key | not used, not stored (intentional) |
