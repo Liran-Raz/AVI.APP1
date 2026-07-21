@@ -1,12 +1,43 @@
-# AVI.APP — Session Handoff (2026-07-19)
+# AVI.APP — Session Handoff (2026-07-21)
 
 **You are continuing AVI.APP from a fresh chat.** Read this top-to-bottom first.
 Deep detail lives in the auto-loaded memory (`project_avi_app.md`,
-`feature_dev010_i18n.md`, `feature_dev013_2fa.md`, `feature_accessibility.md`)
-and in the git-tracked backlog (`docs/DEV_TRACKING.md`) — this file is the fast
-"where we are + how to continue" brief. **Load the `avi-app-architecture` skill
-before touching code.** main is `e8720df`, clean, no open PR of ours (a stale
-docs PR #78 from 2026-07-14 is unrelated — review/close at will).
+`feature_dev010_i18n.md`, `feature_dev013_2fa.md`, `feature_accessibility.md`,
+`project_security_audit.md`) and in the git-tracked backlog
+(`docs/DEV_TRACKING.md`) — this file is the fast "where we are + how to continue"
+brief. **Load the `avi-app-architecture` skill before touching code.** main is
+`a342083`, clean, no open PR of ours (a stale docs PR #78 from 2026-07-14 is
+unrelated — review/close at will).
+
+## 🛡️ MOST RECENT — DEV-029 security audit 2 + write-hardening (R1+R2 LIVE, R3 remains)
+Prompted by Liran's "Supabase vs Google — which is safer?" fear. An **LLM council
+said STAY on Supabase** (SaaS breaches are app-level, not vendor infra; Firebase
+would add a 2nd isolation model + a browser DB SDK; the migration itself is the
+risk). Then a **4-agent red-team code audit**: 🟢 **crown-jewel cross-tenant
+isolation is SOLID (0 leak)**; 9 findings, **none cross-tenant** — 1 HIGH (#1
+manager→owner via a direct PostgREST write; root cause = role checks lived only in
+the Next service layer while tables kept permissive RLS + write grants to
+`authenticated`) + Med/Low. Fixed in priority rounds (plan
+`~/.claude/plans/jazzy-inventing-blanket.md`):
+- **🟢 R2 (app-layer, [PR #104], main `9745aa3`, LIVE):** #3 open-redirect on
+  `/login` (`sanitizeNextPath`, hardened to also block `\`, extracted to
+  `web/src/lib/safe-path.ts`) + #6 CSV formula-injection in `reports.service.toCsv`
+  (prefix `'` on text cells, with a numeric guard that keeps negative amounts real).
+- **🟢🟢 R1 (DB write-hardening, migration `0029`, [PR #105], main `a342083`;
+  APPLIED + VERIFIED IN PROD by Liran, postflight 3/4/0):** `SECURITY INVOKER`
+  guard triggers with a `current_user='postgres'` bypass (precedent: 0027) that
+  mirror `team.service` 1:1 → **ZERO app-code change**. Adds `guard_membership_write`
+  + `revoke insert,delete` on memberships, `guard_invitation_role` (#4), split
+  client_contacts policy (#5), `guard_client_active` + `revoke delete` on clients
+  (#7), and swaps 12 deprecated-helper policies (#2). A **new permanent CI job
+  `validate-write-hardening`** proves behaviorally on real Postgres that every
+  direct-PostgREST attack is BLOCKED and legit owner/member writes PASS.
+- **⏳ R3 (P2, NOT started):** #8 rate-limiter fail-open (assert `UPSTASH_*` in
+  prod), #9 CSP Report-Only→enforced, + info (`.strict()` zod, org-pin
+  `clients.handling_user_id` FK). **7/9 findings closed + live; R3 remains.**
+- **Numbering:** security took `0029`; the deferred attachments feature moves to
+  `0030`. Full detail: memory `project_security_audit.md` (top section) +
+  DEV_TRACKING DEV-029.
 
 ## ⏳ MOST TIME-SENSITIVE — DEV-026 R5 email (check FIRST)
 The ITA sandbox-portal approval email (for חשבוניות-ישראל R5) was expected
