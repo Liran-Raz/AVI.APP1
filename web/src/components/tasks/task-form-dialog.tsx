@@ -35,6 +35,8 @@ import {
   type TaskDTO,
   type UpdateTaskPayload,
 } from "@/lib/api-client";
+import { type Capability } from "@/lib/capabilities";
+import { TaskFilesSection } from "@/components/storage/task-files-section";
 import { useT } from "@/i18n/locale-provider";
 import type { MessageKey } from "@/i18n/messages-types";
 
@@ -57,6 +59,10 @@ type Props = {
   // When opened from the calendar, default the due-date checkbox ON (a task
   // with no due date wouldn't appear on the calendar).
   defaultWithDueDate?: boolean;
+  // DEV-032: when STORAGE_UI is on, the EDIT dialog gains a "קבצים" section.
+  // Off => the dialog is byte-for-byte unchanged.
+  storageEnabled?: boolean;
+  capabilities?: Capability[];
   onSaved: (saved: TaskDTO) => void;
 };
 
@@ -108,14 +114,25 @@ export function TaskFormDialog({
   members,
   currentUserId,
   defaultWithDueDate = false,
+  storageEnabled = false,
+  capabilities = [],
   onSaved,
 }: Props) {
   const t = useT();
   const formKey = mode === "edit" ? (initial?.id ?? "edit") : "create";
 
+  // Files attach to an EXISTING task, so the section shows in edit mode only.
+  const showFiles = storageEnabled && mode === "edit" && initial !== null;
+  const clientName =
+    initial?.clientId
+      ? (clients.find((c) => c.id === initial.clientId)?.name ?? null)
+      : null;
+  const nameFor = (userId: string | null) =>
+    userId ? (members.find((m) => m.id === userId)?.fullName ?? null) : null;
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-xl">
+      <DialogContent className="sm:max-w-xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>
             {mode === "create" ? t("tasks.newTask") : t("tasks.form.editTitle")}
@@ -141,6 +158,17 @@ export function TaskFormDialog({
             onOpenChange(false);
           }}
         />
+
+        {showFiles && initial && (
+          <div className="border-t border-border pt-4 mt-1">
+            <TaskFilesSection
+              taskId={initial.id}
+              clientName={clientName}
+              capabilities={capabilities}
+              nameFor={nameFor}
+            />
+          </div>
+        )}
       </DialogContent>
     </Dialog>
   );

@@ -26,6 +26,7 @@ import {
 import { WeekGrid } from "./week-grid";
 import { TaskFormDialog } from "@/components/tasks/task-form-dialog";
 import { useLiveTaskRefresh } from "@/components/tasks/use-live-task-refresh";
+import { type Capability } from "@/lib/capabilities";
 
 type Props = {
   initialItems: TaskDTO[];
@@ -33,6 +34,8 @@ type Props = {
   initialMembers: MemberDTO[];
   currentUserId: string;
   initialWeekStartIso: string;
+  storageEnabled: boolean; // DEV-032: reveal the task files section (edit dialog)
+  capabilities: Capability[];
 };
 
 export function CalendarPage({
@@ -41,6 +44,8 @@ export function CalendarPage({
   initialMembers,
   currentUserId,
   initialWeekStartIso,
+  storageEnabled,
+  capabilities,
 }: Props) {
   const t = useT();
   const localeTag = intlLocale(useLocale());
@@ -212,6 +217,8 @@ export function CalendarPage({
         members={members}
         currentUserId={currentUserId}
         defaultWithDueDate
+        storageEnabled={storageEnabled}
+        capabilities={capabilities}
         onSaved={handleSaved}
       />
     </div>

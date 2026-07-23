@@ -3,6 +3,8 @@ import { redirect } from "next/navigation";
 import { CalendarPage } from "@/components/calendar/calendar-page";
 import { startOfWeek, endOfWeek } from "@/components/calendar/calendar-utils";
 import { getCurrentSession, type FullSession } from "@/server/auth/session";
+import { resolveCapabilities } from "@/server/auth/authorization";
+import { isStorageUiEnabled } from "@/server/auth/storage.flags";
 import * as clientsService from "@/server/services/clients.service";
 import * as tasksService from "@/server/services/tasks.service";
 import * as teamService from "@/server/services/team.service";
@@ -40,6 +42,8 @@ export default async function CalendarRoute() {
       initialMembers={membersResult.items}
       currentUserId={fullSession.profile.id}
       initialWeekStartIso={ws.toISOString()}
+      storageEnabled={isStorageUiEnabled()}
+      capabilities={resolveCapabilities(fullSession)}
     />
   );
 }

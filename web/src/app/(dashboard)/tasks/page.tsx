@@ -2,6 +2,8 @@ import { redirect } from "next/navigation";
 
 import { TasksPage } from "@/components/tasks/tasks-page";
 import { getCurrentSession, type FullSession } from "@/server/auth/session";
+import { resolveCapabilities } from "@/server/auth/authorization";
+import { isStorageUiEnabled } from "@/server/auth/storage.flags";
 import * as clientsService from "@/server/services/clients.service";
 import * as tasksService from "@/server/services/tasks.service";
 import * as teamService from "@/server/services/team.service";
@@ -39,6 +41,8 @@ export default async function TasksRoute() {
       initialMembers={membersResult.items}
       currentUserId={fullSession.profile.id}
       currentUserRole={fullSession.activeRole}
+      storageEnabled={isStorageUiEnabled()}
+      capabilities={resolveCapabilities(fullSession)}
     />
   );
 }

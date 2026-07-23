@@ -36,6 +36,7 @@ import type { MessageKey } from "@/i18n/messages-types";
 
 import { TaskCard } from "./task-card";
 import { TaskFormDialog } from "./task-form-dialog";
+import { type Capability } from "@/lib/capabilities";
 import { KANBAN_COLUMNS, kanbanColumnForStatus } from "./task-utils";
 import { useLiveTaskRefresh } from "./use-live-task-refresh";
 
@@ -48,6 +49,8 @@ type Props = {
   initialMembers: MemberDTO[]; // for the assignee picker
   currentUserId: string; // default assignee on create + own board
   currentUserRole: MeRole; // owner/admin may view another member's board
+  storageEnabled: boolean; // DEV-032: reveal the task files section (edit dialog)
+  capabilities: Capability[];
 };
 
 export function TasksPage({
@@ -56,6 +59,8 @@ export function TasksPage({
   initialMembers,
   currentUserId,
   currentUserRole,
+  storageEnabled,
+  capabilities,
 }: Props) {
   const t = useT();
   const [items, setItems] = useState<TaskDTO[]>(initialItems);
@@ -419,6 +424,8 @@ export function TasksPage({
         clients={clients}
         members={members}
         currentUserId={currentUserId}
+        storageEnabled={storageEnabled}
+        capabilities={capabilities}
         onSaved={handleSaved}
       />
     </div>
