@@ -91,18 +91,37 @@ folder model + `task-files-preview.html`).
   re-read across instances, race, DEK wrap/unwrap, dispose-zeroize).** Gate: **tsc 0 ·
   lint 0 · 661 tests (+39)**. NO new dependency (SDK behind the owner gate). Commit `b3af118`.
 
+- **App layers — BACKEND sub-round (a) DONE (commit `33acf60`; mirror the invoicing
+  `documents` vertical).** `encryption-keys.repository.ts` (concrete `KeyStore` over
+  the 4 key RPCs, maps 23505→`KeyRaceError`, + `revokeClientKey`) · `attachments.repository.ts`
+  (`create_attachment` RPC + RLS reads per scope/folder [folders + aggregates] +
+  Supabase Storage upload/download/remove [bucket `attachments`] + narrow archive UPDATE)
+  · `attachments.service.ts` (routing [task-with-client→the client], envelope flow,
+  read-ONLY key path on download [shredded key→404, never creates], capability gates,
+  DTO strip, crypto-shred) · `attachments.schema.ts` (MIME allowlist + **magic-byte sniff**
+  rejecting HTML/SVG/script + declared↔bytes mismatch, 4MB cap, filename sanitizer) ·
+  routes `GET/POST /api/attachments`, `PATCH [id]`, `GET [id]/download` (stream,
+  `attachment`+nosniff, `runtime=nodejs`) · apiClient FormData primitive + `attachments`
+  block · `attachments.*` perms/grants + POST_0012 parity + custom-role exclusion +
+  413/415 + `storage.flags.ts` + `database.types` hand-add + aliases. Also hardened the
+  key layer: local office key carries `kms_key_id="local"` (satisfies the office CHECK),
+  read-only hierarchy resolves + `KeyUnavailableError`. **Tests: schema + a full
+  upload→download envelope round-trip (real crypto, mocked repos) proving ciphertext≠
+  plaintext, routing, 415, list, archive+capability gate, crypto-shred→404.** Gate:
+  **tsc 0 · lint 0 · 694 tests (+33).** NO DB applied; STORAGE_UI off.
+
 **🔜 NEXT (resume here, in order):**
-1. **App layers** (mirror the invoicing `documents` vertical): the concrete
-   `encryption-keys.repository.ts` (implements `KeyStore` over the definer RPCs) +
-   `attachments.repository.ts` (Storage upload/download + aggregate queries) →
-   `attachments.service.ts` (routing decision, orchestrates crypto+keys+storage+repo,
-   capability gates, DTO mapping) → validator (`attachments.schema.ts`, size/MIME caps,
-   filename sanitizer) → API routes → apiClient (add a **FormData primitive**) → UI
-   (reusable Attachments component + client Tabs tab + task edit-dialog section
-   [Option A] + `/storage` office-library page + nav + `nav.storage` i18n). Add
-   `attachments.*` permissions + grants + parity tests. `storage.flags.ts`. Add
-   413/415 to app-error. Hand-add `attachments` to `database.types.ts`.
+1. **App layers — UI sub-round (b):** the reusable Attachments component from the
+   approved mockup (folder chips, list/grid toggle, dropzone, rows with date+time+
+   uploader, encryption pill) + a "קבצים" `<Tabs>` tab on the client page + a section in
+   the task EDIT DIALOG (Option A) + the `/storage` office-library page + nav entry +
+   `nav.storage` i18n (he/en). All via `apiClient.attachments.*` only.
 2. R1b Cloud Run media path (25MB) — after R1a proven.
+
+**Owner gates for live QA of R1a** (each stop-and-confirm; the code above ships inert
+behind STORAGE_UI without them): apply migration `0031` · create the `attachments`
+Storage bucket + storage.objects RLS · set `AVI_MASTER_KEK_B64` locally (dev) or AWS KMS
+(prod). No `@aws-sdk/client-kms` dependency yet (owner gate).
 
 **Owner gates (each stop-and-confirm):** apply 0031 · Storage bucket + RLS runbook ·
 AWS KMS setup + `@aws-sdk/client-kms` dep (~$1/key/mo; dev unblocked via
