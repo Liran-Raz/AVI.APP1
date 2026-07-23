@@ -110,18 +110,30 @@ folder model + `task-files-preview.html`).
   plaintext, routing, 415, list, archive+capability gate, crypto-shred→404.** Gate:
   **tsc 0 · lint 0 · 694 tests (+33).** NO DB applied; STORAGE_UI off.
 
-**🔜 NEXT (resume here, in order):**
-1. **App layers — UI sub-round (b):** the reusable Attachments component from the
-   approved mockup (folder chips, list/grid toggle, dropzone, rows with date+time+
-   uploader, encryption pill) + a "קבצים" `<Tabs>` tab on the client page + a section in
-   the task EDIT DIALOG (Option A) + the `/storage` office-library page + nav entry +
-   `nav.storage` i18n (he/en). All via `apiClient.attachments.*` only.
-2. R1b Cloud Run media path (25MB) — after R1a proven.
+- **App layers — UI sub-round (b) DONE (commits `92a0a4f` part 1 + `7a91a89` part 2).**
+  `components/storage/*`: `attachments-panel.tsx` (the reusable panel — folder-agnostic
+  bar+count, list/grid toggle, encryption pill, dropzone [drag+click], rows with type
+  badge + size/uploader/datetime, download `<a>` cookie-auth, archive menu; derived-loading
+  by fetch-token to dodge react-hooks set-state-in-effect) · `folder-chips.tsx` ·
+  `client-files-tab.tsx` (client 4 folders) · `office-library.tsx` (office 5 folders) ·
+  `task-files-section.tsx` (route note + panel). `app/(dashboard)/storage/page.tsx` (flag+
+  attachments.view gate). Wiring: `app-shell.tsx` nav "ספריית המשרד" (showStorageNav) +
+  `layout.tsx` computes it; `client-detail.tsx` gains a "קבצים" `<Tabs>` tab when
+  `storageEnabled` (off = unchanged), `clients/[id]/page.tsx` passes it; the task EDIT
+  dialog gets the section (Option A) with `storageEnabled`+`capabilities` threaded through
+  tasks-page + calendar-page + both server pages. i18n `nav.storage` + ~30 `storage.*`
+  keys in he+en (parity green). A small backend follow-up: optional `category` filter on
+  the client list scope. **All via `apiClient.attachments.*` (no Supabase in the client).**
+  Gate: **tsc 0 · lint 0 · 694 tests.** STORAGE_UI off; no DB applied.
 
-**Owner gates for live QA of R1a** (each stop-and-confirm; the code above ships inert
-behind STORAGE_UI without them): apply migration `0031` · create the `attachments`
-Storage bucket + storage.objects RLS · set `AVI_MASTER_KEK_B64` locally (dev) or AWS KMS
-(prod). No `@aws-sdk/client-kms` dependency yet (owner gate).
+**🔜 NEXT (resume here):** **R1a is CODE-COMPLETE behind STORAGE_UI (DB + encryption +
+backend + UI).** The only remaining build is **R1b — the Cloud Run media path (25MB)**,
+after R1a is proven live.
+
+**Owner gates for live QA of R1a** (each stop-and-confirm; the code ships inert behind
+STORAGE_UI without them): apply migration `0031` · create the `attachments` Storage bucket
++ storage.objects RLS · set `AVI_MASTER_KEK_B64` locally (dev) or AWS KMS (prod). No
+`@aws-sdk/client-kms` dependency yet (owner gate). Then flip `STORAGE_UI=1` locally to QA.
 
 **Owner gates (each stop-and-confirm):** apply 0031 · Storage bucket + RLS runbook ·
 AWS KMS setup + `@aws-sdk/client-kms` dep (~$1/key/mo; dev unblocked via
