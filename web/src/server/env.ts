@@ -32,6 +32,15 @@ const serverEnvSchema = z.object({
     .url("UPSTASH_REDIS_REST_URL must be a valid URL")
     .optional(),
   UPSTASH_REDIS_REST_TOKEN: z.string().min(1).optional(),
+  // Encrypted file storage (DEV-032) — server-only, all OPTIONAL. The key
+  // provider reads these directly from process.env (like the email adapter) so
+  // the feature stays inert until configured; they are declared here for typing
+  // and web/.env.local.example. NEVER prefix NEXT_PUBLIC_ — key material / ARNs.
+  //   Production: AWS KMS master key (il-central-1). Dev/test: AVI_MASTER_KEK_B64
+  //   (base64 of a 32-byte key). See web/src/server/keys/key-provider.factory.ts.
+  AVI_KMS_MASTER_KEY_ARN: z.string().min(1).optional(),
+  AVI_KMS_REGION: z.string().min(1).default("il-central-1"),
+  AVI_MASTER_KEK_B64: z.string().min(1).optional(),
 });
 
 export type ServerEnv = z.infer<typeof serverEnvSchema>;
