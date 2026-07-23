@@ -539,6 +539,7 @@ Critical do-nots:
 | GitHub repo | https://github.com/Liran-Raz/AVI.APP1 |
 | Supabase project ref | `xsuvwihfcxinorzutbve` (region Central EU / Frankfurt) |
 | Domain / mail | `aviapp1.com` at Cloudflare; Resend Verified (sends via `send.aviapp1.com`); Supabase Auth Custom SMTP → Resend. All mail from `AVI.APP <noreply@aviapp1.com>` |
+| Cloudflare edge (DEV-031, 2026-07-23) | **Proxy ON (orange)** on the 2 Vercel CNAMEs (`www` + apex) — mail records stay DNS-only. **SSL = Full (strict)**; **Bot Fight Mode** + **Page Shield** on; DDoS mitigation auto. Serves via CF Tel-Aviv edge (`CF-RAY …-TLV`) → Vercel (fra1). Our enforced CSP passes through intact + is compatible with CF's same-origin `/cdn-cgi/` JS-detection script. Config-only, instantly reversible (cloud→grey). |
 | Migrations applied in Prod | through **0030** (manual apply; `0027` invoicing foundation · `0028` org MFA policy · `0029` security write-hardening · `0030` clients-handler org-pin). Next free number: **0031** (reserved for the attachments feature) |
 | Vercel env (Production scope only) | `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `NEXT_PUBLIC_SITE_URL=https://www.aviapp1.com`, `MAIL_FROM`, `RESEND_API_KEY`, `BUG_REPORT_NOTIFY_EMAIL`. **No service role key.** |
 | Google OAuth | **enabled in Production** (DEV-017, 2026-07-11) — `/api/auth/oauth/google` PKCE; live-tested with an existing user |
