@@ -30,6 +30,13 @@ import {
   type ContactDTO,
   type MemberDTO,
 } from "@/lib/api-client";
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "@/components/ui/tabs";
+import { ClientFilesTab } from "@/components/storage/client-files-tab";
 import { hasCapability, PERMISSIONS, type Capability } from "@/lib/capabilities";
 import { cn } from "@/lib/utils";
 import { useT } from "@/i18n/locale-provider";
@@ -44,6 +51,9 @@ type Props = {
   handlerName: string | null; // resolved from client.handlingUserId server-side
   members: MemberDTO[]; // for the client-edit dialog's "gorem metapel" picker
   capabilities: Capability[];
+  // When STORAGE_UI is on, the page gains a "קבצים" tab (DEV-032). When off,
+  // the client page renders exactly as before (contacts only, no tabs).
+  storageEnabled: boolean;
 };
 
 export function ClientDetail({
@@ -52,6 +62,7 @@ export function ClientDetail({
   handlerName,
   members,
   capabilities,
+  storageEnabled,
 }: Props) {
   const t = useT();
   // Display-only hint: contacts.delete is Owner/Manager-only. The server
@@ -116,6 +127,50 @@ export function ClientDetail({
       }
     }
   }
+
+  const nameFor = (userId: string | null) =>
+    userId ? (members.find((m) => m.id === userId)?.fullName ?? null) : null;
+
+  const contactsBlock = (
+    <div>
+      <div className="flex items-center justify-between mb-3">
+        <h2 className="text-lg font-semibold">
+          {t("clients.detail.contactsTitle")}
+        </h2>
+        <Button onClick={handleAddClick} size="sm">
+          <Plus className="size-4" />
+          {t("clients.detail.addContact")}
+        </Button>
+      </div>
+
+      {contacts.length === 0 ? (
+        <div className="border border-dashed border-border rounded-lg glass-card shadow-card p-10 text-center">
+          <div className="size-10 mx-auto rounded-full bg-primary/10 text-primary flex items-center justify-center mb-3">
+            <UserSquare2 className="size-5" />
+          </div>
+          <p className="text-sm text-muted-foreground mb-3">
+            {t("clients.detail.emptyContacts")}
+          </p>
+          <Button onClick={handleAddClick} size="sm">
+            <Plus className="size-4" />
+            {t("clients.detail.addFirstContact")}
+          </Button>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {contacts.map((c) => (
+            <ContactCard
+              key={c.id}
+              contact={c}
+              canDelete={canDeleteContact}
+              onEdit={() => handleEditClick(c)}
+              onDelete={() => handleDelete(c)}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
 
   return (
     <div className="container mx-auto px-4 md:px-6 py-6 md:py-8 max-w-5xl">
@@ -203,45 +258,28 @@ export function ClientDetail({
         </div>
       </div>
 
-      {/* Contacts */}
-      <div>
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="text-lg font-semibold">
-            {t("clients.detail.contactsTitle")}
-          </h2>
-          <Button onClick={handleAddClick} size="sm">
-            <Plus className="size-4" />
-            {t("clients.detail.addContact")}
-          </Button>
-        </div>
-
-        {contacts.length === 0 ? (
-          <div className="border border-dashed border-border rounded-lg glass-card shadow-card p-10 text-center">
-            <div className="size-10 mx-auto rounded-full bg-primary/10 text-primary flex items-center justify-center mb-3">
-              <UserSquare2 className="size-5" />
-            </div>
-            <p className="text-sm text-muted-foreground mb-3">
-              {t("clients.detail.emptyContacts")}
-            </p>
-            <Button onClick={handleAddClick} size="sm">
-              <Plus className="size-4" />
-              {t("clients.detail.addFirstContact")}
-            </Button>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {contacts.map((c) => (
-              <ContactCard
-                key={c.id}
-                contact={c}
-                canDelete={canDeleteContact}
-                onEdit={() => handleEditClick(c)}
-                onDelete={() => handleDelete(c)}
-              />
-            ))}
-          </div>
-        )}
-      </div>
+      {storageEnabled ? (
+        <Tabs defaultValue="contacts">
+          <TabsList variant="line">
+            <TabsTrigger value="contacts">
+              {t("clients.detail.contactsTitle")}
+            </TabsTrigger>
+            <TabsTrigger value="files">{t("storage.filesTab")}</TabsTrigger>
+          </TabsList>
+          <TabsContent value="contacts" className="pt-4">
+            {contactsBlock}
+          </TabsContent>
+          <TabsContent value="files" className="pt-4">
+            <ClientFilesTab
+              clientId={client.id}
+              capabilities={capabilities}
+              nameFor={nameFor}
+            />
+          </TabsContent>
+        </Tabs>
+      ) : (
+        contactsBlock
+      )}
 
       <ContactFormDialog
         open={dialogOpen}

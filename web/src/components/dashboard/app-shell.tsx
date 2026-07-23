@@ -6,6 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import {
   BarChart3,
   CalendarDays,
+  FolderClosed,
   LayoutDashboard,
   ListChecks,
   LogOut,
@@ -79,6 +80,7 @@ export function AppShell({
   showDashboardNav = false,
   showInvoicingNav = false,
   showReportsNav = false,
+  showStorageNav = false,
   children,
 }: {
   profile: Profile;
@@ -101,6 +103,9 @@ export function AppShell({
   // Reveal the "דוחות" (reports, DEV-026 R4) nav entry. Gated server-side by
   // the INVOICING_UI flag AND reports.view (owner/manager). Default false.
   showReportsNav?: boolean;
+  // Reveal the "ספריית המשרד" (storage, DEV-032) nav entry. Gated server-side by
+  // the STORAGE_UI flag AND attachments.view. Default false => unchanged.
+  showStorageNav?: boolean;
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
@@ -182,6 +187,18 @@ export function AppShell({
     navItems = [
       ...navItems.slice(0, at),
       { href: "/reports", labelKey: "nav.reports", icon: BarChart3 },
+      ...navItems.slice(at),
+    ];
+  }
+  // Storage (DEV-032): right after "לקוחות" (clients) — files live alongside
+  // clients + tasks. Inserted after invoicing/reports so the order is
+  // clients → ספריית המשרד → הנהלת חשבונות → דוחות.
+  if (showStorageNav) {
+    const clientsIdx = navItems.findIndex((i) => i.href === "/clients");
+    const at = clientsIdx >= 0 ? clientsIdx + 1 : navItems.length;
+    navItems = [
+      ...navItems.slice(0, at),
+      { href: "/storage", labelKey: "nav.storage", icon: FolderClosed },
       ...navItems.slice(at),
     ];
   }

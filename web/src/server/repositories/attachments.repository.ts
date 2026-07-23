@@ -115,7 +115,7 @@ export async function findByIdAndOrgId(
 }
 
 export type ListScope =
-  | { kind: "client"; clientId: string }
+  | { kind: "client"; clientId: string; category?: AttachmentCategory }
   | { kind: "task"; taskId: string }
   | { kind: "office"; folder: OfficeFolder };
 
@@ -135,6 +135,7 @@ export async function listByScope(
       .eq("owner_kind", "client")
       .eq("client_id", scope.clientId)
       .is("archived_at", null);
+    if (scope.category) query = query.eq("category", scope.category);
   } else if (scope.kind === "task") {
     query = query.eq("source_task_id", scope.taskId).is("archived_at", null);
   } else {

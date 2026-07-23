@@ -188,7 +188,11 @@ export async function listAttachments(
 
   let scope: attachmentsRepo.ListScope;
   if (query.scope === "client") {
-    scope = { kind: "client", clientId: query.clientId as string };
+    scope = {
+      kind: "client",
+      clientId: query.clientId as string,
+      category: query.category,
+    };
   } else if (query.scope === "task") {
     scope = { kind: "task", taskId: query.taskId as string };
   } else {

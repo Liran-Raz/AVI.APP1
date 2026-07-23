@@ -240,6 +240,8 @@ export const listAttachmentsQuerySchema = z
     clientId: optionalUuid(),
     taskId: optionalUuid(),
     folder: z.enum(OFFICE_FOLDERS).optional(),
+    // Optional category filter for scope=client (one client folder at a time).
+    category: attachmentCategorySchema.optional(),
   })
   .refine((q) => q.scope !== "client" || Boolean(q.clientId), {
     message: "clientId is required when scope=client",

@@ -7,6 +7,7 @@ import { can } from "@/server/auth/authorization";
 import { PERMISSIONS } from "@/server/auth/permissions";
 import { isRoleManagementUiEnabled } from "@/server/auth/role-management.flags";
 import { isInvoicingUiEnabled } from "@/server/auth/invoicing.flags";
+import { isStorageUiEnabled } from "@/server/auth/storage.flags";
 import { canViewDashboard } from "@/server/services/dashboard.service";
 
 export default async function DashboardLayout({
@@ -57,6 +58,12 @@ export default async function DashboardLayout({
     isInvoicingUiEnabled() &&
     can(session as FullSession, PERMISSIONS.REPORTS_VIEW);
 
+  // Reveal the storage nav (DEV-032) — STORAGE_UI flag + attachments.view.
+  // Display-only; the /storage page + services re-check.
+  const showStorageNav =
+    isStorageUiEnabled() &&
+    can(session as FullSession, PERMISSIONS.ATTACHMENTS_VIEW);
+
   // DEV-013: the office requires 2FA but this member hasn't set it up →
   // HARD gate (Settings is the only reachable page until they enroll).
   // Defensive read: the require_mfa column lands with migration 0028.
@@ -73,6 +80,7 @@ export default async function DashboardLayout({
       showDashboardNav={showDashboardNav}
       showInvoicingNav={showInvoicingNav}
       showReportsNav={showReportsNav}
+      showStorageNav={showStorageNav}
     >
       <MfaEnforcementGate required={mfaSetupRequired}>
         {children}

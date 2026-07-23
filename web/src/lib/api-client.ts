@@ -546,6 +546,7 @@ export const apiClient = {
       clientId?: string;
       taskId?: string;
       folder?: OfficeFolder;
+      category?: AttachmentCategoryValue;
     }) =>
       getJson<{ items: AttachmentDTO[] }>(
         `/api/attachments${toQueryString(params)}`,
