@@ -1,17 +1,97 @@
-# AVI.APP — Session Handoff (2026-07-21, evening)
+# AVI.APP — Session Handoff (2026-07-24)
 
 **You are continuing AVI.APP from a fresh chat.** Read this top-to-bottom first.
 Deep detail lives in the auto-loaded memory (`project_avi_app.md`,
 `feature_dev010_i18n.md`, `feature_dev013_2fa.md`, `feature_accessibility.md`,
 `project_security_audit.md`) and in the git-tracked backlog
 (`docs/DEV_TRACKING.md`) — this file is the fast "where we are + how to continue"
-brief. **Load the `avi-app-architecture` skill before touching code.** main is
-`c75d0be` ([PR #106](https://github.com/Liran-Raz/AVI.APP1/pull/106) security R3
-squash-merged 2026-07-21 on Liran's word + docs closure; prod deploy verified
-live). **Migration `0030` APPLIED + VERIFIED in Production the same evening**
-(operator Liran; postflight returned the exact FK definition) — **DEV-029 is
-FULLY CLOSED: 9/9 findings + both info items live.** The stale docs PR #78 was
-closed 2026-07-21 (branch kept).
+brief. **Load the `avi-app-architecture` skill before touching code.**
+
+**⚠️ CURRENT BRANCH = `feat/dev-032-attachments-r1`** (NOT main). main is `c652cfe`
+(DEV-031 Cloudflare edge hardening, live). The active work is **DEV-032 — the
+encrypted file-attachments feature (R1a in progress)** — see the section directly
+below. DEV-029 (security audit 2) is FULLY CLOSED; DEV-031 (Cloudflare proxy +
+Full-strict + Bot Fight Mode + Page Shield) is LIVE. The stale docs PR #78 was
+closed (branch kept).
+
+## 🗄️ MOST RECENT / ACTIVE — DEV-032 file attachments + encryption (R1a in progress)
+
+**Plan APPROVED (full detail):** `C:\Users\User\.claude\plans\breezy-munching-squid.md`
+— read it first. Encrypted file storage on **clients / tasks / office-library**;
+app-layer envelope encryption (master KEK in **AWS KMS il-central-1** → per-office
+→ per-client → per-file DEK, AES-256-GCM); Supabase = system-of-record; feature
+flag `STORAGE_UI` (off). Mockups approved (`.claude/design-preview/attachments-preview.html`
+folder model + `task-files-preview.html`).
+
+**Locked product decisions (do NOT re-litigate):**
+- Attach targets = clients + tasks + office-library (NOT invoicing docs).
+- Folder model: client 4 folders / office 5 (2 are aggregate views); task-with-client
+  file → stored under the client (per-client key); task-without-client → office
+  (per-office key). Full model in the plan + memory `project_avi_app.md`.
+- **Max size 25MB** → R1 split: **R1a = Vercel core (≤4MB)**, **R1b = a Cloud Run
+  media path lifts it to 25MB** (Vercel body cap ~4.5MB; encryption identical on
+  Cloud Run — it's still our server). R2 = lifecycle (archive→delete, 7yr retention,
+  30-day alert), R3 = encrypted Israel backup.
+- **Task-file UI = Option A** (a "קבצים" section inside the task EDIT DIALOG, not a
+  new task page).
+- Storage-write auth = **Option A** (cookie-bound anon client writes ciphertext,
+  storage.objects RLS by org-path — NO service-role key). `attachments` = hybrid
+  (RLS SELECT + narrow archive-UPDATE, INSERT via `create_attachment` RPC).
+  `encryption_keys` = fail-closed (0 policies, 0 grants, RPC-only). Crypto blobs =
+  base64 TEXT (clean over PostgREST RPC).
+
+**✅ DONE this session (committed on this branch):**
+- **Migration `0031_attachments_and_encryption.sql`** — DRAFTED + **validated on
+  real local Postgres 17** (applies clean, refuses non-postgres, idempotent,
+  **postflight EXACT: `t|0|0|t|2|SELECT,UPDATE|1|4|1|6`**). `attachments` +
+  `encryption_keys` tables, `tasks_id_org_uq`, 4 composite org-pin FKs, immutability
+  trigger, 6 SECURITY DEFINER RPCs (office/client key get+insert, revoke=crypto-shred,
+  `create_attachment`). **NOT applied to any real DB** — Liran applies it later after
+  review (+ the separate **Storage bucket + storage.objects RLS operator runbook**,
+  since storage schema is owned by supabase_storage_admin — likely a dashboard step).
+- **`supabase/validation/0031_harness.sql`** — self-contained CI harness (adds tasks
+  + profiles + clients_id_org_uq on a 0029-style base).
+
+**🔜 NEXT (resume here, in order):**
+1. `supabase/validation/0031_negative.sql` — behavioral attack tests (cross-org pin
+   23503, routing CHECK rejects bad owner/category, immutability trigger blocks
+   crypto-column update, key-table direct read denied, `create_attachment` mints) +
+   a `validate-attachments` job in `.github/workflows/db-migration-validation.yml`
+   (mirror `validate-write-hardening`).
+2. **Encryption modules** (host-agnostic — run in Vercel AND Cloud Run):
+   `web/src/server/crypto/envelope.ts` (AES-256-GCM, DEK, wrap/unwrap) + tests;
+   `web/src/server/keys/*` (`KeyProvider` iface + KMS impl `@aws-sdk/client-kms` +
+   local/dev impl from `AVI_MASTER_KEK_B64` + factory fail-loud, mirror `server/email/*`);
+   `key-hierarchy.ts` (get-or-create office/client key, per-request cache).
+3. App layers (mirror the invoicing `documents` vertical): validator → repository →
+   service → API routes → apiClient (add a FormData primitive) → UI (reusable
+   Attachments component + client Tabs tab + task edit-dialog section [Option A] +
+   `/storage` office-library page + nav + `nav.storage` i18n). Add `attachments.*`
+   permissions + grants + parity tests. `storage.flags.ts`. Add 413/415 to app-error.
+   Hand-add `attachments` to `database.types.ts`. Add KMS/AWS env to `env.ts`.
+4. R1b Cloud Run media path (25MB) — after R1a proven.
+
+**Owner gates (each stop-and-confirm):** apply 0031 · Storage bucket + RLS runbook ·
+AWS KMS setup + `@aws-sdk/client-kms` dep (~$1/key/mo; dev unblocked via
+`AVI_MASTER_KEK_B64`) · Cloud Run (R1b). No service-role key.
+
+---
+
+## 🛡️ DEV-029 security audit 2 + write-hardening — FULLY CLOSED (9/9 live) · DEV-031 Cloudflare — LIVE
+**DEV-031 (2026-07-23, config-only):** Cloudflare **proxy ON** (orange) on the 2
+Vercel CNAMEs, mail records DNS-only; **SSL=Full (strict)** + **Bot Fight Mode** +
+**Page Shield** + auto DDoS; verified (CF Tel-Aviv edge, all routes, CSP intact +
+compatible with CF's same-origin JS-detection). Instantly reversible. main `c652cfe`.
+Key verdicts (do not re-litigate): host-swap buys no security; the proxy is a
+front-door shield not a DB guard; the data protection that matters is the app-layer
+encryption (= DEV-032). Detail: DEV_TRACKING DEV-031 + memory.
+
+**DEV-029 (2026-07-21):** LLM council said STAY on Supabase; a 4-agent red-team
+audit found crown-jewel cross-tenant isolation SOLID (0 leak) + 9 findings (none
+cross-tenant). All fixed across R1 (`0029` DB write-hardening) + R2 (app-layer) + R3
+(`0030` org-pin + fail-closed rate-limiter + enforced CSP + `.strict()`), all LIVE;
+**migration `0030` applied + verified in prod.** Detail below + memory
+`project_security_audit.md`.
 
 ## 🛡️ MOST RECENT — DEV-029 security audit 2 + write-hardening (R1+R2 LIVE, R3 remains)
 Prompted by Liran's "Supabase vs Google — which is safer?" fear. An **LLM council
