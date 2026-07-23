@@ -40,36 +40,50 @@ folder model + `task-files-preview.html`).
   `encryption_keys` = fail-closed (0 policies, 0 grants, RPC-only). Crypto blobs =
   base64 TEXT (clean over PostgREST RPC).
 
-**✅ DONE this session (committed on this branch):**
-- **Migration `0031_attachments_and_encryption.sql`** — DRAFTED + **validated on
-  real local Postgres 17** (applies clean, refuses non-postgres, idempotent,
-  **postflight EXACT: `t|0|0|t|2|SELECT,UPDATE|1|4|1|6`**). `attachments` +
-  `encryption_keys` tables, `tasks_id_org_uq`, 4 composite org-pin FKs, immutability
-  trigger, 6 SECURITY DEFINER RPCs (office/client key get+insert, revoke=crypto-shred,
-  `create_attachment`). **NOT applied to any real DB** — Liran applies it later after
-  review (+ the separate **Storage bucket + storage.objects RLS operator runbook**,
-  since storage schema is owned by supabase_storage_admin — likely a dashboard step).
+**✅ DONE so far (committed on this branch):**
+- **Migration `0031_attachments_and_encryption.sql`** — DRAFTED + **HARDENED** +
+  **validated on real local Postgres 17** (applies clean, refuses non-postgres,
+  idempotent, **postflight EXACT: `t|0|0|t|2|SELECT,UPDATE|1|6|1|6`**). `attachments`
+  + `encryption_keys` tables, `tasks_id_org_uq`, **6 composite org-pin FKs**,
+  immutability trigger, 6 SECURITY DEFINER RPCs (office/client key get+insert,
+  revoke=crypto-shred, `create_attachment`). **Hardening pass (found while writing
+  the attack tests, BEFORE any apply):** (a) org-pin FKs added on
+  `attachments.key_id` and the self-referential `encryption_keys.wrapped_by_key_id`
+  (composite count 4→6, postflight `|1|4|` → `|1|6|`); (b) the immutability trigger
+  now ALSO freezes `uploaded_by`/`created_at`/`content_sha256`/`enc_algo`/
+  `storage_provider` (provenance/integrity forgery closed); (c) `create_attachment`
+  enforces key **scope/client coherence + liveness** — a client file can never ride
+  the office key (it would survive that client's crypto-shred), and revoked keys are
+  refused. **NOT applied to any real DB** — Liran applies it later after review
+  (+ the separate **Storage bucket + storage.objects RLS operator runbook**, since
+  storage schema is owned by supabase_storage_admin — likely a dashboard step).
 - **`supabase/validation/0031_harness.sql`** — self-contained CI harness (adds tasks
-  + profiles + clients_id_org_uq on a 0029-style base).
+  + profiles + clients_id_org_uq on a 0029-style base; 2 clients in org A).
+- **`supabase/validation/0031_negative.sql`** — 64 behavioral attack/legit checks
+  (M1-M10, K1-K8, W1-W11, X1-X9, S1-S7, D1-D4, L1-L9, H1-H3, R1-R3): key tables
+  fail-closed even for the owner + anon; hybrid attachments posture (no direct
+  INSERT/DELETE, UPDATE=archive-toggle only, immutability incl. smuggling);
+  cross-org isolation via RLS filter + RPC membership + composite pins (23503);
+  key coherence/liveness belts; owner-manager-only crypto-shred (nulls key, office
+  key intact, re-mint allowed, dup-active 23505); deactivated-member lockout;
+  routing/size CHECKs (23514). **ALL GREEN on local PG17.**
+- **`validate-attachments` CI job** in `.github/workflows/db-migration-validation.yml`
+  (mirrors `validate-write-hardening`): harness → refuse-non-postgres → apply →
+  re-apply → **exact-postflight assert** → `0031_negative.sql`.
 
 **🔜 NEXT (resume here, in order):**
-1. `supabase/validation/0031_negative.sql` — behavioral attack tests (cross-org pin
-   23503, routing CHECK rejects bad owner/category, immutability trigger blocks
-   crypto-column update, key-table direct read denied, `create_attachment` mints) +
-   a `validate-attachments` job in `.github/workflows/db-migration-validation.yml`
-   (mirror `validate-write-hardening`).
-2. **Encryption modules** (host-agnostic — run in Vercel AND Cloud Run):
+1. **Encryption modules** (host-agnostic — run in Vercel AND Cloud Run):
    `web/src/server/crypto/envelope.ts` (AES-256-GCM, DEK, wrap/unwrap) + tests;
    `web/src/server/keys/*` (`KeyProvider` iface + KMS impl `@aws-sdk/client-kms` +
    local/dev impl from `AVI_MASTER_KEK_B64` + factory fail-loud, mirror `server/email/*`);
    `key-hierarchy.ts` (get-or-create office/client key, per-request cache).
-3. App layers (mirror the invoicing `documents` vertical): validator → repository →
+2. App layers (mirror the invoicing `documents` vertical): validator → repository →
    service → API routes → apiClient (add a FormData primitive) → UI (reusable
    Attachments component + client Tabs tab + task edit-dialog section [Option A] +
    `/storage` office-library page + nav + `nav.storage` i18n). Add `attachments.*`
    permissions + grants + parity tests. `storage.flags.ts`. Add 413/415 to app-error.
    Hand-add `attachments` to `database.types.ts`. Add KMS/AWS env to `env.ts`.
-4. R1b Cloud Run media path (25MB) — after R1a proven.
+3. R1b Cloud Run media path (25MB) — after R1a proven.
 
 **Owner gates (each stop-and-confirm):** apply 0031 · Storage bucket + RLS runbook ·
 AWS KMS setup + `@aws-sdk/client-kms` dep (~$1/key/mo; dev unblocked via

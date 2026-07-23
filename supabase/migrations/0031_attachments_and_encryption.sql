@@ -26,8 +26,13 @@
 --     stay consistent with the ciphertext, so a forged direct insert is disallowed).
 --     No client DELETE in R1 (hard-delete arrives in R2 via a definer RPC).
 --   * org integrity: composite FKs pin denormalized org_id end-to-end (attachments +
---     encryption_keys -> clients / tasks), mirroring 0011/0027/0030. tasks gains
---     unique(id, org_id) to enable the pin (clients already has it from 0027).
+--     encryption_keys -> clients / tasks, attachments.key_id -> encryption_keys, and
+--     the self-referential wrapped_by_key_id pin), mirroring 0011/0027/0030. tasks
+--     gains unique(id, org_id) to enable the pin (clients already has it from 0027).
+--   * key coherence: create_attachment() additionally enforces that the owner key
+--     MATCHES the attachment owner (client file -> that client's ACTIVE key, office
+--     file -> the office's ACTIVE key). Without it a client file could ride the
+--     office key and silently SURVIVE that client's crypto-shred.
 --   * canonical membership helpers ONLY: public.user_is_active_member_of(org_id) /
 --     public.user_is_admin_or_owner_of(org_id) (0009; the ones 0029 standardized on —
 --     NOT the deprecated user_org_id()/is_admin_or_owner()).
@@ -125,7 +130,7 @@ create table if not exists public.encryption_keys (
   wrapped_key       text,                                  -- base64 ciphertext; NULL after shred
   wrap_iv           text,                                  -- base64 GCM iv (client keys; NULL for office/KMS)
   wrap_tag          text,                                  -- base64 GCM tag (client keys; NULL for office/KMS)
-  wrapped_by_key_id uuid references public.encryption_keys(id),  -- the office key that wrapped a client key
+  wrapped_by_key_id uuid,                                 -- the office key that wrapped a client key (org-pinned FK below)
   kms_key_id        text,                                  -- AWS KMS master ARN/alias (office keys)
   algo              text not null default 'AES-256-GCM',
   key_version       integer not null default 1,
@@ -136,6 +141,11 @@ create table if not exists public.encryption_keys (
   constraint encryption_keys_id_org_uq unique (id, org_id),
   constraint encryption_keys_client_org_fk
     foreign key (client_id, org_id) references public.clients(id, org_id)
+    match simple on delete no action,
+  -- self-referential org-pin: a client key can only be wrapped by a key of the SAME
+  -- org (structurally closes a cross-org wrapped_by pointer, belts aside):
+  constraint encryption_keys_wrapped_by_org_fk
+    foreign key (wrapped_by_key_id, org_id) references public.encryption_keys(id, org_id)
     match simple on delete no action,
   constraint encryption_keys_shape check (
     (scope = 'office' and client_id is null
@@ -188,7 +198,7 @@ create table if not exists public.attachments (
   dek_tag          text not null,                          -- GCM tag from wrapping the DEK
   file_iv          text not null,                          -- GCM iv used to encrypt the file bytes
   file_tag         text not null,                          -- GCM tag of the file ciphertext
-  key_id           uuid not null references public.encryption_keys(id) on delete no action,  -- OWNER key
+  key_id           uuid not null,                          -- OWNER key (org-pinned FK below)
   enc_algo         text not null default 'AES-256-GCM',
   uploaded_by      uuid references public.profiles(id) on delete set null,
   created_at       timestamptz not null default now(),
@@ -207,6 +217,11 @@ create table if not exists public.attachments (
   -- as the client-handler in 0030):
   constraint attachments_task_provenance_fk
     foreign key (source_task_id) references public.tasks(id) on delete set null,
+  -- org-pin on the owner key: an attachment can never point at another org's key
+  -- (structural belt under the create_attachment() org check):
+  constraint attachments_key_org_fk
+    foreign key (key_id, org_id) references public.encryption_keys(id, org_id)
+    match simple on delete no action,
   -- the single invariant that enforces routing + owner/category coherence:
   constraint attachments_routing_shape check (
     (owner_kind = 'client' and client_id is not null
@@ -259,7 +274,12 @@ begin
      or new.source_task_id is distinct from old.source_task_id
      or new.size_bytes  is distinct from old.size_bytes
      or new.mime_type   is distinct from old.mime_type
-     or new.file_name   is distinct from old.file_name then
+     or new.file_name   is distinct from old.file_name
+     or new.content_sha256   is distinct from old.content_sha256
+     or new.enc_algo         is distinct from old.enc_algo
+     or new.storage_provider is distinct from old.storage_provider
+     or new.uploaded_by      is distinct from old.uploaded_by
+     or new.created_at       is distinct from old.created_at then
     raise exception 'attachment crypto/routing/identity columns are immutable';
   end if;
   new.updated_at := now();
@@ -405,7 +425,8 @@ begin
 end $$;
 
 -- 7f. create_attachment — the ONLY way an attachments row is minted. Re-checks
---     membership; the routing-shape CHECK + composite FKs enforce coherence + org-pin.
+--     membership + key org/scope/client coherence + key liveness; the routing-shape
+--     CHECK + composite FKs enforce the rest structurally.
 create or replace function public.create_attachment(
   p_org_id uuid, p_owner_kind public.attachment_owner, p_client_id uuid,
   p_category public.attachment_category, p_source_task_id uuid,
@@ -417,15 +438,36 @@ language plpgsql
 security definer
 set search_path = public
 as $$
-declare v_id uuid;
+declare
+  v_id         uuid;
+  v_key_scope  public.key_scope;
+  v_key_client uuid;
+  v_key_status public.key_status;
 begin
   if not public.user_is_active_member_of(p_org_id) then
     raise exception 'not an active member of this organization';
   end if;
-  -- the owner key must belong to this org (belt; FK is org-agnostic on key_id).
-  if not exists (select 1 from public.encryption_keys k
-                 where k.id = p_key_id and k.org_id = p_org_id) then
+  -- key belts (the attachments_key_org_fk composite FK org-pins key_id; these add
+  -- scope/client coherence + liveness so a client file can NEVER ride the office
+  -- key — such a file would survive that client's crypto-shred):
+  select k.scope, k.client_id, k.status
+    into v_key_scope, v_key_client, v_key_status
+  from public.encryption_keys k
+  where k.id = p_key_id and k.org_id = p_org_id;
+  if not found then
     raise exception 'encryption key not found in this organization';
+  end if;
+  if v_key_status <> 'active' then
+    raise exception 'encryption key is not active';
+  end if;
+  if p_owner_kind = 'client' then
+    if v_key_scope <> 'client' or v_key_client is distinct from p_client_id then
+      raise exception 'encryption key does not match the attachment owner';
+    end if;
+  else
+    if v_key_scope <> 'office' then
+      raise exception 'encryption key does not match the attachment owner';
+    end if;
   end if;
   insert into public.attachments
     (org_id, owner_kind, client_id, category, source_task_id,
@@ -473,7 +515,8 @@ commit;
 --   (select count(*) from pg_constraint where conname='tasks_id_org_uq')                             as tasks_uq,          -- 1
 --   (select count(*) from pg_constraint where conname in
 --      ('attachments_client_org_fk','attachments_task_org_fk','attachments_task_provenance_fk',
---       'encryption_keys_client_org_fk'))                                                            as composite_fks,     -- 4
+--       'attachments_key_org_fk','encryption_keys_client_org_fk',
+--       'encryption_keys_wrapped_by_org_fk'))                                                        as composite_fks,     -- 6
 --   (select count(*) from pg_trigger where tgrelid='public.attachments'::regclass
 --      and tgname='attachments_guard_update')                                                        as guard_trigger,     -- 1
 --   (select count(*) from pg_proc p join pg_namespace n on n.oid=p.pronamespace

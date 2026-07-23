@@ -1518,3 +1518,101 @@ jobs:
 
       - name: 0030 behavioral closure-proof (cross-org pin blocked, cascade intact)
         run: psql -v ON_ERROR_STOP=1 -f supabase/validation/0030_negative.sql
+
+  # 0031 attachments + hierarchical encryption keys (DEV-032) — BEHAVIORAL
+  # closure-proof. Applies 0031 on a self-contained schema slice (0031_harness),
+  # asserts the EXACT postflight catalog state, then simulates direct-PostgREST
+  # access (set role authenticated/anon + auth.uid() GUC) to prove:
+  # encryption_keys is fail-closed (zero direct access, RPC-only), attachments
+  # keeps the hybrid posture (INSERT only via create_attachment, UPDATE = the
+  # archive toggle only — the immutability trigger freezes crypto/routing/
+  # provenance), cross-org isolation on every path (RLS filter + RPC membership
+  # + composite org-pin FKs 23503), key scope/client coherence + liveness (a
+  # client file can never ride the office key and survive crypto-shred),
+  # owner/manager-only crypto-shred, and the one-ACTIVE-key arbiter (23505) —
+  # while legitimate member flows pass. Self-contained throwaway postgres:16 —
+  # no Supabase / Production.
+  validate-attachments:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      PGHOST: localhost
+      PGPORT: "5432"
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGDATABASE: postgres
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Ensure psql client
+        run: psql --version || (sudo apt-get update && sudo apt-get install -y postgresql-client)
+
+      - name: Wait for PostgreSQL
+        run: |
+          for i in $(seq 1 30); do
+            if pg_isready -q; then echo "postgres ready"; exit 0; fi
+            sleep 2
+          done
+          echo "postgres did not become ready"; exit 1
+
+      - name: Build attachments harness (schema slice + auth.uid + fixtures)
+        run: psql -v ON_ERROR_STOP=1 -f supabase/validation/0031_harness.sql
+
+      - name: 0031 refuses a non-postgres role
+        run: |
+          if psql -v ON_ERROR_STOP=1 -c "set role authenticated;" -f supabase/migrations/0031_attachments_and_encryption.sql >/dev/null 2>&1; then
+            echo "FAIL: 0031 applied as a non-postgres role"; exit 1
+          fi
+          echo "PASS: 0031 refused a non-postgres role"
+
+      - name: Apply migration 0031 (attachments + encryption keys)
+        run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/0031_attachments_and_encryption.sql
+
+      - name: Re-apply 0031 (idempotency / re-runnability)
+        run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/0031_attachments_and_encryption.sql
+
+      - name: Postflight — exact catalog state
+        run: |
+          OUT=$(psql -At <<'SQL'
+          select
+            (select relrowsecurity from pg_class where oid='public.encryption_keys'::regclass),
+            (select count(*) from pg_policies where schemaname='public' and tablename='encryption_keys'),
+            (select count(*) from information_schema.role_table_grants where table_schema='public'
+               and table_name='encryption_keys' and grantee in ('anon','authenticated','service_role','public')),
+            (select relrowsecurity from pg_class where oid='public.attachments'::regclass),
+            (select count(*) from pg_policies where schemaname='public' and tablename='attachments'),
+            (select string_agg(distinct privilege_type, ',' order by privilege_type)
+               from information_schema.role_table_grants
+               where table_schema='public' and table_name='attachments' and grantee='authenticated'),
+            (select count(*) from pg_constraint where conname='tasks_id_org_uq'),
+            (select count(*) from pg_constraint where conname in
+               ('attachments_client_org_fk','attachments_task_org_fk','attachments_task_provenance_fk',
+                'attachments_key_org_fk','encryption_keys_client_org_fk',
+                'encryption_keys_wrapped_by_org_fk')),
+            (select count(*) from pg_trigger where tgrelid='public.attachments'::regclass
+               and tgname='attachments_guard_update'),
+            (select count(*) from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+               where n.nspname='public' and p.proname in
+                 ('attachments_get_office_key','attachments_insert_office_key','attachments_get_client_key',
+                  'attachments_insert_client_key','attachments_revoke_client_key','create_attachment')
+                 and p.prosecdef);
+          SQL
+          )
+          EXPECT='t|0|0|t|2|SELECT,UPDATE|1|6|1|6'
+          echo "postflight: $OUT"
+          if [ "$OUT" != "$EXPECT" ]; then echo "FAIL: expected $EXPECT"; exit 1; fi
+          echo "PASS: postflight matches the expected catalog state exactly"
+
+      - name: Behavioral closure-proof (attacks blocked, legit flows pass)
+        run: psql -v ON_ERROR_STOP=1 -f supabase/validation/0031_negative.sql

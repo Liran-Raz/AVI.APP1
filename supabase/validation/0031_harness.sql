@@ -115,8 +115,8 @@ create policy "members access tasks in own org" on public.tasks
 
 -- ============================================================
 -- Deterministic fixtures: two orgs (A, B for cross-org tests). Org A has an owner,
--- an admin, an employee, and a DEACTIVATED employee; a client; a task WITH that
--- client; and a task WITHOUT a client. Org B has an owner + a client.
+-- an admin, an employee, and a DEACTIVATED employee; two clients (c1, c2); a task
+-- WITH client c1; and a task WITHOUT a client. Org B has an owner + a client.
 --   A: OWNER a…a1 · ADMIN a…a2 · EMPLOYEE a…a3 · DEACTIVATED a…a5
 --   B: OWNER b…b1
 -- ============================================================
@@ -143,6 +143,7 @@ on conflict (user_id, org_id) do nothing;
 
 insert into public.clients (id, org_id, name, is_active) values
   ('cccccccc-0000-0000-0000-0000000000c1','aaaaaaaa-0000-0000-0000-0000000000a0','Client A1', true),
+  ('cccccccc-0000-0000-0000-0000000000c2','aaaaaaaa-0000-0000-0000-0000000000a0','Client A2', true),
   ('cccccccc-0000-0000-0000-0000000000c9','bbbbbbbb-0000-0000-0000-0000000000b0','Client B1', true)
 on conflict (id) do nothing;
 
