@@ -7,6 +7,7 @@ import {
   wrapKey,
 } from "../crypto/envelope";
 import { zeroize } from "../crypto/zeroize";
+import { KeyUnavailableError } from "./key-errors";
 import type { KeyProvider } from "./key-provider";
 import { KeyRaceError, type KeyStore } from "./key-store";
 
@@ -111,13 +112,41 @@ export class KeyHierarchy {
     }
   }
 
-  // Resolve the OWNER key for an attachment: a client file → that client's key,
-  // an office file → the office key. (create_attachment enforces the same
-  // owner↔key coherence in the DB; this just picks the right one.)
+  // Resolve the OWNER key for an attachment upload: a client file → that
+  // client's key, an office file → the office key. Creates the key if missing.
+  // (create_attachment enforces the same owner↔key coherence in the DB.)
   async resolveOwnerKey(orgId: string, owner: AttachmentOwner): Promise<ResolvedKey> {
     return owner.kind === "client"
       ? this.getOrCreateClientKey(orgId, owner.clientId)
       : this.getOrCreateOfficeKey(orgId);
+  }
+
+  // ---- Read-only resolves (download path) — NEVER create a key. A missing
+  // active key (never created, or crypto-shredded) throws KeyUnavailableError. ----
+
+  async getOfficeKey(orgId: string): Promise<ResolvedKey> {
+    const cached = this.officeCache.get(orgId);
+    if (cached) return cached;
+    const existing = await this.store.getActiveOfficeKey(orgId);
+    if (!existing) throw new KeyUnavailableError();
+    return this.cacheOffice(orgId, existing.id, await this.unwrapOffice(existing));
+  }
+
+  async getClientKey(orgId: string, clientId: string): Promise<ResolvedKey> {
+    const cacheKey = `${orgId}:${clientId}`;
+    const cached = this.clientCache.get(cacheKey);
+    if (cached) return cached;
+    const office = await this.getOfficeKey(orgId);
+    const existing = await this.store.getActiveClientKey(orgId, clientId);
+    if (!existing) throw new KeyUnavailableError();
+    return this.cacheClient(cacheKey, existing.id, this.unwrapClient(office.plaintext, existing));
+  }
+
+  // Read-only owner-key resolve for download.
+  async resolveOwnerKeyForRead(orgId: string, owner: AttachmentOwner): Promise<ResolvedKey> {
+    return owner.kind === "client"
+      ? this.getClientKey(orgId, owner.clientId)
+      : this.getOfficeKey(orgId);
   }
 
   wrapDek(ownerKeyPlaintext: Buffer, dek: Buffer): WrappedDek {
@@ -144,7 +173,7 @@ export class KeyHierarchy {
 
   private unwrapOffice(rec: {
     wrappedKey: string;
-    kmsKeyId: string | null;
+    kmsKeyId: string;
   }): Promise<Buffer> {
     return this.provider.unwrapOfficeKey({
       wrapped: rec.wrappedKey,

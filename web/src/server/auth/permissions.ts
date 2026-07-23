@@ -97,6 +97,13 @@ export const PERMISSIONS = {
   // reports (DEV-026)
   REPORTS_VIEW: "reports.view",
   REPORTS_EXPORT: "reports.export", // CSV/print of reports
+
+  // attachments — encrypted files (DEV-032). Contextless in R1a (org-wide,
+  // role-gated); a record-scoped model (per-client/per-task) can be added later.
+  ATTACHMENTS_VIEW: "attachments.view", // list + download
+  ATTACHMENTS_UPLOAD: "attachments.upload",
+  ATTACHMENTS_DELETE: "attachments.delete", // archive toggle (hard-delete = R2)
+  ATTACHMENTS_MANAGE: "attachments.manage", // owner-only: crypto-shred a client
 } as const;
 
 export type Permission = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
@@ -152,6 +159,9 @@ export const SUPPORTED_RECORD_SCOPES: readonly RecordScope[] = ["all", "own"];
 //   * ledgers.* , invoices.* , reports.*      DEV-026 (post-0012 keys): financial surfaces gated by
 //                                             the env flag + system roles only; excluded from custom
 //                                             roles until the dormant DB grants are synced + enforced.
+//   * attachments.*                           DEV-032 (post-0012 keys): encrypted-file surface gated by
+//                                             the STORAGE_UI flag + system roles only; excluded from
+//                                             custom roles until the dormant DB grants are synced.
 //
 // Conservative + forward-safe: widen this list only when the excluded surfaces
 // gain complete grant-driven enforcement. Kept framework-free so the UI catalog,
@@ -324,6 +334,11 @@ export const PERMISSION_META = {
 
   "reports.view": { context: "none", scoped: false },
   "reports.export": { context: "none", scoped: false },
+
+  "attachments.view": { context: "none", scoped: false },
+  "attachments.upload": { context: "none", scoped: false },
+  "attachments.delete": { context: "none", scoped: false },
+  "attachments.manage": { context: "none", scoped: false },
 } as const satisfies Record<Permission, PermissionMeta>;
 
 // ============================================================

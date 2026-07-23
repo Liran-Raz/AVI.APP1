@@ -76,6 +76,11 @@ const OWNER: GrantMap = {
   "invoices.export": true, // owner-only: מבנה אחיד export
   "reports.view": true,
   "reports.export": true,
+  // DEV-032 attachments (post-0012 keys — dormant DB roles not yet synced):
+  "attachments.view": true,
+  "attachments.upload": true,
+  "attachments.delete": true,
+  "attachments.manage": true, // owner-only: crypto-shred a client
 };
 
 // Manager (internal key `admin`).
@@ -129,6 +134,12 @@ const MANAGER: GrantMap = {
   // invoices.export: DENY (owner-only)
   "reports.view": true,
   "reports.export": true,
+  // DEV-032 attachments — Manager may view/upload/archive; crypto-shred (manage)
+  // stays owner-only:
+  "attachments.view": true,
+  "attachments.upload": true,
+  "attachments.delete": true,
+  // attachments.manage: DENY (owner-only)
 };
 
 const EMPLOYEE: GrantMap = {
@@ -159,6 +170,10 @@ const EMPLOYEE: GrantMap = {
   "ledgers.view": true,
   "invoices.view": true,
   "invoices.create": true,
+  // DEV-032 attachments — employees may view/download + upload; archive
+  // (delete) and crypto-shred (manage) are denied:
+  "attachments.view": true,
+  "attachments.upload": true,
 };
 
 export const ROLE_GRANTS: Record<UserRole, GrantMap> = {

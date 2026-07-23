@@ -7,10 +7,12 @@
 // office per request, never per file.
 
 // A wrapped office key as stored on encryption_keys: an opaque base64 blob plus
-// the KMS master id that produced it (null for the local provider).
+// the master-key id that produced it. Always non-null (the DB office-shape CHECK
+// requires kms_key_id): KMS uses the master ARN; the local provider uses the
+// marker "local" so a stored key records which provider wrapped it.
 export interface WrappedOfficeKey {
   wrapped: string; // base64, opaque to callers
-  kmsKeyId: string | null;
+  kmsKeyId: string;
 }
 
 export interface KeyProvider {

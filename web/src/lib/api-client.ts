@@ -105,6 +105,11 @@ import type {
   VatSummaryDTO,
 } from "@/server/services/reports.service";
 import type { ReportRangeQuery } from "@/server/validators/reports.schema";
+import type { AttachmentDTO } from "@/server/services/attachments.service";
+import type {
+  AttachmentCategoryValue,
+  OfficeFolder,
+} from "@/server/validators/attachments.schema";
 
 // Re-export DTOs so client components have one stable import path.
 export type { ClientDTO } from "@/server/services/clients.service";
@@ -136,6 +141,12 @@ export type {
   VatSummaryRow,
 } from "@/server/services/reports.service";
 export type { ReportRangeQuery } from "@/server/validators/reports.schema";
+// DEV-032 attachments.
+export type { AttachmentDTO } from "@/server/services/attachments.service";
+export type {
+  AttachmentCategoryValue,
+  OfficeFolder,
+} from "@/server/validators/attachments.schema";
 export type {
   CreateClientPayload,
   UpdateClientPayload,
@@ -376,6 +387,13 @@ function deleteJson<T>(path: string): Promise<T> {
   return call<T>(path, { method: "DELETE" });
 }
 
+// Multipart upload. NO Content-Type header — the browser sets
+// multipart/form-data + the boundary itself. The response is still the JSON
+// envelope, parsed by call().
+function postForm<T>(path: string, form: FormData): Promise<T> {
+  return call<T>(path, { method: "POST", body: form });
+}
+
 function getJson<T>(path: string): Promise<T> {
   return call<T>(path, { method: "GET" });
 }
@@ -518,6 +536,36 @@ export const apiClient = {
       postJson<null>(`/api/documents/${id}/cancel`, input),
     credit: (id: string) =>
       postJson<{ id: string }>(`/api/documents/${id}/credit`),
+  },
+  // DEV-032 — encrypted attachments (clients / tasks / office-library). Upload
+  // is multipart; download NAVIGATES the browser to the URL (cookie-auth) — use
+  // downloadUrl(id) with an <a download> / click, like the reports/PDF pattern.
+  attachments: {
+    list: (params: {
+      scope: "client" | "office" | "task";
+      clientId?: string;
+      taskId?: string;
+      folder?: OfficeFolder;
+    }) =>
+      getJson<{ items: AttachmentDTO[] }>(
+        `/api/attachments${toQueryString(params)}`,
+      ),
+    upload: (input: {
+      file: File;
+      context: "client" | "office" | "task";
+      contextId?: string;
+      category: AttachmentCategoryValue;
+    }) => {
+      const form = new FormData();
+      form.set("file", input.file);
+      form.set("context", input.context);
+      if (input.contextId) form.set("contextId", input.contextId);
+      form.set("category", input.category);
+      return postForm<AttachmentDTO>("/api/attachments", form);
+    },
+    archive: (id: string, archived: boolean) =>
+      patchJson<AttachmentDTO>(`/api/attachments/${id}`, { archived }),
+    downloadUrl: (id: string) => `/api/attachments/${id}/download`,
   },
   // DEV-026 R4 — reports (ספרי מכירות/תקבולים, מע"מ, מאזן-לקוחות) + the
   // מבנה-אחיד export. CSV/ZIP downloads navigate the BROWSER to the API URL

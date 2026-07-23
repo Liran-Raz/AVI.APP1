@@ -14,6 +14,90 @@ export type Database = {
   }
   public: {
     Tables: {
+      // DEV-032 attachments — hand-maintained (encrypted file metadata). The
+      // sibling encryption_keys table is fail-closed (no client grants) so it
+      // has NO Row/Insert/Update here — it is reachable ONLY via the RPCs below.
+      attachments: {
+        Row: {
+          archived_at: string | null
+          archived_by: string | null
+          category: Database["public"]["Enums"]["attachment_category"]
+          client_id: string | null
+          content_sha256: string | null
+          created_at: string
+          dek_iv: string
+          dek_tag: string
+          dek_wrapped: string
+          enc_algo: string
+          file_iv: string
+          file_name: string
+          file_tag: string
+          id: string
+          key_id: string
+          mime_type: string
+          object_key: string
+          org_id: string
+          owner_kind: Database["public"]["Enums"]["attachment_owner"]
+          size_bytes: number
+          source_task_id: string | null
+          storage_provider: string
+          updated_at: string
+          uploaded_by: string | null
+        }
+        Insert: {
+          archived_at?: string | null
+          archived_by?: string | null
+          category: Database["public"]["Enums"]["attachment_category"]
+          client_id?: string | null
+          content_sha256?: string | null
+          created_at?: string
+          dek_iv: string
+          dek_tag: string
+          dek_wrapped: string
+          enc_algo?: string
+          file_iv: string
+          file_name: string
+          file_tag: string
+          id?: string
+          key_id: string
+          mime_type: string
+          object_key: string
+          org_id: string
+          owner_kind: Database["public"]["Enums"]["attachment_owner"]
+          size_bytes: number
+          source_task_id?: string | null
+          storage_provider?: string
+          updated_at?: string
+          uploaded_by?: string | null
+        }
+        Update: {
+          archived_at?: string | null
+          archived_by?: string | null
+          category?: Database["public"]["Enums"]["attachment_category"]
+          client_id?: string | null
+          content_sha256?: string | null
+          created_at?: string
+          dek_iv?: string
+          dek_tag?: string
+          dek_wrapped?: string
+          enc_algo?: string
+          file_iv?: string
+          file_name?: string
+          file_tag?: string
+          id?: string
+          key_id?: string
+          mime_type?: string
+          object_key?: string
+          org_id?: string
+          owner_kind?: Database["public"]["Enums"]["attachment_owner"]
+          size_bytes?: number
+          source_task_id?: string | null
+          storage_provider?: string
+          updated_at?: string
+          uploaded_by?: string | null
+        }
+        Relationships: []
+      }
       audit_events: {
         Row: {
           action: string
@@ -1179,6 +1263,74 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      attachments_get_office_key: {
+        Args: { p_org_id: string }
+        Returns: {
+          id: string
+          wrapped_key: string | null
+          kms_key_id: string | null
+          algo: string
+          key_version: number
+        }[]
+      }
+      attachments_insert_office_key: {
+        Args: {
+          p_org_id: string
+          p_wrapped_key: string
+          p_kms_key_id: string
+          p_algo: string
+        }
+        Returns: string
+      }
+      attachments_get_client_key: {
+        Args: { p_org_id: string; p_client_id: string }
+        Returns: {
+          id: string
+          wrapped_key: string | null
+          wrap_iv: string | null
+          wrap_tag: string | null
+          wrapped_by_key_id: string | null
+          algo: string
+          key_version: number
+        }[]
+      }
+      attachments_insert_client_key: {
+        Args: {
+          p_org_id: string
+          p_client_id: string
+          p_wrapped_key: string
+          p_wrap_iv: string
+          p_wrap_tag: string
+          p_wrapped_by_key_id: string
+          p_algo: string
+        }
+        Returns: string
+      }
+      attachments_revoke_client_key: {
+        Args: { p_org_id: string; p_client_id: string }
+        Returns: undefined
+      }
+      create_attachment: {
+        Args: {
+          p_org_id: string
+          p_owner_kind: Database["public"]["Enums"]["attachment_owner"]
+          p_client_id: string | null
+          p_category: Database["public"]["Enums"]["attachment_category"]
+          p_source_task_id: string | null
+          p_object_key: string
+          p_file_name: string
+          p_mime_type: string
+          p_size_bytes: number
+          p_dek_wrapped: string
+          p_dek_iv: string
+          p_dek_tag: string
+          p_file_iv: string
+          p_file_tag: string
+          p_key_id: string
+          p_content_sha256: string | null
+        }
+        Returns: string
+      }
       accept_invitation: { Args: { p_token: string }; Returns: Json }
       ensure_dm_conversation: {
         Args: { p_org_id: string; p_other_user: string }
@@ -1331,7 +1483,16 @@ export type Database = {
         | "obtained"
         | "failed"
         | "exempt"
+      attachment_category:
+        | "certificates_reports"
+        | "task_files"
+        | "client_uploaded"
+        | "additional"
+        | "office_files"
+      attachment_owner: "client" | "office"
       business_type: "patur" | "murshe" | "ltd" | "amuta" | "agudat_shitufit"
+      key_scope: "office" | "client"
+      key_status: "active" | "rotating" | "revoked"
       conversation_kind: "office" | "dm" | "group"
       invitation_status: "pending" | "accepted" | "expired" | "revoked"
       invoice_doc_status: "draft" | "issued" | "cancelled"

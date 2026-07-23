@@ -12,7 +12,7 @@
 export interface OfficeKeyRecord {
   id: string;
   wrappedKey: string; // base64 opaque blob (local seal or KMS ciphertext)
-  kmsKeyId: string | null;
+  kmsKeyId: string; // master ARN (KMS) or the "local" marker — never null
   algo: string;
   keyVersion: number;
 }
@@ -30,7 +30,7 @@ export interface ClientKeyRecord {
 export interface InsertOfficeKeyInput {
   orgId: string;
   wrappedKey: string;
-  kmsKeyId: string | null;
+  kmsKeyId: string; // never null — the office-shape CHECK requires it
   algo: string;
 }
 

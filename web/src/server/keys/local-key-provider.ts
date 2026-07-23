@@ -33,12 +33,20 @@ function loadMasterKek(): Buffer {
   return kek;
 }
 
+// Marker persisted in encryption_keys.kms_key_id for a locally-wrapped office
+// key (satisfies the office-shape CHECK + records the provider — a KMS switch
+// later would re-wrap keys carrying this marker).
+export const LOCAL_KMS_MARKER = "local";
+
 export function makeLocalKeyProvider(): KeyProvider {
   const kek = loadMasterKek(); // validated once at construction — fail-loud
   return {
     name: "local",
     async wrapOfficeKey(plaintext: Buffer): Promise<WrappedOfficeKey> {
-      return { wrapped: toBase64(sealToBlob(kek, plaintext)), kmsKeyId: null };
+      return {
+        wrapped: toBase64(sealToBlob(kek, plaintext)),
+        kmsKeyId: LOCAL_KMS_MARKER,
+      };
     },
     async unwrapOfficeKey(input: WrappedOfficeKey): Promise<Buffer> {
       return openBlob(kek, fromBase64(input.wrapped));

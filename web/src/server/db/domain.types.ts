@@ -10,6 +10,10 @@ export type ConversationKind = Enums<"conversation_kind">;
 export type InvoiceDocType = Enums<"invoice_doc_type">;
 export type InvoiceDocStatus = Enums<"invoice_doc_status">;
 export type AllocationStatus = Enums<"allocation_status">;
+export type AttachmentOwner = Enums<"attachment_owner">;
+export type AttachmentCategory = Enums<"attachment_category">;
+export type KeyScope = Enums<"key_scope">;
+export type KeyStatus = Enums<"key_status">;
 
 export type BootstrapOrgResult = {
   org_id: string;
@@ -46,3 +50,4 @@ export type InvoiceDocument = Tables<"documents">;
 export type DocumentLine = Tables<"document_lines">;
 export type DocumentPayment = Tables<"document_payments">;
 export type VatRate = Tables<"vat_rates">;
+export type Attachment = Tables<"attachments">;

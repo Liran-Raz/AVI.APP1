@@ -12,6 +12,8 @@ export type AppErrorCode =
   | "CONFLICT"
   | "RATE_LIMITED"
   | "MFA_REQUIRED"
+  | "PAYLOAD_TOO_LARGE"
+  | "UNSUPPORTED_MEDIA_TYPE"
   | "INTERNAL_ERROR";
 
 export class AppError extends Error {
@@ -60,6 +62,22 @@ export class ValidationError extends AppError {
 export class ConflictError extends AppError {
   constructor(message: string) {
     super("CONFLICT", message, 409);
+  }
+}
+
+// 413 — the uploaded file exceeds the size cap for this path (DEV-032; R1a caps
+// at the Vercel request-body limit, R1b lifts it via Cloud Run).
+export class PayloadTooLargeError extends AppError {
+  constructor(message = "File is too large") {
+    super("PAYLOAD_TOO_LARGE", message, 413);
+  }
+}
+
+// 415 — the uploaded file's real (sniffed) type is not in the allowlist, or its
+// bytes do not match the declared type (DEV-032).
+export class UnsupportedMediaTypeError extends AppError {
+  constructor(message = "Unsupported file type") {
+    super("UNSUPPORTED_MEDIA_TYPE", message, 415);
   }
 }
 

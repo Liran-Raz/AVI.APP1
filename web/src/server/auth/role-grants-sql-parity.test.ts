@@ -38,6 +38,11 @@ const POST_0012_PERMISSIONS = new Set<string>([
   "invoices.export",
   "reports.view",
   "reports.export",
+  // DEV-032 attachments (R1a):
+  "attachments.view",
+  "attachments.upload",
+  "attachments.delete",
+  "attachments.manage",
 ]);
 
 // ---- TypeScript side: flatten ROLE_GRANTS into tuples ----

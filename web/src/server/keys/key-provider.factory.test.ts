@@ -77,7 +77,7 @@ describe("local provider (dev/test)", () => {
     const provider = getKeyProvider();
     const officeKey = randomBytes(32);
     const wrapped = await provider.wrapOfficeKey(officeKey);
-    expect(wrapped.kmsKeyId).toBeNull();
+    expect(wrapped.kmsKeyId).toBe("local");
     const recovered = await provider.unwrapOfficeKey(wrapped);
     expect(recovered.equals(officeKey)).toBe(true);
   });
