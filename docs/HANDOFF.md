@@ -69,21 +69,40 @@ folder model + `task-files-preview.html`).
   routing/size CHECKs (23514). **ALL GREEN on local PG17.**
 - **`validate-attachments` CI job** in `.github/workflows/db-migration-validation.yml`
   (mirrors `validate-write-hardening`): harness → refuse-non-postgres → apply →
-  re-apply → **exact-postflight assert** → `0031_negative.sql`.
+  re-apply → **exact-postflight assert** → `0031_negative.sql`. **ALL 6 CI jobs green.**
+- **Encryption modules (host-agnostic — run in Vercel AND Cloud Run; NO `server-only`).**
+  `web/src/server/crypto/*`: `envelope.ts` (AES-256-GCM — generateKey/Dek,
+  aesGcmEncrypt/Decrypt [12B iv + 16B tag, fresh iv/call], wrapKey/unwrapKey,
+  sealToBlob/openBlob opaque office blob, base64 seam), `crypto-errors.ts`
+  (CryptoAuthError/CryptoFormatError, leak-safe), `zeroize.ts`.
+  `web/src/server/keys/*` (mirror `server/email/*`): `key-provider.ts` (master-KEK
+  boundary iface, office key only), `local-key-provider.ts` (dev, `AVI_MASTER_KEK_B64`
+  32B, fail-loud), `kms-key-provider.ts` (**owner-gated SKELETON** — selected but
+  throws `KeyConfigError` until the `@aws-sdk/client-kms` dep + AWS land; intended
+  impl documented, NO SDK import so build stays green), `key-provider.factory.ts`
+  (runtime select, fail-loud STRICTER than email — no no-op: KMS→prod-without-KMS
+  throws→local[dev/preview]→unconfigured throws), `key-store.ts` (persistence iface +
+  `KeyRaceError`; concrete supabase impl = next layer), `key-hierarchy.ts`
+  (office→client→DEK, per-request cache only + `dispose()` zeroize, race-safe).
+  `env.ts` + `.env.local.example`: `AVI_KMS_MASTER_KEY_ARN`/`AVI_KMS_REGION`/
+  `AVI_MASTER_KEK_B64`. **39 tests (real crypto): envelope round-trip {0,1,15,16,1KiB,
+  1MiB} + tamper/wrong-key/iv-uniqueness + full office→client→DEK→file chain +
+  crypto-shred; factory selection per env; hierarchy w/ fake KeyStore (create→cache,
+  re-read across instances, race, DEK wrap/unwrap, dispose-zeroize).** Gate: **tsc 0 ·
+  lint 0 · 661 tests (+39)**. NO new dependency (SDK behind the owner gate). Commit `b3af118`.
 
 **🔜 NEXT (resume here, in order):**
-1. **Encryption modules** (host-agnostic — run in Vercel AND Cloud Run):
-   `web/src/server/crypto/envelope.ts` (AES-256-GCM, DEK, wrap/unwrap) + tests;
-   `web/src/server/keys/*` (`KeyProvider` iface + KMS impl `@aws-sdk/client-kms` +
-   local/dev impl from `AVI_MASTER_KEK_B64` + factory fail-loud, mirror `server/email/*`);
-   `key-hierarchy.ts` (get-or-create office/client key, per-request cache).
-2. App layers (mirror the invoicing `documents` vertical): validator → repository →
-   service → API routes → apiClient (add a FormData primitive) → UI (reusable
-   Attachments component + client Tabs tab + task edit-dialog section [Option A] +
-   `/storage` office-library page + nav + `nav.storage` i18n). Add `attachments.*`
-   permissions + grants + parity tests. `storage.flags.ts`. Add 413/415 to app-error.
-   Hand-add `attachments` to `database.types.ts`. Add KMS/AWS env to `env.ts`.
-3. R1b Cloud Run media path (25MB) — after R1a proven.
+1. **App layers** (mirror the invoicing `documents` vertical): the concrete
+   `encryption-keys.repository.ts` (implements `KeyStore` over the definer RPCs) +
+   `attachments.repository.ts` (Storage upload/download + aggregate queries) →
+   `attachments.service.ts` (routing decision, orchestrates crypto+keys+storage+repo,
+   capability gates, DTO mapping) → validator (`attachments.schema.ts`, size/MIME caps,
+   filename sanitizer) → API routes → apiClient (add a **FormData primitive**) → UI
+   (reusable Attachments component + client Tabs tab + task edit-dialog section
+   [Option A] + `/storage` office-library page + nav + `nav.storage` i18n). Add
+   `attachments.*` permissions + grants + parity tests. `storage.flags.ts`. Add
+   413/415 to app-error. Hand-add `attachments` to `database.types.ts`.
+2. R1b Cloud Run media path (25MB) — after R1a proven.
 
 **Owner gates (each stop-and-confirm):** apply 0031 · Storage bucket + RLS runbook ·
 AWS KMS setup + `@aws-sdk/client-kms` dep (~$1/key/mo; dev unblocked via
