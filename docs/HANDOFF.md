@@ -126,14 +126,20 @@ folder model + `task-files-preview.html`).
   the client list scope. **All via `apiClient.attachments.*` (no Supabase in the client).**
   Gate: **tsc 0 · lint 0 · 694 tests.** STORAGE_UI off; no DB applied.
 
-**🔜 NEXT (resume here):** **R1a is CODE-COMPLETE behind STORAGE_UI (DB + encryption +
-backend + UI).** The only remaining build is **R1b — the Cloud Run media path (25MB)**,
-after R1a is proven live.
+**🟢🟢🟢 R1a LIVE-VERIFIED END-TO-END IN PRODUCTION (2026-07-24).** Migration `0031`
+APPLIED + verified (postflight exact `t|0|0|t|2|SELECT,UPDATE|1|6|1|6`); the private
+`attachments` bucket + 3 `storage.objects` RLS policies (SELECT/INSERT/DELETE on the
+`org/<org_id>/…` path) are live. Liran uploaded a file on a client → downloaded it via the
+app (decrypted fine) → downloaded the RAW bucket object and confirmed it is **gibberish
+ciphertext** (`application/octet-stream`; path carries no PII/filename). **Encryption-at-rest
+is PROVEN** — the full envelope chain (master-KEK → office key → client key → per-file DEK,
+AES-256-GCM) works live. Local `web/.env.local` has `STORAGE_UI=1` + a dev `AVI_MASTER_KEK_B64`.
 
-**Owner gates for live QA of R1a** (each stop-and-confirm; the code ships inert behind
-STORAGE_UI without them): apply migration `0031` · create the `attachments` Storage bucket
-+ storage.objects RLS · set `AVI_MASTER_KEK_B64` locally (dev) or AWS KMS (prod). No
-`@aws-sdk/client-kms` dependency yet (owner gate). Then flip `STORAGE_UI=1` locally to QA.
+**🔜 NEXT (resume here):** the only remaining build is **R1b — the Cloud Run media path
+(25MB)**, which reuses the SAME host-agnostic crypto/keys modules. Production will move the
+master key to **AWS KMS** at R1b (`@aws-sdk/client-kms` dependency — owner gate; the
+`kms-key-provider.ts` skeleton is ready to fill in). The `attachments` code stays behind
+`STORAGE_UI` until Liran chooses to flip it on in prod (Vercel env + redeploy, like INVOICING_UI).
 
 **Owner gates (each stop-and-confirm):** apply 0031 · Storage bucket + RLS runbook ·
 AWS KMS setup + `@aws-sdk/client-kms` dep (~$1/key/mo; dev unblocked via
