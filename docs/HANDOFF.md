@@ -166,17 +166,58 @@ with the same fail-loud semantics (prod without KMS throws; preview/dev keep
 (dedicated project + HSM key + key-scoped SA + Vercel env; safe to run in parallel —
 enables nothing by itself).
 
-**🔜 NEXT (resume here):** **R1b(2) — the Cloud Run media service (me-west1)**: same
-host-agnostic crypto/keys modules; signed upload/download tickets minted by Vercel
-(which owns sessions/permissions/metadata); validator cap lifted to 25MB on the large
-path only; Dockerfile + deploy. Then: adversarial review of the WHOLE branch → PR →
-Liran merges (flag off) → **one-time QA cleanup** (prod `encryption_keys` holds
-dev-KEK-wrapped keys + QA attachment rows/objects from the R1a live QA — unopenable
-under KMS by design; draft SQL + storage deletions, Liran runs) → Vercel env
-(`AVI_GCP_KMS_KEY_NAME` + `AVI_GCP_SA_KEY_B64`) → single flip of `STORAGE_UI` at 25MB.
+**🔀 B2 ARCHITECTURE PIVOT 2026-07-24 (LLM-council 5+5 → unanimous; Liran approved):
+DROP Cloud Run.** The 4–25MB byte path = **browser-side Web Crypto envelope + Supabase
+signed upload/download URLs** (Vercel mints the signed URL as the user + wraps the
+per-file DEK; browser encrypts/decrypts the bytes; ciphertext goes browser↔Storage
+direct). Why: Cloud Run would relay the user's session token through the browser
+(regresses the httpOnly posture); signed URLs move any-size bytes with **no
+service-role** (web-verified: `createSignedUploadUrl` respects the user's RLS, and the
+bucket already has the org-path INSERT policy). **Liran's calls:** (1) **UNIFIED** — all
+sizes go through the browser path; retire the Node byte path (KMS + key hierarchy stay
+server-side, fully reusing today's GCP setup). (2) **Escrow double-wrap folded INTO the
+build** (not R2): an asymmetric recovery keypair — public half in app config auto-seals
+every office key, **private half = an offline physical "break-glass" key Liran generates
+himself (Claude never sees it), stored in 2 physical locations / Shamir 2-of-3** — wired
+BEFORE the first prod Google-mint so every office key is born double-wrapped (prod has
+ZERO Google-wrapped keys today → no re-wrap pass ever). (3) DR leg A now (europe
+multi-region ✅ + 120-day destroy-protection ✅ + billing alert TODO + never-delete).
 
-**Owner gates (each stop-and-confirm):** ~~apply 0031~~ ✅ · ~~Storage bucket + RLS~~ ✅
-· GCP setup per `docs/GCP_KMS_RUNBOOK.md` (~$1/mo HSM key) · Cloud Run deploy (R1b(2))
+**Council-caught build requirements (fold in):** server-minted IV (never browser — GCM
+IV-reuse is catastrophic); GCM **AAD = attachment-id** (anti object-swap); **bucket-level
+size+MIME cap** (signed URLs bypass RLS on size → storage-DoS); row-mint-LAST + orphan
+reconciliation; note: download ships a single-file DEK to the browser per view (bounded);
+the server-side magic-byte sniff is lost on the browser path (mitigated: downloads are
+attachment+nosniff, private bucket).
+
+**✅ DONE this session:** GCP KMS provider wired (`cddef54`) → europe multi-region DR
+(`7a86b33`) → **Node↔WebCrypto byte-parity gate GREEN + committed as a permanent guard
+(`6c3b926`, `webcrypto-parity.test.ts`, 34 tests): byte-identical AES-256-GCM across
+node:crypto ↔ crypto.subtle, both decrypt directions, AAD binding, up to 25MiB, tamper/
+wrong-AAD rejected.** This was the make-or-break de-risking step (the Executor's
+"Monday-morning test") — it passed, so the unified browser-crypto design is sound.
+Gate: tsc 0 · lint 0 · **741 tests**.
+
+**🔜 NEXT (resume here) — the unified browser-crypto build, in order:**
+1. Isomorphic file-crypto module (browser `crypto.subtle` AES-256-GCM for the DEK⊕bytes;
+   the tag-layout adapter from the parity test; server keeps `envelope.ts` for recovery).
+2. Escrow keypair double-wrap in the key layer (public-key seal of office keys +
+   `attachments_*` key RPCs already exist; add the escrow blob column/RPC path).
+3. Routes: `sign-upload` (mint signed URL + server DEK + server IV + wrap DEK + escrow),
+   `finalize` (mint the row after the browser's PUT), `sign-download` (unwrap DEK + mint
+   signed GET URL). Retire the old Node byte routes.
+4. Bucket size+MIME cap (operator step in the Storage dashboard).
+5. Client rewire (upload/download via signed URL + Web Crypto), retire the Node path.
+6. Then: adversarial review of the WHOLE branch → PR → Liran merges (flag off) →
+   **one-time QA cleanup** (prod `encryption_keys` holds DEV-KEK-wrapped keys + QA rows/
+   objects from the R1a local QA — unopenable once Google KMS is primary; draft SQL +
+   storage deletions, Liran runs) → Vercel env already set (`AVI_GCP_KMS_KEY_NAME` +
+   `AVI_GCP_SA_KEY_B64`) → generate + safeguard the escrow key → single flip of
+   `STORAGE_UI` at 25MB. **First prod request = the first time Google KMS actually runs.**
+
+**Owner gates (each stop-and-confirm):** ~~apply 0031~~ ✅ · ~~Storage bucket + RLS~~ ✅ ·
+~~GCP KMS setup~~ ✅ (`docs/GCP_KMS_RUNBOOK.md`; key live in europe, env set, NOT deployed)
+· bucket size+MIME cap · billing alert · generate the offline escrow key (Liran, himself)
 · QA cleanup before the flip. No service-role key.
 
 ---
