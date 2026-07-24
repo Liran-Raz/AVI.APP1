@@ -9,16 +9,17 @@ brief. **Load the `avi-app-architecture` skill before touching code.**
 
 **⚠️ CURRENT BRANCH = `feat/dev-032-attachments-r1`** (NOT main). main is `c652cfe`
 (DEV-031 Cloudflare edge hardening, live). The active work is **DEV-032 — the
-encrypted file-attachments feature (R1a in progress)** — see the section directly
-below. DEV-029 (security audit 2) is FULLY CLOSED; DEV-031 (Cloudflare proxy +
+encrypted file-attachments feature (R1b in progress; R1a live-proven)** — see the
+section directly below. DEV-029 (security audit 2) is FULLY CLOSED; DEV-031 (Cloudflare proxy +
 Full-strict + Bot Fight Mode + Page Shield) is LIVE. The stale docs PR #78 was
 closed (branch kept).
 
-## 🗄️ MOST RECENT / ACTIVE — DEV-032 file attachments + encryption (R1a in progress)
+## 🗄️ MOST RECENT / ACTIVE — DEV-032 file attachments + encryption (R1b in progress)
 
 **Plan APPROVED (full detail):** `C:\Users\User\.claude\plans\breezy-munching-squid.md`
 — read it first. Encrypted file storage on **clients / tasks / office-library**;
-app-layer envelope encryption (master KEK in **AWS KMS il-central-1** → per-office
+app-layer envelope encryption (master KEK in **Google Cloud KMS me-west1 —
+amended 2026-07-24, was AWS KMS** → per-office
 → per-client → per-file DEK, AES-256-GCM); Supabase = system-of-record; feature
 flag `STORAGE_UI` (off). Mockups approved (`.claude/design-preview/attachments-preview.html`
 folder model + `task-files-preview.html`).
@@ -135,15 +136,42 @@ ciphertext** (`application/octet-stream`; path carries no PII/filename). **Encry
 is PROVEN** — the full envelope chain (master-KEK → office key → client key → per-file DEK,
 AES-256-GCM) works live. Local `web/.env.local` has `STORAGE_UI=1` + a dev `AVI_MASTER_KEK_B64`.
 
-**🔜 NEXT (resume here):** the only remaining build is **R1b — the Cloud Run media path
-(25MB)**, which reuses the SAME host-agnostic crypto/keys modules. Production will move the
-master key to **AWS KMS** at R1b (`@aws-sdk/client-kms` dependency — owner gate; the
-`kms-key-provider.ts` skeleton is ready to fill in). The `attachments` code stays behind
-`STORAGE_UI` until Liran chooses to flip it on in prod (Vercel env + redeploy, like INVOICING_UI).
+**🔀 PLAN AMENDED 2026-07-24 (Liran's decision):** the master KEK moves to **Google
+Cloud KMS (me-west1 / Tel-Aviv)** instead of AWS KMS — cross-cloud separation from the
+data (Supabase runs on AWS; no single provider breach yields both halves) + ONE new
+cloud vendor instead of two (Cloud Run is GCP anyway). Locked with it: **split
+topology** (files ≤4MB keep the proven Vercel path — narrow SA key in Vercel env;
+4–25MB go via the Cloud Run media service with its ambient identity) and a **SINGLE
+production enablement at 25MB** at the end (nothing turns on until Cloud Run is live).
+Verified before locking: Cloud KMS + Cloud Run both available in me-west1; the 0031
+`kms_key_id` column is provider-agnostic free text (zero DB change); the DB size CHECK
+already allows 25MB.
 
-**Owner gates (each stop-and-confirm):** apply 0031 · Storage bucket + RLS runbook ·
-AWS KMS setup + `@aws-sdk/client-kms` dep (~$1/key/mo; dev unblocked via
-`AVI_MASTER_KEK_B64`) · Cloud Run (R1b). No service-role key.
+**✅ R1b(1) DONE — GCP key provider wired (commit `cddef54`):**
+`gcp-kms-key-provider.ts` (`@google-cloud/kms` 5.7.0) replaces the AWS skeleton —
+Encrypt/Decrypt against the full key resource name; creds = `AVI_GCP_SA_KEY_B64`
+(base64 SA JSON, Vercel) or ambient ADC (Cloud Run); bytes/base64 transport
+normalization; leak-safe errors (gRPC status code only, never raw provider text);
+early refusal of a key wrapped by a DIFFERENT master (cleanly surfaces the dev-KEK QA
+leftovers instead of an opaque KMS error). Factory selects on `AVI_GCP_KMS_KEY_NAME`
+with the same fail-loud semantics (prod without KMS throws; preview/dev keep
+`AVI_MASTER_KEK_B64`). env.ts + .env.local.example updated. Gate: **tsc 0 · lint 0 ·
+707 tests (+13, mocked KMS)**. Owner runbook ready: **`docs/GCP_KMS_RUNBOOK.md`**
+(dedicated project + HSM key + key-scoped SA + Vercel env; safe to run in parallel —
+enables nothing by itself).
+
+**🔜 NEXT (resume here):** **R1b(2) — the Cloud Run media service (me-west1)**: same
+host-agnostic crypto/keys modules; signed upload/download tickets minted by Vercel
+(which owns sessions/permissions/metadata); validator cap lifted to 25MB on the large
+path only; Dockerfile + deploy. Then: adversarial review of the WHOLE branch → PR →
+Liran merges (flag off) → **one-time QA cleanup** (prod `encryption_keys` holds
+dev-KEK-wrapped keys + QA attachment rows/objects from the R1a live QA — unopenable
+under KMS by design; draft SQL + storage deletions, Liran runs) → Vercel env
+(`AVI_GCP_KMS_KEY_NAME` + `AVI_GCP_SA_KEY_B64`) → single flip of `STORAGE_UI` at 25MB.
+
+**Owner gates (each stop-and-confirm):** ~~apply 0031~~ ✅ · ~~Storage bucket + RLS~~ ✅
+· GCP setup per `docs/GCP_KMS_RUNBOOK.md` (~$1/mo HSM key) · Cloud Run deploy (R1b(2))
+· QA cleanup before the flip. No service-role key.
 
 ---
 
