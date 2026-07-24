@@ -26,7 +26,7 @@ vi.mock("@google-cloud/kms", () => ({
 import { makeGcpKmsKeyProvider } from "./gcp-kms-key-provider";
 
 const KEY_NAME =
-  "projects/avi-app/locations/me-west1/keyRings/master/cryptoKeys/kek";
+  "projects/avi-app/locations/europe/keyRings/master/cryptoKeys/kek";
 
 function saKeyB64(overrides: Record<string, unknown> = {}): string {
   const sa = {

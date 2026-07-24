@@ -10,7 +10,7 @@ import { makeLocalKeyProvider } from "./local-key-provider";
 // makes server boot depend on its vars.
 //
 // Selection order:
-//   1. AVI_GCP_KMS_KEY_NAME set → Google Cloud KMS provider (me-west1).
+//   1. AVI_GCP_KMS_KEY_NAME set → Google Cloud KMS provider (europe multi-region).
 //      Credentials: AVI_GCP_SA_KEY_B64 (Vercel) or ambient ADC (Cloud Run).
 //   2. genuine production without a KMS key name → THROW (a raw env master key
 //      must never be the production master; managed KMS is required there).
@@ -45,7 +45,7 @@ export function getKeyProvider(): KeyProvider {
     // Do NOT cache — a corrected deployment (KMS key name added on a fresh
     // instance) must be able to recover.
     throw new KeyConfigError(
-      "no managed key provider configured in production — set AVI_GCP_KMS_KEY_NAME (Google Cloud KMS, me-west1)",
+      "no managed key provider configured in production — set AVI_GCP_KMS_KEY_NAME (Google Cloud KMS, europe multi-region)",
     );
   }
 

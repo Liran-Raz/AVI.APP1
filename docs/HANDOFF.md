@@ -136,14 +136,20 @@ ciphertext** (`application/octet-stream`; path carries no PII/filename). **Encry
 is PROVEN** — the full envelope chain (master-KEK → office key → client key → per-file DEK,
 AES-256-GCM) works live. Local `web/.env.local` has `STORAGE_UI=1` + a dev `AVI_MASTER_KEK_B64`.
 
-**🔀 PLAN AMENDED 2026-07-24 (Liran's decision):** the master KEK moves to **Google
-Cloud KMS (me-west1 / Tel-Aviv)** instead of AWS KMS — cross-cloud separation from the
+**🔀 PLAN AMENDED 2026-07-24 (Liran's decisions, twice same day):** the master KEK
+moves to **Google Cloud KMS** instead of AWS KMS — cross-cloud separation from the
 data (Supabase runs on AWS; no single provider breach yields both halves) + ONE new
-cloud vendor instead of two (Cloud Run is GCP anyway). Locked with it: **split
+cloud vendor instead of two (Cloud Run is GCP anyway). **Key location = `europe`
+multi-region, NOT me-west1** — Liran's DR catch mid-runbook: a single-region Tel-Aviv
+key would not survive a regional outage/permanent loss (lost master ⇒ every encrypted
+file unreadable forever); `europe` stores + serves the key from multiple EU data
+centers, supports HSM, same price, zero code change. The Cloud Run SERVICE still runs
+in me-west1 (user latency) — only the KEY location changed. Locked with it: **split
 topology** (files ≤4MB keep the proven Vercel path — narrow SA key in Vercel env;
 4–25MB go via the Cloud Run media service with its ambient identity) and a **SINGLE
 production enablement at 25MB** at the end (nothing turns on until Cloud Run is live).
-Verified before locking: Cloud KMS + Cloud Run both available in me-west1; the 0031
+Verified before locking: Cloud Run available in me-west1; Cloud KMS `europe`
+multi-region exists with multi-tenant HSM (global does NOT support HSM); the 0031
 `kms_key_id` column is provider-agnostic free text (zero DB change); the DB size CHECK
 already allows 25MB.
 

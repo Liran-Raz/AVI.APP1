@@ -4,11 +4,14 @@ import { fromBase64, toBase64 } from "../crypto/envelope";
 import { KeyConfigError, KeyProviderError } from "./key-errors";
 import type { KeyProvider, WrappedOfficeKey } from "./key-provider";
 
-// Google Cloud KMS office-key provider (me-west1 / Tel-Aviv).
+// Google Cloud KMS office-key provider (`europe` multi-region).
 //
 // The master KEK deliberately lives in a DIFFERENT cloud than the data
 // (Supabase runs on AWS): no single provider breach yields both the wrapped
-// keys and the master that opens them. KMS is called at most once per office
+// keys and the master that opens them. The key sits in the `europe`
+// MULTI-REGION location — stored and served from multiple EU data centers —
+// so a single-region outage or even permanent regional loss cannot take the
+// master key with it (DR requirement, 2026-07-24). KMS is called at most once per office
 // per request (the hierarchy caches the plaintext); client keys and per-file
 // DEKs never touch KMS.
 //
@@ -25,7 +28,7 @@ import type { KeyProvider, WrappedOfficeKey } from "./key-provider";
 
 export interface GcpKmsKeyProviderConfig {
   // Full key resource name:
-  // projects/<p>/locations/me-west1/keyRings/<ring>/cryptoKeys/<key>
+  // projects/<p>/locations/europe/keyRings/<ring>/cryptoKeys/<key>
   keyName: string;
   // base64 service-account JSON (Vercel). Omit to use ambient ADC (Cloud Run).
   saKeyB64?: string;

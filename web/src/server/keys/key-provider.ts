@@ -1,6 +1,6 @@
 // The KeyProvider is the master-KEK trust boundary — the ONE place an office key
 // crosses in/out of its wrapped form. In production this is Google Cloud KMS
-// (me-west1 / Tel-Aviv); in dev it is a local env master key. Client keys
+// (the `europe` multi-region); in dev it is a local env master key. Client keys
 // and per-file DEKs are NOT wrapped here — they are wrapped by the office/owner
 // key via the envelope primitives inside the key hierarchy. Keeping this
 // interface tiny (office key only) is deliberate: KMS is called at most once per

@@ -18,7 +18,7 @@ const PROD = "production";
 const DEV = "development";
 const VALID_KEK = randomBytes(32).toString("base64");
 const GCP_KEY_NAME =
-  "projects/avi-app/locations/me-west1/keyRings/master/cryptoKeys/kek";
+  "projects/avi-app/locations/europe/keyRings/master/cryptoKeys/kek";
 
 function setEnv(key: string, value: string | undefined): void {
   if (value === undefined) delete process.env[key];
