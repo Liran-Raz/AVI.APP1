@@ -9,9 +9,8 @@ export class KeyError extends Error {
   }
 }
 
-// The key provider is missing/invalid configuration, OR a provider that needs
-// an owner-gated dependency (AWS KMS) was selected before it is wired. Fail
-// loud — there is no safe no-op for encryption.
+// The key provider is missing/invalid configuration (e.g. a malformed managed-
+// KMS setup). Fail loud — there is no safe no-op for encryption.
 export class KeyConfigError extends KeyError {
   constructor(message: string) {
     super(message);

@@ -36,10 +36,12 @@ const serverEnvSchema = z.object({
   // provider reads these directly from process.env (like the email adapter) so
   // the feature stays inert until configured; they are declared here for typing
   // and web/.env.local.example. NEVER prefix NEXT_PUBLIC_ — key material / ARNs.
-  //   Production: AWS KMS master key (il-central-1). Dev/test: AVI_MASTER_KEK_B64
-  //   (base64 of a 32-byte key). See web/src/server/keys/key-provider.factory.ts.
-  AVI_KMS_MASTER_KEY_ARN: z.string().min(1).optional(),
-  AVI_KMS_REGION: z.string().min(1).default("il-central-1"),
+  //   Production: Google Cloud KMS master key (me-west1 / Tel-Aviv) + a
+  //   service-account JSON (base64) on Vercel; the Cloud Run media service uses
+  //   its ambient identity instead. Dev/test: AVI_MASTER_KEK_B64 (base64 of a
+  //   32-byte key). See web/src/server/keys/key-provider.factory.ts.
+  AVI_GCP_KMS_KEY_NAME: z.string().min(1).optional(),
+  AVI_GCP_SA_KEY_B64: z.string().min(1).optional(),
   AVI_MASTER_KEK_B64: z.string().min(1).optional(),
 });
 

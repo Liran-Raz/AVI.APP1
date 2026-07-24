@@ -7,8 +7,8 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 // registry and re-imports with the desired env (same approach as email.test).
 
 const ENV_KEYS = [
-  "AVI_KMS_MASTER_KEY_ARN",
-  "AVI_KMS_REGION",
+  "AVI_GCP_KMS_KEY_NAME",
+  "AVI_GCP_SA_KEY_B64",
   "AVI_MASTER_KEK_B64",
   "NODE_ENV",
   "VERCEL_ENV",
@@ -17,6 +17,8 @@ const ENV_KEYS = [
 const PROD = "production";
 const DEV = "development";
 const VALID_KEK = randomBytes(32).toString("base64");
+const GCP_KEY_NAME =
+  "projects/avi-app/locations/me-west1/keyRings/master/cryptoKeys/kek";
 
 function setEnv(key: string, value: string | undefined): void {
   if (value === undefined) delete process.env[key];
@@ -24,14 +26,14 @@ function setEnv(key: string, value: string | undefined): void {
 }
 
 async function loadFactory(env: {
-  AVI_KMS_MASTER_KEY_ARN?: string;
-  AVI_KMS_REGION?: string;
+  AVI_GCP_KMS_KEY_NAME?: string;
+  AVI_GCP_SA_KEY_B64?: string;
   AVI_MASTER_KEK_B64?: string;
   NODE_ENV: string;
   VERCEL_ENV?: string;
 }) {
-  setEnv("AVI_KMS_MASTER_KEY_ARN", env.AVI_KMS_MASTER_KEY_ARN);
-  setEnv("AVI_KMS_REGION", env.AVI_KMS_REGION);
+  setEnv("AVI_GCP_KMS_KEY_NAME", env.AVI_GCP_KMS_KEY_NAME);
+  setEnv("AVI_GCP_SA_KEY_B64", env.AVI_GCP_SA_KEY_B64);
   setEnv("AVI_MASTER_KEK_B64", env.AVI_MASTER_KEK_B64);
   setEnv("NODE_ENV", env.NODE_ENV);
   setEnv("VERCEL_ENV", env.VERCEL_ENV);
@@ -100,37 +102,37 @@ describe("local provider (dev/test)", () => {
   });
 });
 
-describe("KMS provider (owner-gated skeleton)", () => {
-  it("selects the KMS provider when AVI_KMS_MASTER_KEY_ARN is set", async () => {
+describe("GCP KMS provider", () => {
+  it("selects the GCP KMS provider when AVI_GCP_KMS_KEY_NAME is set", async () => {
     const { getKeyProvider } = await loadFactory({
-      AVI_KMS_MASTER_KEY_ARN: "arn:aws:kms:il-central-1:000000000000:key/abc",
+      AVI_GCP_KMS_KEY_NAME: GCP_KEY_NAME,
       NODE_ENV: PROD,
     });
-    expect(getKeyProvider().name).toBe("kms");
+    expect(getKeyProvider().name).toBe("gcp-kms");
   });
 
-  it("KMS operations fail loud (KeyConfigError) until the dependency lands", async () => {
+  it("takes precedence over a local key when both are set", async () => {
     const { getKeyProvider } = await loadFactory({
-      AVI_KMS_MASTER_KEY_ARN: "arn:aws:kms:il-central-1:000000000000:key/abc",
-      NODE_ENV: PROD,
-    });
-    const provider = getKeyProvider();
-    const err = await captureError(() => provider.wrapOfficeKey(randomBytes(32)));
-    expect(err.name).toBe("KeyConfigError");
-  });
-
-  it("KMS takes precedence over a local key when both are set", async () => {
-    const { getKeyProvider } = await loadFactory({
-      AVI_KMS_MASTER_KEY_ARN: "arn:aws:kms:il-central-1:000000000000:key/abc",
+      AVI_GCP_KMS_KEY_NAME: GCP_KEY_NAME,
       AVI_MASTER_KEK_B64: VALID_KEK,
       NODE_ENV: DEV,
     });
-    expect(getKeyProvider().name).toBe("kms");
+    expect(getKeyProvider().name).toBe("gcp-kms");
+  });
+
+  it("throws KeyConfigError at selection on a malformed AVI_GCP_SA_KEY_B64", async () => {
+    const { getKeyProvider } = await loadFactory({
+      AVI_GCP_KMS_KEY_NAME: GCP_KEY_NAME,
+      AVI_GCP_SA_KEY_B64: Buffer.from("not json at all").toString("base64"),
+      NODE_ENV: PROD,
+    });
+    const err = await captureError(() => getKeyProvider());
+    expect(err.name).toBe("KeyConfigError");
   });
 });
 
 describe("fail-loud selection (no safe no-op for encryption)", () => {
-  it("throws in genuine production when no KMS ARN is configured", async () => {
+  it("throws in genuine production when no KMS key name is configured", async () => {
     const { getKeyProvider } = await loadFactory({
       AVI_MASTER_KEK_B64: VALID_KEK, // present, but must NOT be used in prod
       NODE_ENV: PROD,
@@ -139,7 +141,7 @@ describe("fail-loud selection (no safe no-op for encryption)", () => {
     expect(err.name).toBe("KeyConfigError");
   });
 
-  it("allows the local provider on a Vercel PREVIEW deployment (QA before AWS)", async () => {
+  it("allows the local provider on a Vercel PREVIEW deployment (QA before KMS)", async () => {
     const { getKeyProvider } = await loadFactory({
       AVI_MASTER_KEK_B64: VALID_KEK,
       NODE_ENV: PROD,

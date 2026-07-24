@@ -17,7 +17,7 @@ import {
 // In-memory KeyStore double + the REAL local provider (real crypto). Proves the
 // hierarchy creates-then-caches, re-reads + unwraps the full chain across fresh
 // instances, wraps/unwraps DEKs, recovers from an insert race, and zeroizes on
-// dispose — all without Supabase or AWS.
+// dispose — all without Supabase or a cloud KMS.
 
 class FakeKeyStore implements KeyStore {
   officeByOrg = new Map<string, OfficeKeyRecord>();

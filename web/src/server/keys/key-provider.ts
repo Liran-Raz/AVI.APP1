@@ -1,6 +1,6 @@
 // The KeyProvider is the master-KEK trust boundary — the ONE place an office key
-// crosses in/out of its wrapped form. In production this is AWS KMS
-// (il-central-1 / Tel-Aviv); in dev it is a local env master key. Client keys
+// crosses in/out of its wrapped form. In production this is Google Cloud KMS
+// (me-west1 / Tel-Aviv); in dev it is a local env master key. Client keys
 // and per-file DEKs are NOT wrapped here — they are wrapped by the office/owner
 // key via the envelope primitives inside the key hierarchy. Keeping this
 // interface tiny (office key only) is deliberate: KMS is called at most once per
@@ -8,8 +8,9 @@
 
 // A wrapped office key as stored on encryption_keys: an opaque base64 blob plus
 // the master-key id that produced it. Always non-null (the DB office-shape CHECK
-// requires kms_key_id): KMS uses the master ARN; the local provider uses the
-// marker "local" so a stored key records which provider wrapped it.
+// requires kms_key_id): KMS uses the master key's full resource name; the local
+// provider uses the marker "local" so a stored key records which provider
+// wrapped it.
 export interface WrappedOfficeKey {
   wrapped: string; // base64, opaque to callers
   kmsKeyId: string;
